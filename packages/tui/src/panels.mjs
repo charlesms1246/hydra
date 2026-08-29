@@ -79,33 +79,60 @@ export const Activity = ({ b }) => {
     <//>`;
 };
 
-export const Tools = ({ d }) => {
+export const Tools = ({ d, selected, confirm }) => {
   if (!d) return html`<${Text} color="gray">loading…<//>`;
-  const bad = d.rows.filter((r) => r.status.trim() !== "ok");
+  const rows = d.rows;
+  const bad = rows.filter((r) => r.status.trim() !== "ok");
   return html`
     <${Box} flexDirection="column">
-      ${d.rows.map((r) => {
+      ${rows.map((r, i) => {
         const st = r.status.trim();
+        const isSel = i === selected;
+        const canFix = st !== "ok" && r.cmd;
         return html`
           <${Box} key=${r.name}>
+            <${Box} width=${2}>
+              <${Text} color="cyan">${isSel ? "▸" : " "}<//>
+            <//>
             <${Box} width=${3}>
               <${Text} color=${st === "ok" ? "green" : st === "WARN" ? "yellow" : "red"}>${st === "ok" ? "●" : st === "WARN" ? "◐" : "○"}<//>
             <//>
-            <${Box} width=${29}><${Text}>${r.name.replace("artifact: ", "")}<//><//>
+            <${Box} width=${29}>
+              <${Text} color=${isSel ? "cyan" : undefined}>${r.name.replace("artifact: ", "")}<//>
+            <//>
             <${Box} width=${17}><${Text} color="gray">${"want " + String(r.want).slice(0, 11)}<//><//>
-            <${Text} color=${st === "ok" ? "gray" : "yellow"}>${r.got}<//>
+            <${Box} width=${14}><${Text} color=${st === "ok" ? "gray" : "yellow"}>${r.got}<//><//>
+            <${Text} color=${canFix ? "magenta" : "gray"}>${canFix ? "fixable" : ""}<//>
           <//>`;
       })}
-      ${bad.length
+
+      ${confirm
         ? html`
           <${Box} flexDirection="column" marginTop=${1}>
-            <${Text} color="yellow">${"to fix:"}<//>
-            ${bad.map((r) => html`
-              <${Box} key=${r.name} marginLeft=${2} flexDirection="column">
-                <${Text} color="gray">${r.name}<//>
-                <${Text}>${"  " + String(r.hint ?? "").split("\n")[0]}<//>
-              <//>`)}
+            <${Text} color="yellow">${"run this? it executes a real command"}<//>
+            <${Box} marginLeft=${2}><${Text}>${"$ " + confirm.cmd}<//><//>
+            ${confirm.cwd ? html`<${Box} marginLeft=${2}><${Text} color="gray">${"in " + confirm.cwd}<//><//>` : null}
+            <${Text} color="yellow">${"y run · n cancel"}<//>
           <//>`
-        : html`<${Box} marginTop=${1}><${Text} color="green">${"everything pinned and built"}<//><//>`}
+        : bad.length === 0
+          ? html`<${Box} marginTop=${1}><${Text} color="green">${"everything pinned and built"}<//><//>`
+          : html`
+            <${Box} flexDirection="column" marginTop=${1}>
+              <${Text} color="yellow">${bad.length + " need attention — ↑↓ to select, i to fix"}<//>
+              ${rows[selected] && rows[selected].status.trim() !== "ok" && !rows[selected].cmd
+                ? html`<${Box} marginLeft=${2}><${Text} color="gray">${"no automatic fix: " + String(rows[selected].hint ?? "").split("\n")[0]}<//><//>`
+                : null}
+            <//>`}
+    <//>`;
+};
+
+/** Shared output pane — stack startup and fix commands both stream here. */
+export const LogPane = ({ lines, title }) => {
+  if (!lines?.length) return null;
+  return html`
+    <${Box} flexDirection="column" marginTop=${1} borderStyle="round" borderColor="gray" paddingX=${1}>
+      <${Text} color="gray">${title}<//>
+      ${lines.slice(-8).map((l, i) => html`
+        <${Text} key=${i} color="gray">${l.length > 92 ? l.slice(0, 92) + "…" : l}<//>`)}
     <//>`;
 };

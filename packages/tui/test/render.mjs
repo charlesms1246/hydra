@@ -10,7 +10,7 @@
 import { render } from "ink";
 import { Writable } from "node:stream";
 import { html } from "../src/ui.mjs";
-import { Services, Wallets, Activity, Tools } from "../src/panels.mjs";
+import { Services, Wallets, Activity, Tools, LogPane } from "../src/panels.mjs";
 import { status } from "../../core/src/services.mjs";
 import { wallets } from "../../core/src/wallets.mjs";
 import { latestBlocks } from "../../core/src/chain.mjs";
@@ -45,11 +45,29 @@ const [s, w, b] = await Promise.all([
 let d = null;
 try { d = { rows: check() }; } catch { d = { rows: [] }; }
 
+// A failing, fixable row — the state the Tools pane exists to act on, and the
+// one a green machine never renders.
+const brokenDoc = {
+  rows: [
+    { status: "ok  ", name: "node", want: ">= 24", got: "24.20.0", cmd: null },
+    { status: "MISS", name: "artifact: pool", want: "built", got: "missing",
+      cmd: "scarb build -p privacy", cwd: "/tmp", hint: "(in /tmp) scarb build -p privacy" },
+    { status: "MISS", name: "upstream checkout", want: "980da8", got: "not found",
+      cmd: null, hint: "git clone … then set HYDRA_UPSTREAM" },
+  ],
+};
+
 const results = [
   await draw("Services", html`<${Services} s=${s} />`),
   await draw("Wallets", html`<${Wallets} w=${w} selected=${0} />`),
   await draw("Activity", html`<${Activity} b=${b} />`),
-  await draw("Tools", html`<${Tools} d=${d} />`),
+  await draw("Tools", html`<${Tools} d=${d} selected=${0} confirm=${null} />`),
+  await draw("Tools (fixable row selected)", html`<${Tools} d=${brokenDoc} selected=${1} confirm=${null} />`),
+  await draw("Tools (row with no auto-fix)", html`<${Tools} d=${brokenDoc} selected=${2} confirm=${null} />`),
+  await draw("Tools (confirming)", html`
+    <${Tools} d=${brokenDoc} selected=${1}
+      confirm=${{ row: brokenDoc.rows[1], cmd: "scarb build -p privacy", cwd: "/tmp" }} />`),
+  await draw("LogPane", html`<${LogPane} lines=${["$ scarb build", "Compiling privacy", "Finished"]} title="fix: pool" />`),
   // Degraded states must render too — a status view that crashes when the stack
   // is down is worse than useless.
   await draw("Services (no data)", html`<${Services} s=${null} />`),

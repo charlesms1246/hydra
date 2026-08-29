@@ -37,6 +37,9 @@ export function check() {
     want: `>= ${NODE_MIN_MAJOR}`,
     got: process.versions.node,
     hint: "nvm install 24 && nvm use 24",
+    // No cmd: switching the node version of the process running this tool is not
+    // something the tool can do to itself. The user has to do this one.
+    cmd: null,
   });
 
   for (const [name, pin] of Object.entries(PINS)) {
@@ -47,6 +50,8 @@ export function check() {
       want: pin.exact ?? "any",
       got: got ?? "not found",
       hint: INSTALL_HINTS[name],
+      cmd: INSTALL_HINTS[name] ?? null,
+      cwd: null,
     });
   }
 
@@ -57,6 +62,8 @@ export function check() {
     want: UPSTREAM_SHA.slice(0, 12),
     got: hasUpstream ? sha(up) ?? "unknown" : "not found",
     hint: `git clone ${UPSTREAM_REPO} <dir> && git -C <dir> checkout ${UPSTREAM_SHA}\n       then set HYDRA_UPSTREAM=<dir>`,
+    // Needs a destination and an env var the tool cannot choose for the user.
+    cmd: null,
   });
 
   if (hasUpstream) {
@@ -67,6 +74,8 @@ export function check() {
         want: "built",
         got: existsSync(join(up, rel)) ? "present" : "missing",
         hint: `(in ${up}) ${BUILD_HINTS[key]}`,
+        cmd: BUILD_HINTS[key],
+        cwd: up,
       });
     }
   }
