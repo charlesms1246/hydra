@@ -14,6 +14,11 @@ export const UPSTREAM_REPO = "https://github.com/starkware-libs/starknet-privacy
 export const PINS = {
   scarb: { exact: "2.18.0", cmd: ["scarb", "--version"], match: /scarb (\S+)/ },
   snforge: { exact: "0.63.0", cmd: ["snforge", "--version"], match: /snforge (\S+)/ },
+  "universal-sierra-compiler": {
+    exact: null, // no pin published upstream; presence is what matters
+    cmd: ["universal-sierra-compiler", "--version"],
+    match: /universal-sierra-compiler (\S+)/,
+  },
   "starknet-devnet": {
     exact: "0.8.0-rc.3",
     cmd: ["starknet-devnet", "--version"],
@@ -42,6 +47,12 @@ export const ARTIFACTS = {
   // Not listed in upstream's e2e README prerequisites, but e2e depends on
   // `file:../client` and three devnet tests fail to resolve `/signers` without it.
   clientDist: "client/dist/signers/index.js",
+  // Test-target contracts. `scarb build -p privacy` does NOT produce these; the
+  // eth712 devnet tests need the `-t` target and fail in universal-sierra-compiler
+  // without it.
+  poolTestContracts: "target/dev/privacy_unittest.test.starknet_artifacts.json",
+  // e2e/contracts/ are separate Scarb projects, not workspace members.
+  testToken: "e2e/contracts/test-token/target/dev/test_token_TestToken.contract_class.json",
 };
 
 export const BUILD_HINTS = {
@@ -49,4 +60,24 @@ export const BUILD_HINTS = {
   discoveryService: "cargo build --release -p discovery-service",
   sdkDist: "cd sdk && npm ci && npm run build",
   clientDist: "cd client && npm ci && npm run build",
+  poolTestContracts: "scarb build -t -p privacy -p shadow_account_anonymizer",
+  testToken:
+    "(cd e2e/contracts/test-token && scarb build) && (cd e2e/contracts/ekubo && scarb build) && (cd e2e/contracts/vesu && scarb build --ignore-cairo-version)",
 };
+
+/**
+ * Traps found the hard way while getting upstream's e2e suite green. Printed by
+ * `hydra doctor` because none of them are in upstream's e2e README.
+ */
+export const GOTCHAS = [
+  "Do NOT set RUST_LOG=error for the e2e suite. The harness waits for the discovery " +
+    "service to log \"API server listening\", which is emitted at INFO — silencing it " +
+    "makes every devnet test fail with a 60s timeout that looks like a hang.",
+  "e2e/contracts/vesu needs `scarb build --ignore-cairo-version`; it pins a different " +
+    "Cairo version. Upstream's script hides this behind `asdf exec scarb`.",
+  "discovery-service processes leak when a test's beforeAll fails (shutdown only runs " +
+    "in afterAll). They hold ports and poison later runs. Check with " +
+    "`pgrep -f discovery-service` and kill strays before re-running.",
+  "universal-sierra-compiler is required but is not in upstream .tool-versions. " +
+    "snfoundryup installs it.",
+];

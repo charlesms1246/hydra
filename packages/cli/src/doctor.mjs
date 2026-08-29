@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { PINS, NODE_MIN_MAJOR, INSTALL_HINTS, ARTIFACTS, BUILD_HINTS, UPSTREAM_SHA, UPSTREAM_REPO } from "./pins.mjs";
+import { PINS, NODE_MIN_MAJOR, INSTALL_HINTS, ARTIFACTS, BUILD_HINTS, UPSTREAM_SHA, UPSTREAM_REPO, GOTCHAS } from "./pins.mjs";
 
 const OK = "ok  ";
 const BAD = "MISS";
@@ -42,9 +42,9 @@ export function check() {
   for (const [name, pin] of Object.entries(PINS)) {
     const got = version(pin.cmd, pin.match);
     rows.push({
-      status: got === null ? BAD : got === pin.exact ? OK : WARN,
+      status: got === null ? BAD : pin.exact === null || got === pin.exact ? OK : WARN,
       name,
-      want: pin.exact,
+      want: pin.exact ?? "any",
       got: got ?? "not found",
       hint: INSTALL_HINTS[name],
     });
@@ -96,6 +96,12 @@ export function report(rows) {
   if (broken.length) {
     console.log("\n  Missing:");
     for (const r of broken) console.log(`    ${r.name}\n       ${r.hint}`);
+  }
+  if (process.env.HYDRA_QUIET !== "1") {
+    console.log("  Known traps (none of these are in upstream's e2e README):");
+    for (const g of GOTCHAS) {
+      console.log(`    - ${g.replace(/(.{1,88})(\s|$)/g, "$1\n      ").trimEnd()}`);
+    }
   }
   console.log("");
   return broken.length === 0;
