@@ -1,0 +1,10 @@
+{
+  "name": "@hydra/linter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Flags STRK20 SDK configurations that disclose more than the developer intends",
+  "bin": { "hydra-lint": "./src/cli.mjs" },
+  "scripts": { "test": "node test/run.mjs" },
+  "dependencies": { "typescript": "^5.9.3" }
+}
