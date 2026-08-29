@@ -19,3 +19,10 @@ upstream-prs/
 claude-docs/
 packages/skills/
 packages/mcp/
+
+# Third-party STRK20 agent skills, installed via:
+#   npx skills add welttowelt/strk20-skills
+# 312K of upstream documentation bundled verbatim. Ignored rather than vendored
+# because it is reinstallable in one command and is not our work. To vendor it
+# instead (self-contained clones), delete this line and `git add .agents/`.
+.agents/
