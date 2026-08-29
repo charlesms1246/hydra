@@ -48,10 +48,16 @@ export function startStack(onLine = () => {}) {
     stop: () =>
       new Promise((resolve) => {
         if (child.exitCode !== null || child.signalCode) return resolve();
-        child.once("close", () => resolve());
-        child.kill("SIGTERM");
         // up's handler cleans up devnet and the indexer; if it hangs, insist.
-        setTimeout(() => child.killed || child.kill("SIGKILL"), 8000);
+        // Gated on actual liveness, not on child.killed: Node sets `killed` the
+        // moment a signal is DELIVERED, so `child.killed || kill("SIGKILL")` was
+        // always short-circuit-true after the SIGTERM above and never escalated —
+        // a child that ignores SIGTERM outlived the TUI and was reparented.
+        const hard = setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        }, 8000);
+        child.once("close", () => { clearTimeout(hard); resolve(); });
+        child.kill("SIGTERM");
       }),
   };
 }
