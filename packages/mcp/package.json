@@ -1,0 +1,14 @@
+{
+  "name": "@hydra/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server: endpoint resolution, environment checks, config linting and live pool state for the STRK20 privacy pool",
+  "bin": { "hydra-mcp": "./src/server.mjs" },
+  "scripts": { "test": "node test/run.mjs" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "starknet": "10.5.0",
+    "zod": "4.5.2"
+  }
+}
