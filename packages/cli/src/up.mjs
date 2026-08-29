@@ -11,6 +11,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { upstreamPath } from "./doctor.mjs";
 import { AUDITOR_NOTE } from "./notes.mjs";
+import { writeState, clearState } from "../../core/src/state.mjs";
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -69,6 +70,25 @@ export async function up() {
 
   const poolAddress = env.privacy.address ?? env.privacy.contractAddress;
 
+  // Publish where everything is, so `hydra status`, the agent commands and the
+  // TUI can find a stack they did not start.
+  await writeState({
+    startedAt: new Date().toISOString(),
+    devnetUrl: devnet.url,
+    wsUrl: devnet.wsUrl,
+    indexerUrl,
+    poolAddress: String(poolAddress),
+    proving: "mock",
+    indexerPid: child.pid,
+    devnetPid: process.pid,
+    tokens: { STRK: env.strk, ETH: env.eth },
+    accounts: [
+      { name: "alice", address: String(env.alice.address) },
+      { name: "bob", address: String(env.bob.address) },
+      { name: "admin", address: String(env.admin.address) },
+    ],
+  });
+
   console.log(`
   STACK UP — nothing here is hosted.
 
@@ -94,6 +114,7 @@ ${AUDITOR_NOTE}
     console.log("\n  tearing down…");
     child.kill();
     await devnet.cleanup().catch(() => {});
+    await clearState().catch(() => {});
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

@@ -1,0 +1,12 @@
+{
+  "name": "@hydra/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Terminal UI for the local STRK20 stack",
+  "dependencies": {
+    "ink": "^5.1.0",
+    "react": "^18.3.1",
+    "htm": "^3.1.1"
+  }
+}
