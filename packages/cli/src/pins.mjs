@@ -29,14 +29,31 @@ export const PINS = {
 /** Node is a floor, not an exact pin: >= 24 is required by ohttp-ts (WebCrypto). */
 export const NODE_MIN_MAJOR = 24;
 
+/**
+ * The devnet release asset is named per platform, so build it rather than
+ * hardcode a triple — the macOS-only string was simply wrong on Linux.
+ */
+function devnetAsset() {
+  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+  return process.platform === "darwin"
+    ? `starknet-devnet-${arch}-apple-darwin.tar.gz`
+    : `starknet-devnet-${arch}-unknown-linux-gnu.tar.gz`;
+}
+
 /** Install lines that need no root. The upstream README uses sudo; this does not. */
 export const INSTALL_HINTS = {
   scarb:
     "curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh -s -- -v 2.18.0",
   snforge:
     "curl -fsSL https://raw.githubusercontent.com/foundry-rs/starknet-foundry/master/scripts/install.sh | sh && snfoundryup -v 0.63.0",
+  // snfoundryup ships USC; it has no installer of its own and is absent from
+  // upstream's .tool-versions, so it looked unfixable when it is not.
+  "universal-sierra-compiler":
+    "curl -fsSL https://raw.githubusercontent.com/foundry-rs/starknet-foundry/master/scripts/install.sh | sh && snfoundryup -v 0.63.0",
+  // mkdir first: tar -C into a directory that does not exist fails, and on a
+  // clean machine ~/.local/bin usually does not.
   "starknet-devnet":
-    "curl -fsSL https://github.com/0xSpaceShard/starknet-devnet/releases/download/v0.8.0-rc.3/starknet-devnet-$(uname -m)-apple-darwin.tar.gz | tar -xz -C ~/.local/bin",
+    `mkdir -p ~/.local/bin && curl -fsSL https://github.com/0xSpaceShard/starknet-devnet/releases/download/v0.8.0-rc.3/${devnetAsset()} | tar -xz -C ~/.local/bin`,
 };
 
 /** Paths inside the upstream checkout that must exist before `up` can run. */
