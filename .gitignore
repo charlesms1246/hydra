@@ -3,8 +3,19 @@ dist/
 target/
 .env
 .env.*
+!.env.example
 *.log
 .DS_Store
 
 # experiment outputs are regenerated; the harness is the artifact
 experiments/**/results*.json
+
+# HELD pending coordinated disclosure to StarkWare (HANDOFF.md §5).
+# These are ignored, not merely untracked, so `git add -A` cannot sweep them
+# into a public commit by accident — which is exactly how packages/skills and
+# packages/mcp were published in 8ec0c9e.
+findings/
+upstream-prs/
+claude-docs/
+packages/skills/
+packages/mcp/
