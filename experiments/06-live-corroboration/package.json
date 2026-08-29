@@ -1,0 +1,6 @@
+{
+  "name": "hydra-experiment-live-corroboration",
+  "private": true,
+  "type": "module",
+  "dependencies": { "starknet": "10.5.0" }
+}
