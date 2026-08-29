@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { upstreamPath } from "./doctor.mjs";
 import { AUDITOR_NOTE } from "./notes.mjs";
 import { writeState, clearState } from "../../core/src/state.mjs";
+import { startControl } from "./control.mjs";
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -70,6 +71,11 @@ export async function up() {
 
   const poolAddress = env.privacy.address ?? env.privacy.contractAddress;
 
+  // The control API lives here because this process owns the Devnet object that
+  // executeOutside needs. Loopback only — it holds devnet account keys.
+  console.log("  starting control API…");
+  const control = await startControl({ devnet, env, upstream: up_, indexerUrl });
+
   // Publish where everything is, so `hydra status`, the agent commands and the
   // TUI can find a stack they did not start.
   await writeState({
@@ -78,6 +84,7 @@ export async function up() {
     wsUrl: devnet.wsUrl,
     indexerUrl,
     poolAddress: String(poolAddress),
+    controlUrl: control.url,
     proving: "mock",
     indexerPid: child.pid,
     devnetPid: process.pid,
@@ -95,6 +102,7 @@ export async function up() {
     devnet RPC        ${devnet.url}
     devnet WS         ${devnet.wsUrl}
     discovery         ${indexerUrl}
+    control           ${control.url}
     privacy pool      ${poolAddress}
     STRK / ETH        ${env.strk} / ${env.eth}
 
@@ -113,6 +121,7 @@ ${AUDITOR_NOTE}
     closing = true;
     console.log("\n  tearing down…");
     child.kill();
+    control.server.close();
     await devnet.cleanup().catch(() => {});
     await clearState().catch(() => {});
     process.exit(0);

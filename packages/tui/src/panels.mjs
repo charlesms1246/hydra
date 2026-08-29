@@ -136,3 +136,65 @@ export const LogPane = ({ lines, title }) => {
         <${Text} key=${i} color="gray">${l.length > 92 ? l.slice(0, 92) + "…" : l}<//>`)}
     <//>`;
 };
+
+/**
+ * Transact — run a real private transfer against the local pool, then show what
+ * it disclosed. The point of the pane is the pairing: hydra is the only place
+ * where doing the thing and seeing its disclosure sit on one screen.
+ */
+export const Transact = ({ t, selected, actions }) => {
+  if (!t?.available) {
+    return html`<${Text} color="yellow">${t?.reason ?? "no running stack — press u to start one"}<//>`;
+  }
+  return html`
+    <${Box} flexDirection="column">
+      ${actions.map((a, i) => html`
+        <${Box} key=${a.id}>
+          <${Box} width=${2}><${Text} color="cyan">${i === selected ? "▸" : " "}<//><//>
+          <${Text} color=${i === selected ? "cyan" : undefined}>${a.label}<//>
+        <//>`)}
+
+      <${Box} marginTop=${1} flexDirection="column">
+        <${Text} color="gray">${"notes in the pool"}<//>
+        ${["alice", "bob"].map((who) => html`
+          <${Box} key=${who} marginLeft=${2}>
+            <${Box} width=${8}><${Text}>${who}<//><//>
+            <${Text} color=${(t.notes?.[who] ?? []).length ? undefined : "gray"}>
+              ${(t.notes?.[who] ?? []).length
+                ? t.notes[who].map((n) => `${n.amount} ${n.symbol}`).join("   ")
+                : "none"}
+            <//>
+          <//>`)}
+      <//>
+
+      ${t.last
+        ? html`
+          <${Box} marginTop=${1} flexDirection="column">
+            <${Text} color=${t.last.ok ? "green" : "red"}>
+              ${t.last.ok ? `${t.last.what} ok` : `${t.last.what} failed`}
+            <//>
+            ${t.last.txHash
+              ? html`<${Box} marginLeft=${2}><${Text} color="gray">${"tx " + t.last.txHash}<//><//>`
+              : null}
+            ${t.last.error
+              ? html`<${Box} marginLeft=${2}><${Text} color="red">${t.last.error.slice(0, 100)}<//><//>`
+              : null}
+          <//>`
+        : null}
+
+      ${t.leak
+        ? html`
+          <${Box} marginTop=${1} flexDirection="column">
+            <${Text} color="gray">${"what that disclosed — " + t.leak.subject}<//>
+            ${t.leak.rows.map((r) => html`
+              <${Box} key=${r.party} marginLeft=${2}>
+                <${Box} width=${28}><${Text} color="gray">${r.party}<//><//>
+                <${Text} color=${r.color}>${r.summary}<//>
+              <//>`)}
+            <${Box} marginLeft=${2}>
+              <${Text} color="gray" dimColor>${"full report: packages/leak"}<//>
+            <//>
+          <//>`
+        : null}
+    <//>`;
+};

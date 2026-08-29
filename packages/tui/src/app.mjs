@@ -8,12 +8,14 @@
 
 import { render, Box, Text, useApp, useInput } from "ink";
 import { html, React } from "./ui.mjs";
-import { Services, Wallets, Activity, Tools, LogPane } from "./panels.mjs";
+import { Services, Wallets, Activity, Tools, LogPane, Transact } from "./panels.mjs";
 import { status } from "../../core/src/services.mjs";
 import { wallets, faucet } from "../../core/src/wallets.mjs";
 import { latestBlocks } from "../../core/src/chain.mjs";
 import { startStack, stopStack } from "../../core/src/stack.mjs";
 import { describeFix, runFix } from "../../core/src/install.mjs";
+import * as TX from "../../core/src/transact.mjs";
+import { whatDoesThisLeak } from "../../leak/src/leak.mjs";
 import { check } from "../../cli/src/doctor.mjs";
 
 const { useState, useEffect, useCallback, useRef } = React;
@@ -23,7 +25,27 @@ const TABS = [
   ["w", "wallets", "Wallets"],
   ["a", "activity", "Activity"],
   ["t", "tools", "Tools"],
+  ["x", "transact", "Transact"],
 ];
+
+/**
+ * The flows a developer wants first. Each carries the leak-report action it
+ * corresponds to, so the disclosure shown afterwards describes what actually ran
+ * rather than a generic example.
+ */
+const TX_ACTIONS = [
+  { id: "shield", label: "Shield 100 STRK  (alice)",
+    run: () => TX.shield({ who: "alice", amount: "100", token: "STRK" }),
+    leak: { type: "deposit", token: "STRK", amount: "100" } },
+  { id: "register", label: "Register bob in the pool",
+    run: () => TX.register("bob"), leak: { type: "register" } },
+  { id: "transfer", label: "Private transfer 50 STRK  alice → bob",
+    run: () => TX.transfer({ from: "alice", to: "bob", amount: "50", token: "STRK" }),
+    leak: { type: "transfer", token: "STRK", amount: "50", counterparty: "bob", opensChannel: false } },
+  { id: "refresh", label: "Refresh notes", run: null },
+];
+
+const PARTY_COLOR = { CLEAR: "red", DECRYPTABLE: "yellow", UNKNOWN: "yellow" };
 
 const POLL_MS = 2000;
 const LOG_MAX = 200;
@@ -42,6 +64,8 @@ function App() {
   const [logTitle, setLogTitle] = useState("");
   const [busy, setBusy] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [txSel, setTxSel] = useState(0);
+  const [tx, setTx] = useState(null);
   const stackRef = useRef(null);
 
   const addLine = useCallback((l) => {
@@ -57,6 +81,15 @@ function App() {
     if (tab === "wallets") setWal(await wallets().catch(() => null));
     if (tab === "activity") setBlk(await latestBlocks(10).catch(() => null));
     if (tab === "tools" && !doc) rescan();
+    if (tab === "transact") {
+      const available = await TX.transactAvailable();
+      if (!available) { setTx({ available: false, reason: "no running stack — press u to start one" }); return; }
+      const [a, b] = await Promise.all([TX.notes("alice"), TX.notes("bob")]);
+      setTx((prev) => ({
+        ...prev, available: true,
+        notes: { alice: a.notes ?? [], bob: b.notes ?? [] },
+      }));
+    }
   }, [tab, doc, rescan]);
 
   useEffect(() => {
@@ -101,6 +134,63 @@ function App() {
     setMsg("stack down");
   }, [addLine]);
 
+  /** Runs one flow, then reports what it disclosed. */
+  const doTx = useCallback(async (action) => {
+    if (!action.run) { refresh(); setMsg("notes refreshed"); return; }
+    setBusy(`${action.label} — proving and submitting`);
+    setLogTitle(action.label);
+    setLog([]);
+    addLine("building, proving, advancing past note maturity, submitting…");
+    const r = await action.run();
+    addLine(r.ok ? `ok in ${r.ms}ms  tx ${r.txHash ?? "(none)"}` : `failed: ${r.error}`);
+
+    let leak = null;
+    if (r.ok && action.leak) {
+      // The control API uses the hosted-shaped indexer path and a mock prover;
+      // report the disclosure for the configuration that actually ran.
+      const rep = whatDoesThisLeak({
+        config: { network: "sepolia", discovery: "indexer-self-hosted", proving: "mock" },
+        actions: [action.leak],
+      });
+      const d = rep.disclosures[0];
+      leak = {
+        subject: action.label,
+        // Name the fields rather than collapse to a worst case. A public observer
+        // sees a transfer's *timing* and nothing else; summarising that as
+        // "learns fields in clear" implies it sees the amount, which is the same
+        // overclaiming — pointed the other way — that this tool exists to stop.
+        rows: rep.parties.map(([id, label]) => {
+          const cells = Object.entries(d.byParty[id] ?? {});
+          const clear = cells.filter(([, c]) => c.disclosure === "CLEAR").map(([f]) => f);
+          const decryptable = cells.filter(([, c]) => c.disclosure === "DECRYPTABLE").map(([f]) => f);
+          const unknown = cells.filter(([, c]) => c.disclosure === "UNKNOWN").map(([f]) => f);
+
+          if (decryptable.length === cells.length && cells.length) {
+            return { party: label, summary: "can decrypt everything", color: "yellow" };
+          }
+          if (clear.length === cells.length && cells.length) {
+            return { party: label, summary: "learns everything in clear", color: "red" };
+          }
+          if (clear.length) {
+            return { party: label, summary: `learns ${clear.join(", ")}`, color: "red" };
+          }
+          if (decryptable.length) {
+            return { party: label, summary: `can decrypt ${decryptable.join(", ")}`, color: "yellow" };
+          }
+          if (unknown.length) {
+            return { party: label, summary: `undetermined: ${unknown.join(", ")}`, color: "yellow" };
+          }
+          return { party: label, summary: "nothing from this tx", color: "gray" };
+        }),
+      };
+    }
+
+    setTx((prev) => ({ ...prev, last: { what: action.label, ok: r.ok, txHash: r.txHash, error: r.error }, leak }));
+    setBusy(null);
+    setMsg(r.ok ? `${action.label} — done` : `failed: ${String(r.error).slice(0, 80)}`);
+    refresh();
+  }, [addLine, refresh]);
+
   const doFix = useCallback(async (row) => {
     setConfirm(null);
     setBusy(`fixing ${row.name}`);
@@ -141,6 +231,12 @@ function App() {
       }
     }
 
+    if (tab === "transact") {
+      if (key.downArrow || input === "j") setTxSel((i) => Math.min(i + 1, TX_ACTIONS.length - 1));
+      if (key.upArrow || input === "k") setTxSel((i) => Math.max(i - 1, 0));
+      if (key.return) doTx(TX_ACTIONS[txSel]);
+    }
+
     if (tab === "tools" && doc?.rows.length) {
       if (key.downArrow || input === "j") setToolSel((i) => Math.min(i + 1, doc.rows.length - 1));
       if (key.upArrow || input === "k") setToolSel((i) => Math.max(i - 1, 0));
@@ -165,6 +261,7 @@ function App() {
           running ? "d stop stack" : "u start stack",
           tab === "wallets" ? "↑↓ select · f fund" : null,
           tab === "tools" ? "↑↓ select · i fix" : null,
+          tab === "transact" ? "↑↓ select · enter run" : null,
         ].filter(Boolean).join(" · ");
 
   return html`
@@ -188,6 +285,7 @@ function App() {
         ${tab === "wallets" ? html`<${Wallets} w=${wal} selected=${sel} />` : null}
         ${tab === "activity" ? html`<${Activity} b=${blk} />` : null}
         ${tab === "tools" ? html`<${Tools} d=${doc} selected=${toolSel} confirm=${confirm} />` : null}
+        ${tab === "transact" ? html`<${Transact} t=${tx} selected=${txSel} actions=${TX_ACTIONS} />` : null}
       <//>
 
       <${LogPane} lines=${log} title=${logTitle} />

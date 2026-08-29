@@ -10,11 +10,19 @@
 import { render } from "ink";
 import { Writable } from "node:stream";
 import { html } from "../src/ui.mjs";
-import { Services, Wallets, Activity, Tools, LogPane } from "../src/panels.mjs";
+import { Services, Wallets, Activity, Tools, LogPane, Transact } from "../src/panels.mjs";
 import { status } from "../../core/src/services.mjs";
 import { wallets } from "../../core/src/wallets.mjs";
 import { latestBlocks } from "../../core/src/chain.mjs";
 import { check } from "../../cli/src/doctor.mjs";
+
+/** Mirrors app.mjs's TX_ACTIONS shape; the panel only reads id and label. */
+const TX_ACTIONS = [
+  { id: "shield", label: "Shield 100 STRK  (alice)" },
+  { id: "register", label: "Register bob in the pool" },
+  { id: "transfer", label: "Private transfer 50 STRK  alice → bob" },
+  { id: "refresh", label: "Refresh notes" },
+];
 
 class Sink extends Writable {
   constructor() { super(); this.out = ""; }
@@ -67,6 +75,32 @@ const results = [
   await draw("Tools (confirming)", html`
     <${Tools} d=${brokenDoc} selected=${1}
       confirm=${{ row: brokenDoc.rows[1], cmd: "scarb build -p privacy", cwd: "/tmp" }} />`),
+  await draw("Transact (no stack)",
+    html`<${Transact} t=${{ available: false, reason: "no running stack" }} selected=${0} actions=${TX_ACTIONS} />`),
+  await draw("Transact (idle, notes)",
+    html`<${Transact} t=${{ available: true, notes: { alice: [{ symbol: "STRK", amount: "50" }], bob: [] } }}
+        selected=${2} actions=${TX_ACTIONS} />`),
+  await draw("Transact (after a transfer, with disclosure)",
+    html`<${Transact} selected=${2} actions=${TX_ACTIONS} t=${{
+      available: true,
+      notes: { alice: [{ symbol: "STRK", amount: "50" }], bob: [{ symbol: "STRK", amount: "50" }] },
+      last: { what: "Private transfer 50 STRK", ok: true, txHash: "0x30b936bf3444fb21ab" },
+      leak: {
+        subject: "Private transfer 50 STRK  alice → bob",
+        rows: [
+          { party: "public chain observer", summary: "learns timing", color: "red" },
+          { party: "the counterparty", summary: "learns everything in clear", color: "red" },
+          { party: "discovery service operator", summary: "learns everything in clear", color: "red" },
+          { party: "proving service operator", summary: "nothing from this tx", color: "gray" },
+          { party: "the auditor", summary: "can decrypt everything", color: "yellow" },
+        ],
+      },
+    }} />`),
+  await draw("Transact (failed action)",
+    html`<${Transact} selected=${0} actions=${TX_ACTIONS} t=${{
+      available: true, notes: { alice: [], bob: [] },
+      last: { what: "Shield 100 STRK", ok: false, error: "Insufficient balance for token 0x47…" },
+    }} />`),
   await draw("LogPane", html`<${LogPane} lines=${["$ scarb build", "Compiling privacy", "Finished"]} title="fix: pool" />`),
   // Degraded states must render too — a status view that crashes when the stack
   // is down is worse than useless.
