@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HYDRA — what does this leak</title>
+<style>
+  /* Surfaces and ink from the design system's chart palette; status colors are the
+     reserved four and are mode-invariant. Every cell pairs its color with an icon
+     and a text label, so color never carries meaning alone. */
+  :root{
+    --surface:#fcfcfb; --plane:#f9f9f7; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --line:#e4e3de;
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --surface:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+           --line:#33322f; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--plane);color:var(--ink);
+    font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:18px 22px;border-bottom:1px solid var(--line);background:var(--surface)}
+  h1{margin:0;font-size:15px;letter-spacing:.02em}
+  h1 span{color:var(--muted);font-weight:400}
+  .sub{color:var(--ink-2);font-size:12.5px;margin-top:5px}
+  main{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:18px;padding:18px;
+    align-items:start}
+  @media (max-width:900px){ main{grid-template-columns:1fr} }
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .card h2{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--muted);font-weight:600}
+  select,button,textarea{font:inherit;color:var(--ink);background:var(--plane);
+    border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+  textarea{width:100%;min-height:290px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12px;resize:vertical}
+  button{cursor:pointer;background:var(--ink);color:var(--surface);border-color:var(--ink);
+    font-weight:600}
+  button.ghost{background:var(--plane);color:var(--ink);border-color:var(--line);font-weight:500}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  table{border-collapse:separate;border-spacing:2px;width:100%}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    font-weight:600;text-align:left;padding:4px 6px;white-space:nowrap}
+  td.party{font-size:12.5px;color:var(--ink-2);padding-right:10px;white-space:nowrap}
+  .cell{border:none;width:100%;text-align:left;border-radius:6px;padding:6px 8px;
+    font-size:11px;font-weight:600;cursor:pointer;color:#0b0b0b;
+    display:flex;gap:5px;align-items:center;line-height:1.25}
+  .cell:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .cell .ic{font-size:11px}
+  /* Colour marks disclosure only. "not by this tx" is deliberately recessive: a wall
+     of green reads as "mostly private", which is the overclaim this tool exists to
+     prevent. Ink goes where a party learns something. Every cell still carries an
+     icon and a text label, so nothing depends on colour alone. */
+  .v-CLEAR{background:var(--critical);color:#fff}
+  .v-DECRYPTABLE{background:var(--serious);color:#0b0b0b}
+  .v-UNKNOWN{background:var(--warning);color:#0b0b0b}
+  .v-NOT_DISCLOSED_BY_THIS_TX{background:transparent;color:var(--ink-2);
+    border:1px solid var(--line);font-weight:500}
+  .v-NA{background:transparent;color:var(--muted);border:1px dashed var(--line);font-weight:500}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-2);
+    margin:2px 0 14px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;
+    margin-right:5px;vertical-align:-1px}
+  .action-h{font-size:12.5px;color:var(--ink-2);margin:16px 0 8px;
+    font-family:ui-monospace,Menlo,monospace}
+  .why{background:var(--plane);border:1px solid var(--line);border-left:3px solid var(--ink-2);
+    border-radius:7px;padding:11px 13px;margin:10px 0;font-size:12.5px;color:var(--ink-2)}
+  .why b{color:var(--ink)}
+  .cites{margin-top:7px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted)}
+  .cites div{margin-top:2px}
+  .note{font-size:12.5px;color:var(--ink-2);padding:8px 0;border-top:1px solid var(--line)}
+  .note .k{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted);
+    text-transform:uppercase;margin-right:6px}
+  .anon{font-size:12.5px;color:var(--ink-2);margin-top:6px}
+  .anon .size{font-weight:700;color:var(--ink);font-family:ui-monospace,Menlo,monospace}
+  .err{color:var(--critical);font-size:12.5px;white-space:pre-wrap;
+    font-family:ui-monospace,Menlo,monospace}
+  .envrow{display:flex;justify-content:space-between;gap:10px;font-size:12px;
+    padding:3px 0;color:var(--ink-2)}
+  .envrow .st{font-family:ui-monospace,Menlo,monospace;font-size:11px}
+  .ok{color:var(--good)} .miss{color:var(--critical)} .warn{color:var(--serious)}
+  footer{padding:10px 22px 26px;color:var(--muted);font-size:11.5px}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>HYDRA <span>— what does this leak</span></h1>
+  <div class="sub">Every cell is computed from the pool source and cited. Nothing here claims a
+    transaction is private: the only values are what a party <em>learns</em>, and
+    <strong>UNKNOWN</strong> where it cannot be established.</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Transaction</h2>
+    <div class="row">
+      <select id="ex"><option value="">example…</option></select>
+      <button id="run">Compute disclosure</button>
+    </div>
+    <textarea id="tx" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="fmt">Format</button>
+    </div>
+    <h2 style="margin-top:18px">Environment</h2>
+    <div id="env" style="color:var(--muted);font-size:12px">checking…</div>
+  </section>
+
+  <section class="card">
+    <h2>Disclosure set</h2>
+    <div class="legend" id="legend"></div>
+    <div id="out" style="color:var(--muted);font-size:12.5px">
+      Pick an example or paste a transaction, then compute.
+    </div>
+  </section>
+</main>
+
+<footer>
+  Local only — the report is computed in the server process and nothing is sent anywhere.
+  Click any cell for the mechanism and its citations.
+</footer>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const ICON = { CLEAR:"●", DECRYPTABLE:"◐", UNKNOWN:"?", NOT_DISCLOSED_BY_THIS_TX:"○", "N/A":"–" };
+const SHORT = { CLEAR:"clear", DECRYPTABLE:"decryptable", UNKNOWN:"unknown",
+                NOT_DISCLOSED_BY_THIS_TX:"not by this tx", "N/A":"n/a" };
+const cls = (v) => "v-" + (v === "N/A" ? "NA" : v);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+// Legend is always present: identity is never carried by color alone.
+const SWATCH = {
+  CLEAR: "background:var(--critical)",
+  DECRYPTABLE: "background:var(--serious)",
+  UNKNOWN: "background:var(--warning)",
+  NOT_DISCLOSED_BY_THIS_TX: "border:1px solid var(--line)",
+  "N/A": "border:1px dashed var(--line)",
+};
+$("#legend").innerHTML = Object.keys(ICON).map((v) =>
+  `<span><i style="${SWATCH[v]}"></i>${ICON[v]} ${SHORT[v]}</span>`
+).join("") +
+  `<span style="color:var(--muted)">colour marks what a party learns</span>`;
+
+let examples = {};
+const exSel = $("#ex");
+
+fetch("/api/examples").then(r => r.json()).then(d => {
+  examples = d;
+  for (const k of Object.keys(d)) exSel.add(new Option(k, k));
+  const first = Object.keys(d)[0];
+  if (first) { exSel.value = first; load(first); }
+});
+
+fetch("/api/env").then(r => r.json()).then(d => {
+  if (!d.available) { $("#env").textContent = "doctor unavailable — the report does not need it"; return; }
+  $("#env").innerHTML = d.rows.map(r => {
+    const k = r.status.trim() === "ok" ? "ok" : r.status.trim() === "WARN" ? "warn" : "miss";
+    return `<div class="envrow"><span>${esc(r.name)}</span><span class="st ${k}">${esc(r.status.trim())} ${esc(r.got)}</span></div>`;
+  }).join("");
+});
+
+function load(name) {
+  const ex = { ...examples[name] };
+  delete ex._comment;
+  $("#tx").value = JSON.stringify(ex, null, 2);
+}
+exSel.onchange = () => exSel.value && load(exSel.value);
+$("#fmt").onclick = () => {
+  try { $("#tx").value = JSON.stringify(JSON.parse($("#tx").value), null, 2); } catch {}
+};
+
+$("#run").onclick = async () => {
+  let tx;
+  try { tx = JSON.parse($("#tx").value); }
+  catch (e) { $("#out").innerHTML = `<div class="err">Invalid JSON: ${esc(e.message)}</div>`; return; }
+  const res = await fetch("/api/leak", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(tx),
+  });
+  const rep = await res.json();
+  if (rep.error) { $("#out").innerHTML = `<div class="err">${esc(rep.error)}</div>`; return; }
+  render(rep);
+};
+
+function render(rep) {
+  const partyLabel = Object.fromEntries(rep.parties);
+  let h = "";
+
+  h += `<div class="why"><b>Config</b> — network <code>${esc(rep.config.network)}</code>,
+        discovery <code>${esc(rep.config.discovery)}</code>,
+        proving <code>${esc(rep.config.proving)}</code>.
+        Upstream <code>${esc(rep.upstreamCommit.slice(0,12))}</code></div>`;
+
+  for (const d of rep.disclosures) {
+    const a = d.action;
+    h += `<div class="action-h">action ${d.index}: ${esc(a.type)}` +
+         (a.token ? ` · token=${esc(a.token)}` : "") +
+         (a.amount ? ` · amount=${esc(a.amount)}` : "") + `</div>`;
+    h += `<table><thead><tr><th></th>` +
+         rep.fields.map(f => `<th>${esc(f)}</th>`).join("") + `</tr></thead><tbody>`;
+    for (const [pid, plabel] of rep.parties) {
+      h += `<tr><td class="party">${esc(plabel)}</td>`;
+      for (const f of rep.fields) {
+        const c = d.byParty[pid]?.[f];
+        if (!c) { h += `<td></td>`; continue; }
+        const v = c.disclosure;
+        h += `<td><button class="cell ${cls(v)}" data-a="${d.index}" data-p="${esc(pid)}" data-f="${esc(f)}"
+              title="click for the mechanism"><span class="ic">${ICON[v] ?? "?"}</span>${SHORT[v] ?? esc(v)}</button></td>`;
+      }
+      h += `</tr>`;
+    }
+    h += `</tbody></table><div id="why-${d.index}"></div>`;
+  }
+
+  for (const s of rep.anonymitySets) {
+    h += `<div class="anon"><b>Anonymity set</b> — ${esc(s.question)}
+          <span class="size">${esc(s.size)}</span><br>${esc(s.basis)}</div>`;
+  }
+  for (const n of rep.notes) h += `<div class="note"><span class="k">${esc(n.kind)}</span>${esc(n.text)}</div>`;
+  for (const p of rep.problems) h += `<div class="note"><span class="k" style="color:var(--critical)">problem</span>${esc(p)}</div>`;
+
+  $("#out").innerHTML = h;
+
+  $("#out").querySelectorAll(".cell").forEach(btn => {
+    btn.onclick = () => {
+      const { a, p, f } = btn.dataset;
+      const c = rep.disclosures[a].byParty[p][f];
+      $(`#why-${a}`).innerHTML =
+        `<div class="why"><b>${esc(partyLabel[p])} — ${esc(f)}: ${esc(c.disclosure)}</b><br>${esc(c.why)}
+         <div class="cites">${c.cites.map(x => `<div>${esc(x)}</div>`).join("")}</div></div>`;
+    };
+  });
+}
+</script>
+</body>
+</html>

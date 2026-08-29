@@ -1,0 +1,9 @@
+{
+  "name": "@hydra/gui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local surface for the leak report — see what a transaction discloses before signing",
+  "bin": { "hydra-gui": "./src/server.mjs" },
+  "scripts": { "start": "node src/server.mjs" }
+}
