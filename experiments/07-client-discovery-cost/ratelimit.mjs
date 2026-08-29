@@ -16,7 +16,26 @@ import {
   compute_nullifier,
 } from "@starkware-libs/starknet-privacy-sdk/testing";
 import { Channel } from "@starkware-libs/starknet-privacy-sdk";
-import { derivePublicKey } from "../../../.upstream/sdk/dist/utils/crypto.js";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+// Resolve the upstream clone the way packages/cli/src/doctor.mjs upstreamPath() does:
+// HYDRA_UPSTREAM wins, then the in-repo layout, then the sibling layout. Script-relative,
+// so this runs from any cwd.
+const HERE = fileURLToPath(new URL(".", import.meta.url));
+const REPO_ROOT = join(HERE, "..", "..");
+const UPSTREAM =
+  process.env.HYDRA_UPSTREAM ??
+  [join(REPO_ROOT, ".upstream"), join(REPO_ROOT, "..", ".upstream")].find((c) =>
+    existsSync(join(c, "Scarb.toml"))
+  ) ??
+  join(REPO_ROOT, ".upstream");
+
+// Not reachable from any public subpath — see findings/07 "Import surface".
+const { derivePublicKey } = await import(
+  pathToFileURL(join(UPSTREAM, "sdk/dist/utils/crypto.js")).href
+);
 
 const DELAY_MS = 20;
 const SENDERS = 12, TOKENS = 10, NOTES = 16; // upstream's own 1,920-note figure
@@ -93,5 +112,5 @@ for (const c of [null, 128, 64, 32, 16, 8, 4]) {
 }
 console.log("\nrounds = (elapsed - compute)/DELAY_MS ~ sequential RPC depth. Projection assumes 50ms RTT");
 console.log("and ignores client compute, which is listed separately.\n");
-await import("node:fs").then((fs) => fs.writeFileSync("results-ratelimit.json", JSON.stringify(results, null, 2)));
+await import("node:fs").then((fs) => fs.writeFileSync(join(HERE, "results-ratelimit.json"), JSON.stringify(results, null, 2)));
 console.log("wrote results-ratelimit.json");

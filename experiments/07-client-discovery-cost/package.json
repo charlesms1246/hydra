@@ -5,6 +5,6 @@
   "description": "Phase B1 — RPC cost curve for ContractDiscoveryProvider on Mocknet",
   "scripts": { "sweep": "node sweep.mjs" },
   "dependencies": {
-    "@starkware-libs/starknet-privacy-sdk": "file:../../../.upstream/sdk"
+    "@starkware-libs/starknet-privacy-sdk": "file:../../.upstream/sdk"
   }
 }
