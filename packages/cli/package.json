@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "description": "One command to a working local STRK20 privacy stack",
-  "bin": { "hydra": "./src/cli.mjs" },
-  "dependencies": {
-    "@starkware-libs/starknet-privacy-sdk": "file:../../../.upstream/sdk"
+  "bin": {
+    "hydra": "./src/cli.mjs"
   }
 }

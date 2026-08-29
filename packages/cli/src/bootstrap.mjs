@@ -15,7 +15,10 @@ import { fileURLToPath } from "node:url";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 /** Packages with real dependencies, in the order a user is likely to need them. */
-export const NEEDS_INSTALL = ["tui", "cli", "linter", "mcp"];
+// cli has no dependencies: it reaches the SDK through the resolved upstream
+// path, not a package import. It used to declare a file: dep it never used,
+// which left a broken symlink in every fresh clone.
+export const NEEDS_INSTALL = ["tui", "linter", "mcp"];
 
 export function missingDeps() {
   return NEEDS_INSTALL.filter((name) => {
