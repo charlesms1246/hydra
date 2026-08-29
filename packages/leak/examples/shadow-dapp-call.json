@@ -1,0 +1,17 @@
+{
+  "_comment": "Flow 3 — a dapp call through a shadow account. Amount and token are left undeclared on purpose: they live in calldata this tool does not parse, so they must come back UNKNOWN.",
+  "config": {
+    "network": "sepolia",
+    "discovery": "indexer-self-hosted",
+    "ohttp": true,
+    "proving": "service-hosted"
+  },
+  "actions": [
+    {
+      "type": "invoke",
+      "via": "shadow-account",
+      "dapp": "ekubo",
+      "contract": "0x0abc...anonymizer"
+    }
+  ]
+}

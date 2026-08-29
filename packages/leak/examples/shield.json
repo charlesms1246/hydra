@@ -1,0 +1,12 @@
+{
+  "_comment": "Flow 1 — shield: register and deposit into the mainnet pool, on the SDK's documented happy path (discoveryProvider: { url }, hosted prover).",
+  "config": {
+    "network": "mainnet",
+    "discovery": "indexer-hosted",
+    "proving": "service-hosted"
+  },
+  "actions": [
+    { "type": "register" },
+    { "type": "deposit", "token": "STRK", "amount": "1000" }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": "Flow 2 — private transfer to an existing counterparty, configured the way HYDRA recommends: client-side discovery, self-hosted prover.",
+  "config": {
+    "network": "mainnet",
+    "discovery": "client",
+    "proving": "service-self-hosted"
+  },
+  "actions": [
+    {
+      "type": "transfer",
+      "token": "STRK",
+      "amount": "25",
+      "counterparty": "0x02b1c...recipient",
+      "opensChannel": false
+    }
+  ]
+}
