@@ -3,6 +3,5 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Every hydra operation, as plain functions returning plain data. The CLI, the agent surface and the TUI are all views over this.",
-  "dependencies": { "starknet": "10.5.0" }
+  "description": "Every hydra operation, as plain functions returning plain data. The CLI, the agent surface and the TUI are all views over this."
 }

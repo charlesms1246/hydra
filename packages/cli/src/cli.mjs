@@ -22,6 +22,7 @@ function usage() {
 
   Interactive
     hydra                     open the TUI
+    hydra bootstrap           install node dependencies (run this first)
     hydra up                  start devnet + pool + local discovery service
     hydra down                stop a running stack
     hydra init dapp           scaffold the STRK20 starter kit against this stack
@@ -40,6 +41,15 @@ ${Object.entries(COMMANDS).map(([n, c]) => `    ${pad("hydra " + n)}  ${c.help}`
 }
 
 if (cmd === undefined || cmd === "tui") {
+  // A fresh clone has no node_modules. Say so plainly instead of printing a
+  // module-resolution stack trace at someone who just cloned the repo.
+  const { missingDeps } = await import("./bootstrap.mjs");
+  const missing = missingDeps();
+  if (missing.length) {
+    console.error(`\n  dependencies not installed: ${missing.map((m) => "packages/" + m).join(", ")}`);
+    console.error("  run:  hydra bootstrap\n");
+    process.exit(1);
+  }
   const { start } = await import("../../tui/src/app.mjs");
   await start();
 } else if (cmd === "help" || cmd === "--help" || cmd === "-h") {
@@ -51,6 +61,9 @@ if (cmd === undefined || cmd === "tui") {
   }
   const { up } = await import("./up.mjs");
   await up();
+} else if (cmd === "bootstrap") {
+  const { bootstrap } = await import("./bootstrap.mjs");
+  process.exit(bootstrap(args.filter((a) => !a.startsWith("--"))) ? 0 : 1);
 } else if (cmd === "down") {
   const { stopStack } = await import("../../core/src/stack.mjs");
   const r = await stopStack();

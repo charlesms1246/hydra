@@ -6,7 +6,8 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PINS, NODE_MIN_MAJOR, INSTALL_HINTS, ARTIFACTS, BUILD_HINTS, UPSTREAM_SHA, UPSTREAM_REPO, GOTCHAS } from "./pins.mjs";
 
 const OK = "ok  ";
@@ -22,8 +23,20 @@ function version(cmd, match) {
   }
 }
 
+const HERE = dirname(fileURLToPath(import.meta.url));   // packages/cli/src
+const REPO_ROOT = join(HERE, "..", "..", "..");
+
+/**
+ * Where the starknet-privacy checkout lives.
+ *
+ * This used to be cwd-relative and only resolved correctly when run from
+ * packages/cli — from the repo root it produced "/private/.upstream". Resolve
+ * from the module instead, and try both the in-repo and sibling layouts.
+ */
 export function upstreamPath() {
-  return process.env.HYDRA_UPSTREAM ?? join(process.cwd(), "..", "..", "..", ".upstream");
+  if (process.env.HYDRA_UPSTREAM) return process.env.HYDRA_UPSTREAM;
+  const candidates = [join(REPO_ROOT, ".upstream"), join(REPO_ROOT, "..", ".upstream")];
+  return candidates.find((c) => existsSync(join(c, "Scarb.toml"))) ?? candidates[0];
 }
 
 export function check() {

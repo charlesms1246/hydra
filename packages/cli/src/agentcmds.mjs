@@ -103,8 +103,22 @@ export const COMMANDS = {
   doctor: {
     help: "toolchain and build artifacts",
     run: async () => ({ rows: check() }),
-    render: (d) => d.rows.map((r) =>
-      `  [${r.status}] ${r.name.padEnd(24)} want ${String(r.want).padEnd(14)} got ${r.got}`).join("\n"),
+    // Shows the fix, not just the fault. An earlier version printed only the
+    // rows, which on a machine missing everything told a newcomer what was wrong
+    // and nothing about what to do — the moment the tool is most needed.
+    render: (d) => {
+      const L = d.rows.map((r) =>
+        `  [${r.status}] ${r.name.padEnd(24)} want ${String(r.want).padEnd(14)} got ${r.got}`);
+      const broken = d.rows.filter((r) => r.status.trim() !== "ok");
+      if (broken.length) {
+        L.push("", "  to fix:");
+        for (const r of broken) {
+          L.push(`    ${r.name}`);
+          for (const line of String(r.hint ?? "no automatic fix").split("\n")) L.push(`      ${line.trim()}`);
+        }
+      }
+      return L.join("\n");
+    },
   },
 };
 
