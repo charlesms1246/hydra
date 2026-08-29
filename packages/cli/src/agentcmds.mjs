@@ -10,9 +10,39 @@ import { status, agentStatus } from "../../core/src/services.mjs";
 import { wallets, faucet } from "../../core/src/wallets.mjs";
 import { latestBlocks, txStatus } from "../../core/src/chain.mjs";
 import { readState } from "../../core/src/state.mjs";
+import { whatDoesThisLeak } from "../../leak/src/leak.mjs";
 import { check } from "./doctor.mjs";
 
 const dot = (up) => (up ? "●" : "○");
+
+/**
+ * The configuration `hydra up` actually runs, declared honestly. It lives here,
+ * not in the TUI, because `hydra leak --json` and the TUI's disclosure matrix
+ * must describe the same machine — one definition is the only way they cannot
+ * drift, and the CLI is the layer the TUI already imports.
+ *
+ * `network` is deliberately OMITTED rather than set to "sepolia". A devnet is
+ * neither mainnet nor sepolia, and declaring sepolia made the report print the
+ * live Sepolia auditor key (packages/leak/src/facts.mjs:105) as the key in force
+ * for a pool the user controls. Omitted, leak.mjs emits no key and adds a
+ * kind:"unknown" note saying the auditor key in force is UNKNOWN.
+ *
+ * `discovery` is "indexer-self-hosted" because packages/cli/src/control.mjs:36
+ * constructs `new IndexerDiscoveryProvider(indexerUrl, poolAddress)` — two
+ * arguments, so OHTTP is off — against the indexer `hydra up` started.
+ */
+export function leakConfig(s) {
+  return { discovery: "indexer-self-hosted", proving: s?.prover?.mode ?? "mock" };
+}
+
+/** The declared action shapes `hydra leak` reports on. */
+const LEAK_ACTIONS = {
+  register: { type: "register" },
+  deposit: { type: "deposit", token: "STRK", amount: "100" },
+  transfer: { type: "transfer", token: "STRK", amount: "50", counterparty: "bob", opensChannel: false },
+  withdraw: { type: "withdraw", token: "STRK", amount: "50" },
+  invoke: { type: "invoke", via: "shadow-account", dapp: "ekubo" },
+};
 
 export const COMMANDS = {
   status: {
@@ -98,6 +128,45 @@ export const COMMANDS = {
     render: (t) => !t.available ? `  ${t.reason}` : !t.found ? `  not found: ${t.error ?? ""}` :
       `  ${t.hash.slice(0, 22)}…\n  finality ${t.finality}   execution ${t.execution}   block ${t.blockNumber}` +
       (t.revertReason ? `\n  reverted: ${t.revertReason}` : ""),
+  },
+
+  /**
+   * The disclosure matrix, which is the TUI's home screen, as a command. Same
+   * leakConfig(), same whatDoesThisLeak() — the pane and this share one code
+   * path, so they cannot report different things about the same machine.
+   *
+   * The report describes the DECLARED action shape, not a receipt: the action is
+   * a literal from LEAK_ACTIONS above, and nothing here reads a transaction back
+   * off chain to check it.
+   */
+  leak: {
+    help: `what an action discloses — hydra leak [${Object.keys(LEAK_ACTIONS).join("|")}]`,
+    run: async (args) => {
+      const which = args.find((a) => !a.startsWith("-")) ?? "transfer";
+      const action = LEAK_ACTIONS[which];
+      if (!action) return { error: `unknown action: ${which} — one of ${Object.keys(LEAK_ACTIONS).join(", ")}` };
+      return whatDoesThisLeak({ config: leakConfig(await status().catch(() => null)), actions: [action] });
+    },
+    render: (r) => {
+      if (r.error) return `  ${r.error}`;
+      const cell = (w) => String(w).padEnd(26);
+      const L = [
+        `  ${r.disclosures[0].action.type} · discovery ${r.config.discovery} · proving ${r.config.proving}` +
+        ` · network ${r.config.network ?? "UNKNOWN"} · upstream ${r.upstreamCommit.slice(0, 8)}`,
+        "",
+        `  ${"".padEnd(28)}${r.fields.map(cell).join("")}`,
+      ];
+      for (const [id, label] of r.parties) {
+        L.push(`  ${label.padEnd(28)}${r.fields.map((f) => cell(r.disclosures[0].byParty[id][f].disclosure)).join("")}`);
+      }
+      // The same gloss the TUI's legend carries, and for the same reason: an
+      // unglossed NOT_DISCLOSED_BY_THIS_TX reads as "private".
+      L.push("", "  NOT_DISCLOSED_BY_THIS_TX is NOT a claim of privacy, and UNKNOWN is never a pass" +
+        " — packages/leak/src/facts.mjs:25-33");
+      for (const n of r.notes ?? []) L.push(`  ${n.kind.padEnd(9)} ${n.text}`);
+      L.push("", "  --json carries every cell's `why` and its file:line citations.");
+      return L.join("\n");
+    },
   },
 
   doctor: {

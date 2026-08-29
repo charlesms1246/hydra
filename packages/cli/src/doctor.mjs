@@ -14,6 +14,39 @@ const OK = "ok  ";
 const BAD = "MISS";
 const WARN = "WARN";
 
+/**
+ * Does an unbound IPv4 loopback port refuse, or blackhole?
+ *
+ * WSL2 with `networkingMode=mirrored` in `.wslconfig` shares the Windows network
+ * namespace, and a connect to a *closed* 127.0.0.1 port is dropped rather than reset —
+ * it times out after ~135s instead of returning ECONNREFUSED in a millisecond. (`::1`
+ * still refuses correctly, which is why this looks fine until something probes IPv4.)
+ *
+ * That breaks `hydra up` before devnet is ever spawned. `starknet-devnet`'s npm wrapper
+ * picks a port with `isFreePort()`, which connects and accepts a port as free ONLY on
+ * ECONNREFUSED — every other error is rethrown (`node_modules/starknet-devnet/dist/util.js`).
+ * So `up` dies with `connect ETIMEDOUT 127.0.0.1:6050` and no devnet in sight. 6050 is
+ * exactly the port the wrapper tries first (DEFAULT_DEVNET_PORT 5050 + its 1000 step).
+ *
+ * Probed in a child process so a 135s blackhole cannot hang `doctor` itself.
+ */
+function loopbackProbe() {
+  const probe =
+    'const s=require("net").createConnection({port:6050,host:"127.0.0.1"});' +
+    's.setTimeout(1200,()=>{s.destroy();process.stdout.write("blackholed")});' +
+    's.once("connect",()=>{s.end();process.stdout.write("in use")});' +
+    's.once("error",(e)=>{s.destroy();process.stdout.write(e.code)});';
+  try {
+    return execFileSync(process.execPath, ["-e", probe], {
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 function version(cmd, match) {
   try {
     const out = execFileSync(cmd[0], cmd.slice(1), { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
@@ -67,6 +100,26 @@ export function check() {
       cwd: null,
     });
   }
+
+  // Not a version pin, but it stops `hydra up` dead, and the failure it produces
+  // (ETIMEDOUT on a port nothing is using) points nowhere near the cause.
+  const loopback = loopbackProbe();
+  rows.push({
+    status: loopback === "ECONNREFUSED" || loopback === "in use" ? OK : BAD,
+    name: "loopback refuses",
+    want: "ECONNREFUSED",
+    got: loopback,
+    hint:
+      "An unbound 127.0.0.1 port is being blackholed instead of refused. On WSL2 this is\n" +
+      "       `networkingMode=mirrored` in %USERPROFILE%\\.wslconfig. starknet-devnet's npm\n" +
+      "       wrapper reads anything but ECONNREFUSED as fatal, so `hydra up` fails with\n" +
+      "       `connect ETIMEDOUT 127.0.0.1:6050` before devnet starts. Either set\n" +
+      "       networkingMode=NAT and run `wsl --shutdown` (this changes how the whole WSL\n" +
+      "       instance reaches Windows services — do not do it casually), or run the stack\n" +
+      "       somewhere that is not mirrored-mode WSL.",
+    // Editing the user's .wslconfig and restarting WSL is not this tool's call to make.
+    cmd: null,
+  });
 
   const hasUpstream = existsSync(join(up, "Scarb.toml"));
   rows.push({

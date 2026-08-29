@@ -97,4 +97,9 @@ export const GOTCHAS = [
     "`pgrep -f discovery-service` and kill strays before re-running.",
   "universal-sierra-compiler is required but is not in upstream .tool-versions. " +
     "snfoundryup installs it.",
+  "WSL2 in networkingMode=mirrored blackholes connections to unbound 127.0.0.1 ports " +
+    "instead of refusing them (::1 still refuses, so it looks fine until something probes " +
+    "IPv4). starknet-devnet's npm wrapper treats anything but ECONNREFUSED as fatal while " +
+    "picking a port, so `hydra up` dies with `connect ETIMEDOUT 127.0.0.1:6050` after ~135s " +
+    "and never spawns devnet. The `loopback refuses` doctor row detects this.",
 ];
