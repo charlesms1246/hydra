@@ -1,10 +1,13 @@
 /**
  * I1 — no derivation path between pool keys and vault keys.
  *
- * `HYDRA_HANDOFF.md` I1: the pool encrypts the user's private viewing key to an auditor
- * key read from contract storage — mandatory, no opt-out, no substitution, write-once,
- * no rotation (`.upstream/packages/privacy/src/privacy.cairo:329-336`). Anyone holding
- * that key decrypts every note, derives every channel key and reads the social graph.
+ * `claude-docs/HYDRA_HANDOFF.md` I1: the pool encrypts the user's private viewing key to an auditor
+ * key read from contract storage — mandatory, no opt-out, no substitution, and write-once
+ * on the user's side (`.upstream/packages/privacy/src/privacy.cairo:331-350`). The
+ * auditor key itself IS rotatable by the security governor (`privacy.cairo:1151-1154`),
+ * which only widens the audience — see `claude-docs/decisions/0001-key-domains.md`. Anyone
+ * holding any generation of that key decrypts every note, derives every channel key and
+ * reads the social graph.
  * So the pool cannot be a confidentiality boundary, and vault content keys must live in
  * a derivation domain with no path to or from the pool viewing key **in either
  * direction**.
@@ -21,7 +24,7 @@
  *   4. exactly one function mints a seed and exactly one reads raw bytes, so the
  *      audit surface is two functions rather than a package.
  *
- * The residual risk it does NOT cover is named in `platform/decisions/0001-key-domains.md`:
+ * The residual risk it does NOT cover is named in `claude-docs/decisions/0001-key-domains.md`:
  * a shared *upstream* seed. If one wallet signature or passphrase ever feeds both the
  * SDK's viewing-key derivation and `rootSeed`, every assertion below still passes and
  * I1 is still broken. That is why nothing here derives a pool key.

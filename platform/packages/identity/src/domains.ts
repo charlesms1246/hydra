@@ -2,10 +2,20 @@
  * Key domains — the whole of invariant I1, in one file.
  *
  * The pool escrows the user's private viewing key to an auditor key held in contract
- * storage, at registration, with no opt-out and no rotation
- * (`.upstream/packages/privacy/src/privacy.cairo:329-336`). So the pool is not a
+ * storage, at registration, with no opt-out
+ * (`.upstream/packages/privacy/src/privacy.cairo:331-350`). So the pool is not a
  * confidentiality boundary, and vault content keys must have no derivation path to or
  * from the pool viewing key in either direction.
+ *
+ * An earlier draft of this header said "no rotation", which is half wrong in the
+ * direction that matters. What cannot change is the USER's side: `public_key` and
+ * `enc_private_key` are written with `to_write_once_action` and re-registration reverts
+ * (`privacy.cairo:315-317`, `:336-350`). The AUDITOR key is rotatable by the security
+ * governor (`privacy.cairo:1151-1154` calling `:1196-1204`). Rotation writes one storage
+ * slot and touches no user record — and since `enc_private_key` is write-once it could
+ * not re-encrypt them even if it tried — so every key escrowed before a rotation stays
+ * readable by whoever held the old auditor key, forever. The escrow audience only ever
+ * grows.
  *
  * Four types carry that, and the separation lives in the TYPES rather than in a
  * convention, because a convention is something you remember and a type is something
@@ -32,7 +42,7 @@
  * (`.upstream/client/src/viewing-key.ts:51-58`, a passphrase salted with the account
  * address). `adoptPoolKey` tags what the SDK produces on the way in. If that passphrase
  * ever also seeds `rootSeed`, every check in this file still passes and I1 is still
- * broken — see `platform/decisions/0001-key-domains.md`.
+ * broken — see `claude-docs/decisions/0001-key-domains.md`.
  */
 
 import { hkdfSync, randomBytes } from "node:crypto";
@@ -133,9 +143,11 @@ export function expose<D extends Domain>(secret: Secret<D>, domain: D): Uint8Arr
  *
  * This value is ESCROWED. At registration the pool encrypts it to the auditor key and
  * writes it through `to_write_once_action`, so it is readable by a party the user did
- * not choose and cannot replace. It must never seed anything, and the type is what
- * enforces that: a `Secret` is not `Entropy`, its bytes are not a `Uint8Array`, and
- * there is no function that converts either.
+ * not choose, and the user can neither replace it nor re-register
+ * (`privacy.cairo:315-317`). Rotating the auditor key does not help either — see the
+ * header. It must never seed anything, and the type is what enforces that: a `Secret` is
+ * not `Entropy`, its bytes are not a `Uint8Array`, and there is no function that
+ * converts either.
  */
 export function adoptPoolKey(scalar: bigint): Secret<typeof POOL_DOMAIN> {
   const bytes = new Uint8Array(32);
