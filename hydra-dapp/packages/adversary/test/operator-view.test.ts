@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 
 import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT, DEFAULT_TTL_MS } from "../../vault-server/src/server.ts";
 import { serve, MAX_BODY } from "../../vault-server/src/http.ts";
+import { RateLimiter } from "../../vault-server/src/ratelimit.ts";
 import { mkdtemp, rm, stat, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -122,6 +123,11 @@ test("everything the table claims is observable actually is", async () => {
     const blob = sealForChannel(channelSecret(vaultRoot, "on-disk"), new TextEncoder().encode("x"));
     onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "d1", pin: true });
     for (const k of onDisk.observedKeys()) observed.add(k);
+    // And the limiter mode that produces `rate.peerBucket`, for the same reason.
+    const peered = new Vault({ buckets: BUCKETS });
+    const p = await serve(peered, 0, { rateLimit: { mode: "per-peer", perMinute: 10 } });
+    p.server.close();
+    for (const k of peered.observedKeys()) observed.add(k);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -470,4 +476,95 @@ test("expiry removes the file, not just the entry", async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Rate limiting, which buys availability with a little linkability
+// ---------------------------------------------------------------------------
+
+test("the default limiter keeps nothing that distinguishes one client from another", () => {
+  // `global` is the default for exactly this reason. It is worse at its job — one client can
+  // degrade the service for everyone — and it is the only mode that keeps no per-client state.
+  const limiter = new RateLimiter();
+  assert.equal(limiter.mode, "global");
+  assert.equal(limiter.keyedByPeer, false);
+  for (const peer of ["1.1.1.1", "2.2.2.2", "3.3.3.3"]) limiter.allow(peer);
+  assert.deepEqual(limiter.observe().keys, ["*"], "the global mode kept a per-client key");
+});
+
+test("per-peer limiting adds its row, and the row is honest about what it means", () => {
+  // The disclosure this mode costs. Requests from one address share a key for the window, so
+  // they are linkable to each other — which is a smaller claim than "we know who you are" and
+  // a larger one than the `uploader.identity` row would otherwise suggest.
+  let clock = 0;
+  const limiter = new RateLimiter({ mode: "per-peer", perMinute: 3 }, () => clock);
+  for (let i = 0; i < 3; i++) assert.equal(limiter.allow("9.9.9.9"), true);
+  assert.equal(limiter.allow("9.9.9.9"), false, "the limit did not bite");
+  assert.equal(limiter.allow("8.8.8.8"), true, "one client's limit hit another");
+
+  const keys = limiter.observe().keys;
+  assert.equal(keys.length, 2);
+  for (const k of keys) {
+    assert.match(k, /^[0-9a-f]{16}$/, "the key is not a truncated hash");
+    assert.ok(!k.includes("9.9.9.9") && !k.includes("8.8.8.8"), "an address was stored verbatim");
+  }
+});
+
+test("the salt is per process, so the key is not a durable pseudonym", () => {
+  // A stable salt would make this token identify an address across restarts, and a restart
+  // would stop clearing it. The cost is that a restart also resets everyone's quota.
+  const a = new RateLimiter({ mode: "per-peer", perMinute: 5 });
+  const b = new RateLimiter({ mode: "per-peer", perMinute: 5 });
+  a.allow("7.7.7.7");
+  b.allow("7.7.7.7");
+  assert.notDeepEqual(a.observe().keys, b.observe().keys,
+    "two processes derived the same key for one address");
+});
+
+test("the window decays rather than accumulating", () => {
+  // Fixed window, not sliding: a sliding window has to remember individual request timestamps
+  // and a fixed one remembers a count. Fewer bytes about a client is the point.
+  let clock = 0;
+  const limiter = new RateLimiter({ mode: "per-peer", perMinute: 2 }, () => clock);
+  limiter.allow("5.5.5.5");
+  limiter.allow("5.5.5.5");
+  assert.equal(limiter.allow("5.5.5.5"), false);
+  clock += 60_001;
+  assert.equal(limiter.allow("5.5.5.5"), true, "the window did not reset");
+  // And last window's entries are swept, not archived.
+  clock += 60_001;
+  limiter.allow("4.4.4.4");
+  assert.equal(limiter.observe().keys.length, 1, "a stale window was retained");
+});
+
+test("a rate-limited request is refused without describing the limiter", async () => {
+  const vault = new Vault({ buckets: BUCKETS });
+  const { url, server, limiter } = await serve(vault, 0, { rateLimit: { mode: "global", perMinute: 2 } });
+  try {
+    const hit = () => fetch(`${url}${PUBLIC_ENDPOINT}/pub:x`, { method: "POST", body: "[]" });
+    assert.equal((await hit()).status, 200);
+    assert.equal((await hit()).status, 200);
+    const refused = await hit();
+    assert.equal(refused.status, 429);
+    // No Retry-After: it would tell a caller the shape of the bucket, and a client being
+    // refused can back off without being handed the configuration.
+    assert.equal(refused.headers.get("retry-after"), null);
+    assert.equal(limiter.mode, "global");
+  } finally {
+    server.close();
+  }
+});
+
+test("a per-peer server reports the row; a global one does not", async () => {
+  const global = new Vault({ buckets: BUCKETS });
+  const g = await serve(global, 0, { rateLimit: { mode: "global", perMinute: 100 } });
+  g.server.close();
+  assert.ok(!global.observedKeys().includes("rate.peerBucket"),
+    "the global mode claimed a per-client bucket it does not keep");
+
+  const peered = new Vault({ buckets: BUCKETS });
+  const p = await serve(peered, 0, { rateLimit: { mode: "per-peer", perMinute: 100 } });
+  p.server.close();
+  assert.ok(peered.observedKeys().includes("rate.peerBucket"),
+    "the per-peer mode did not disclose its bucket");
 });

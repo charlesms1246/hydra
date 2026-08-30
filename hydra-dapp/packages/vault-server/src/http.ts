@@ -22,6 +22,8 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT } from "./server.ts";
+import { RateLimiter, DEFAULT_RATE_LIMIT } from "./ratelimit.ts";
+import type { RateLimitConfig } from "./ratelimit.ts";
 import type { Endpoint } from "./server.ts";
 
 /** Largest body accepted, in bytes: the largest size bucket plus a little framing. */
@@ -55,8 +57,13 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
 export function serve(
   vault: Vault,
   port = 0,
-  options: { observeTransport?: boolean } = {},
-): Promise<{ url: string; server: Server }> {
+  options: { observeTransport?: boolean; rateLimit?: RateLimitConfig } = {},
+): Promise<{ url: string; server: Server; limiter: RateLimiter }> {
+  // Defaults to `global`: a public service needs a limit, and the mode that needs no
+  // per-client state is the one to reach for first. `per-peer` is a decision with a row on
+  // the disclosure table, so it has to be asked for.
+  const limiter = new RateLimiter(options.rateLimit ?? DEFAULT_RATE_LIMIT);
+  vault.useRateLimiter(limiter);
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       // Off by default. Flipping it is one argument, which is exactly why the transport rows
@@ -67,6 +74,12 @@ export function serve(
           peer: req.socket.remoteAddress ?? "",
           headers: Object.keys(req.headers),
         });
+      }
+      if (!limiter.allow(req.socket.remoteAddress ?? "")) {
+        // No Retry-After: it would tell a caller how the limiter is configured, and a client
+        // that is being refused can back off without being told the shape of the bucket.
+        res.writeHead(429, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: "rate limited" }));
       }
       const send = (code: number, body: unknown) => {
         const payload = Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
@@ -121,7 +134,7 @@ export function serve(
     server.listen(port, "127.0.0.1", () => {
       const addr = server.address();
       const p = typeof addr === "object" && addr ? addr.port : port;
-      resolve({ url: `http://127.0.0.1:${p}`, server });
+      resolve({ url: `http://127.0.0.1:${p}`, server, limiter });
     });
   });
 }

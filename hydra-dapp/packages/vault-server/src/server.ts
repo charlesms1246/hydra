@@ -172,6 +172,16 @@ export class Vault {
     }
   }
 
+  #limiter: { keyedByPeer: boolean } | null = null;
+
+  /**
+   * Told about the transport's rate limiter, so the disclosure table can report what it keeps.
+   * The vault does not use it; it only has to be able to say that it exists.
+   */
+  useRateLimiter(limiter: { keyedByPeer: boolean }): void {
+    this.#limiter = limiter;
+  }
+
   /** True when this vault survives a restart. Reported, because it changes what leaks. */
   get persistent(): boolean {
     return this.#dir !== null;
@@ -312,6 +322,7 @@ export class Vault {
       seen.add("transport.timing");
     }
     if (Object.keys(o.totals).length) seen.add("store.totals");
+    if (this.#limiter?.keyedByPeer) seen.add("rate.peerBucket");
     if (this.#dir && o.rows.length) {
       seen.add("fs.timestamps");
       seen.add("fs.deletedResidue");

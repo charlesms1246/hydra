@@ -91,6 +91,11 @@ export const OBSERVABLE: readonly Observation[] = [
     why: "a socket has timing; a large upload on a slow link is visibly a large upload on a slow link",
   },
   {
+    id: "rate.peerBucket",
+    what: "a per-client request counter, when rate limiting is set to per-peer",
+    why: "limiting per client requires knowing which client. The key is a salted hash rather than an address and the salt is per process, but within a window requests from one source are linkable to each other — the `global` mode avoids this entirely at the cost of one client being able to degrade the service for all",
+  },
+  {
     id: "fs.timestamps",
     what: "the filesystem's own mtime and atime on every stored object, once the vault persists to disk",
     why: "the kernel writes them whatever this code stores; atime in particular records reads that the server itself never logged, so a persistent vault discloses more than an in-memory one",
