@@ -20,10 +20,14 @@
  *
  * The result this file records is not the comfortable one. Pointer construction closes the
  * value join completely and does **nothing** to the timing join — with uploads sent as the
- * chain event fires, the operator matches every pair at 100%. What closes it is jitter, which
- * `HYDRA_HANDOFF.md` parks in Phase 3 while claiming I3's acceptance in Phase 2. So the
- * acceptance clause is not satisfiable by the pointer alone, and this test says so by
- * asserting the undefended case succeeds rather than quietly testing only the defended one.
+ * chain event fires, the operator matches every pair at 100%. So I3's acceptance is not
+ * satisfiable by the pointer alone, and this test says so by asserting the undefended case
+ * succeeds rather than quietly testing only the defended one.
+ *
+ * The jitter sweep below is DETERMINISTIC and evenly spread, which makes it the best case
+ * rather than the real one. `i3-upload-schedule.test.ts` samples a real uniform source against
+ * the shipped scheduler and finds the accuracy asymptotic above chance — it never arrives.
+ * Read that file for the number to build against; read this one for the shape of the attack.
  */
 
 import { test } from "node:test";
@@ -173,18 +177,20 @@ test("jitter narrower than the block interval buys nothing", () => {
     "jitter below the block interval must be reported as useless, not as mitigation");
 });
 
-test("the jitter needed is about four block intervals, and that is the number Phase 3 needs", () => {
+test("evenly spread, four block intervals reaches chance — the best case, not the real one", () => {
   // Phase 3 says "upload jitter relative to the chain event" without saying how much, which
-  // is the kind of instruction that gets implemented as five seconds. This is the curve, on
-  // 30s blocks and 12 messages, where chance for a nearest-in-time matcher is 1/12:
+  // is the kind of instruction that gets implemented as five seconds. This is the curve for
+  // PERFECTLY spread jitter, on 30s blocks and 12 messages, where chance is 1/12. A real
+  // random source clusters and does worse — see i3-upload-schedule.test.ts, which measures
+  // 0.182 where this predicts 0.083:
   //
   //     jitter    0s  -> 12/12      jitter  120s  ->  1/12
   //     jitter    5s  -> 12/12      jitter  480s  ->  1/12
   //     jitter   30s  ->  6/12      jitter 1800s  ->  1/12
   //
   // Below the block interval it buys nothing at all. At exactly one interval it halves the
-  // operator's accuracy, which is not a defence. Four intervals reaches chance, and past that
-  // there is no further gain — so the cost of I3 is a couple of minutes of latency, not more.
+  // operator's accuracy, which is not a defence. The useful, robust half of this result is
+  // the lower end: no amount of sub-interval jitter matters. The upper end is optimistic.
   const block = 30_000;
   const curve = [0, 5_000, 30_000, 120_000, 480_000, 1_800_000].map((j) => {
     const { chain, uploads } = session(12, j, block);
@@ -192,8 +198,10 @@ test("the jitter needed is about four block intervals, and that is the number Ph
   });
   assert.deepEqual(curve.map(([, hits]) => hits), [12, 12, 6, 1, 1, 1],
     "the jitter/accuracy curve moved — re-derive the Phase 3 number before shipping");
-  // The claim in prose, asserted rather than left in the comment above.
-  const atChance = curve.find(([, hits]) => hits <= 1);
-  assert.ok(atChance && atChance[0] <= 4 * block,
-    "chance-level matching now needs more jitter than four block intervals");
+  // The robust half, asserted: sub-interval jitter is worth exactly nothing.
+  const subInterval = curve.filter(([j]) => j > 0 && j < block);
+  assert.ok(subInterval.length > 0);
+  for (const [j, hits] of subInterval) {
+    assert.equal(hits, 12, `jitter of ${j}ms is below the block interval and must buy nothing`);
+  }
 });
