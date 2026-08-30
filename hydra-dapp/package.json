@@ -1,0 +1,11 @@
+{
+  "name": "@hydra-platform/root",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hydra platform. Run `npm test` here; the Cairo is `cd contracts && snforge test`.",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --test packages/identity/test/*.test.ts packages/adversary/test/*.test.ts"
+  }
+}
