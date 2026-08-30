@@ -1,0 +1,8 @@
+{
+  "name": "@hydra-platform/vault-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 3 — blob classes. Invariant I5 lives here.",
+  "engines": { "node": ">=24" }
+}
