@@ -94,17 +94,76 @@ const KEY_BYTES = 32;
 /** Separates the domain from the label so no label can impersonate a domain suffix. */
 const SEP = "\u0000";
 
-/** Fresh entropy from the OS. */
-export const randomEntropy = (n = 32): Entropy => randomBytes(n) as unknown as Entropy;
+declare const externalBrand: unique symbol;
 
 /**
- * Entropy the caller is asserting came from outside — a wallet signature, a hardware
- * token, the OS. Deliberately verbose to write: every call site is somewhere a person
- * had to state where the material came from.
+ * Material that came from OUTSIDE this system.
+ *
+ * The point of the type is what it excludes. `entropyFrom` used to take a `Uint8Array` and a
+ * provenance string, which meant this compiled:
+ *
+ * ```ts
+ * rootSeed(entropyFrom(expose(sandboxSecret, SANDBOX_DOMAIN), "wallet"))
+ * ```
+ *
+ * — key material that had been through a browser, or the pool's escrowed viewing key, becoming
+ * the root of a real identity, with an honest-looking provenance string right there in the
+ * call. The string was documentation, and documentation does not stop anything.
+ *
+ * So entropy now arrives only through the adapters below. Each names a real source, and none
+ * of them accepts a value this system derived. `expose` returns a `Uint8Array`, and a
+ * `Uint8Array` is no longer enough.
  */
-export function entropyFrom(bytes: Uint8Array, provenance: string): Entropy {
+export type ExternalBytes = {
+  readonly [externalBrand]: true;
+  readonly bytes: Uint8Array;
+  readonly provenance: string;
+};
+
+const external = (bytes: Uint8Array, provenance: string): ExternalBytes => {
   if (bytes.length < 32) throw new Error(`${provenance}: entropy must be at least 32 bytes`);
-  return bytes as unknown as Entropy;
+  return { bytes: Uint8Array.from(bytes), provenance } as unknown as ExternalBytes;
+};
+
+/** The operating system's CSPRNG. */
+export const fromOsRandom = (n = 32): ExternalBytes => external(randomBytes(n), "os random");
+
+/**
+ * A wallet signature over a message this system chose.
+ *
+ * `message` is required and recorded because of the residual risk named in
+ * `claude-docs/decisions/0001-key-domains.md`: if one signature ever feeds both the SDK's
+ * viewing-key derivation and `rootSeed`, every domain check still passes and I1 is still
+ * broken. Naming the message at the call site is what makes "a different signature over a
+ * different message" reviewable rather than remembered.
+ */
+export const fromWalletSignature = (signature: Uint8Array, message: string): ExternalBytes =>
+  external(signature, `wallet signature over ${JSON.stringify(message)}`);
+
+/** A hardware token or smartcard. */
+export const fromHardwareToken = (bytes: Uint8Array, device: string): ExternalBytes =>
+  external(bytes, `hardware token ${device}`);
+
+/**
+ * A fixed vector, for tests.
+ *
+ * Exported deliberately rather than hidden behind a flag: tests need reproducible seeds, and
+ * the honest way to allow that is a source whose name makes it obvious in any call site that
+ * the material is not real. `grep -r fromTestVector src/` over non-test code should be empty.
+ */
+export const fromTestVector = (bytes: Uint8Array, label: string): ExternalBytes =>
+  external(bytes, `test vector ${label}`);
+
+/** Fresh entropy from the OS. */
+export const randomEntropy = (n = 32): Entropy => entropyFrom(fromOsRandom(n));
+
+/**
+ * Entropy, from a named external source and nothing else.
+ *
+ * There is no overload taking raw bytes. Adding one would restore the hole this closed.
+ */
+export function entropyFrom(source: ExternalBytes): Entropy {
+  return source.bytes as unknown as Entropy;
 }
 
 /** The one place a root secret is minted. The test asserts there is exactly one. */

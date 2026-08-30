@@ -39,12 +39,11 @@ import { dirname, join } from "node:path";
 
 import {
   POOL_DOMAIN, VAULT_DOMAIN, DOMAINS,
-  rootSeed, randomEntropy, entropyFrom, derive, subKey, requireDomain, expose, adoptPoolKey,
-} from "../src/domains.ts";
+  rootSeed, randomEntropy, entropyFrom, derive, subKey, requireDomain, expose, adoptPoolKey, fromTestVector} from "../src/domains.ts";
 import { contentKey, vaultRoot } from "../src/vault-key.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(7), "test vector"));
+const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(7), "test vector")));
 
 test("the two domains are distinct, and neither is a prefix of the other", () => {
   assert.notEqual(POOL_DOMAIN, VAULT_DOMAIN);
@@ -117,10 +116,31 @@ test("exactly one function mints a seed, and exactly one reads raw bytes", () =>
     }
   };
   assert.equal(count("^export function rootSeed\\b"), 1, "not exactly one place mints a Seed");
+  // Entropy enters through a closed set of NAMED sources and nowhere else. This used to be a
+  // `(bytes, provenance)` pair, which meant `entropyFrom(expose(poolSecret, …), "wallet")`
+  // compiled — the escrowed key becoming the root of a real identity, with a reassuring string
+  // beside it. The count is asserted so a new adapter is a deliberate act.
+  assert.equal(count("^export const from[A-Z][a-zA-Z]* = "), 4,
+    "the set of external entropy sources changed — each one is a way key material gets in");
+  assert.equal(count("^export function entropyFrom\\b"), 1, "more than one entropy entry point");
   assert.equal(count("^export function expose\\b"), 1, "not exactly one place reads raw key bytes");
   // And no other export may hand out a Uint8Array of key material.
   assert.equal(count("^export function [a-zA-Z]+[^;]*\\): Uint8Array"), 1,
     "a second export returns raw key bytes");
+});
+
+test("test material is never used outside a test", () => {
+  // `fromTestVector` exists because tests need reproducible seeds, and hiding it behind a flag
+  // would be worse than naming it. What makes that safe is that it never appears in `src/`.
+  const hits = (() => {
+    try {
+      return execFileSync("/usr/bin/grep",
+        ["-rl", "fromTestVector", join(HERE, "..", "src")], { encoding: "utf8" })
+        .split("\n").filter(Boolean);
+    } catch { return []; }
+  })();
+  assert.deepEqual(hits.filter((f) => !f.endsWith("domains.ts")), [],
+    `test-vector entropy is used in production code:\n${hits.join("\n")}`);
 });
 
 test("the cross-domain derivation does not compile", () => {
@@ -142,7 +162,7 @@ test("the cross-domain derivation does not compile", () => {
   }
   const lines = out.split("\n").filter((l) => /error TS/.test(l));
   const fixture = lines.filter((l) => l.includes("i1-must-not-compile"));
-  assert.ok(fixture.length >= 6,
+  assert.ok(fixture.length >= 7,
     `the fixture produced ${fixture.length} type errors, expected at least 6:\n${out}`);
   // Nothing ELSE may fail to type-check, or this test passes for the wrong reason.
   const other = lines.filter((l) => !l.includes("i1-must-not-compile"));

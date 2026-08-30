@@ -22,9 +22,9 @@ import { OBSERVABLE, OBSERVABLE_IDS, NOT_OBSERVABLE } from "../../vault-server/s
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
 import { padTo, unpad, bucketFor, BUCKETS, SEAL_OVERHEAD } from "../../vault-client/src/buckets.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
-import { rootSeed, entropyFrom, derive, VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 
-const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(5), "operator-view vector"));
+const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(5), "operator-view vector")));
 const vaultRoot = derive(VAULT_DOMAIN, seed);
 const intent = { confirmedPublicAt: "2026-08-30T00:00:00Z", reason: "operator-view session" };
 

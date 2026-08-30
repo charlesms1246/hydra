@@ -26,7 +26,7 @@ import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 
-import { rootSeed, entropyFrom, derive, subKey, expose, adoptPoolKey, VAULT_DOMAIN, POOL_DOMAIN }
+import { rootSeed, entropyFrom, fromTestVector, derive, subKey, expose, adoptPoolKey, VAULT_DOMAIN, POOL_DOMAIN }
   from "../../identity/src/domains.ts";
 import { channelSecret, pointerFor, blobIdFrom } from "../../channel/src/pointer.ts";
 import { noteCalldata } from "../../channel/src/note.ts";
@@ -113,7 +113,7 @@ function withNetworkSealed<T>(body: () => T): { result: T; attempts: string[] } 
 
 /** A full client session: derive, seal, point, commit, upload, read back. */
 function clientSession() {
-  const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(2), "i2 test vector"));
+  const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(2), "i2 test vector")));
   const vaultRoot = derive(VAULT_DOMAIN, seed);
   const chan = channelSecret(vaultRoot, "alice→bob");
   const pool = adoptPoolKey(0xdeadbeefcafen);

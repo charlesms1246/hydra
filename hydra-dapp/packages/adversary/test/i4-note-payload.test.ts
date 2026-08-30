@@ -21,11 +21,11 @@ import { NOTE_FELTS, noteCalldata, pointerToFelt, feltToPointer } from "../../ch
 import { channelSecret, pointerFor, blobIdFrom } from "../../channel/src/pointer.ts";
 import { commit, contentHashFor, P } from "../../channel/src/commitment.ts";
 import { sealForChannel, wireBytes } from "../../vault-client/src/blobs.ts";
-import { rootSeed, entropyFrom, derive, VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = join(HERE, "..", "..", "..", "contracts");
-const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(4), "i4 test vector"));
+const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(4), "i4 test vector")));
 const chan = channelSecret(derive(VAULT_DOMAIN, seed), "alice→bob");
 
 test("a message of any size puts exactly two felts on chain", () => {

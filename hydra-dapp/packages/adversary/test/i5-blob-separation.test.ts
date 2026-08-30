@@ -29,11 +29,11 @@ import {
   sealForChannel, publish, wireBytes, uploadPathFor,
   ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT, isPublic,
 } from "../../vault-client/src/blobs.ts";
-import { rootSeed, entropyFrom, derive, VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(9), "i5 test vector"));
+const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(9), "i5 test vector")));
 const chan = channelSecret(derive(VAULT_DOMAIN, seed), "alice→bob");
 const intent = { confirmedPublicAt: "2026-08-30T00:00:00Z", reason: "test" };
 

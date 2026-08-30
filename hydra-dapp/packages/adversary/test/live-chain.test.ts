@@ -32,14 +32,14 @@ import { channelSecret, pointerFor, blobIdFrom } from "../../channel/src/pointer
 import { noteCalldata, feltToPointer, pointerToFelt } from "../../channel/src/note.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import { sealForChannel, wireBytes } from "../../vault-client/src/blobs.ts";
-import { rootSeed, entropyFrom, derive, VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 
 const RPC = process.env.HYDRA_RPC;
 const CHANNEL = process.env.HYDRA_CHANNEL;
 
 /** The same inputs the deployment step published. Deterministic, so the event is findable. */
 const chan = channelSecret(
-  derive(VAULT_DOMAIN, rootSeed(entropyFrom(new Uint8Array(32).fill(11), "live"))),
+  derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(11), "live")))),
   "alice→bob",
 );
 const content = new TextEncoder().encode("a real message, on a real chain");

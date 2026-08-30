@@ -12,11 +12,11 @@
 import {
   sealForChannel, publish, wireBytes, uploadPathFor, PUBLIC_ENDPOINT,
 } from "../../vault-client/src/blobs.ts";
-import { rootSeed, entropyFrom, derive, VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
 
 const chan = channelSecret(
-  derive(VAULT_DOMAIN, rootSeed(entropyFrom(new Uint8Array(32).fill(1), "fixture"))),
+  derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(1), "fixture")))),
   "alice→bob",
 );
 const secret = sealForChannel(chan, new TextEncoder().encode("this must never be public"));

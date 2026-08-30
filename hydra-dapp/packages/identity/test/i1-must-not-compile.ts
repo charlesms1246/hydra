@@ -11,7 +11,7 @@
  */
 
 import {
-  VAULT_DOMAIN, derive, rootSeed, subKey, expose, adoptPoolKey, entropyFrom,
+  VAULT_DOMAIN, POOL_DOMAIN, derive, rootSeed, subKey, expose, adoptPoolKey, entropyFrom,
 } from "../src/domains.ts";
 import { contentKey, vaultRoot } from "../src/vault-key.ts";
 import type { Seed } from "../src/domains.ts";
@@ -26,8 +26,15 @@ derive(VAULT_DOMAIN, pool);
 //    SecretBytes is opaque rather than a branded Uint8Array.
 rootSeed(pool.bytes);
 
-// 3. Re-declaring escrowed material as outside entropy.
+// 3. Re-declaring escrowed material as outside entropy. Two barriers now: the bytes are
+//    opaque, AND entropyFrom no longer takes bytes at all.
 entropyFrom(pool.bytes, "laundered");
+
+// 3b. The route that used to compile, and is the reason `ExternalBytes` exists: read the
+//     escrowed key out through the one legitimate exit, then feed it back in with an
+//     honest-looking provenance string. The string was documentation; documentation does not
+//     stop anything. Now there is no overload that accepts a Uint8Array.
+entropyFrom(expose(pool, POOL_DOMAIN));
 
 // 4. Forging a Seed around pool material.
 const forged: Seed = { bytes: pool.bytes };

@@ -33,12 +33,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { rootSeed, entropyFrom, derive, VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 import { channelSecret, pointerFor, blobIdFrom, recoverBlobId } from "../../channel/src/pointer.ts";
 
 // A session is deterministic: same seed, same schedule, every run. A flaky privacy test is
 // worse than none, because the failure gets re-run until it passes.
-const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(3), "i3 test vector"));
+const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(3), "i3 test vector")));
 const vaultRoot = derive(VAULT_DOMAIN, seed);
 
 /** What the vault operator records when a blob arrives. */

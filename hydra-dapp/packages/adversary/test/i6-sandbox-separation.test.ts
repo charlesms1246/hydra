@@ -28,12 +28,11 @@ import { channelSecret, pointerFor, recoverBlobId, blobIdFrom } from "../../chan
 import { commit } from "../../channel/src/commitment.ts";
 import {
   SANDBOX_DOMAIN, VAULT_DOMAIN, POOL_DOMAIN, DOMAINS,
-  derive, entropyFrom, rootSeed, expose, requireDomain,
-} from "../../identity/src/domains.ts";
+  derive, entropyFrom, rootSeed, expose, requireDomain, fromTestVector} from "../../identity/src/domains.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DAPP = join(HERE, "..", "..", "..");
-const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(8), "i6 test vector"));
+const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(8), "i6 test vector")));
 const sandbox = channelSecret(derive(SANDBOX_DOMAIN, seed), "toy channel");
 const real = channelSecret(derive(VAULT_DOMAIN, seed), "real channel");
 

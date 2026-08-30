@@ -15,10 +15,9 @@ import { noteCalldata } from "../../channel/src/note.ts";
 import { channelSecret, pointerFor, blobIdFrom } from "../../channel/src/pointer.ts";
 import type { Pointer } from "../../channel/src/pointer.ts";
 import {
-  SANDBOX_DOMAIN, VAULT_DOMAIN, derive, entropyFrom, rootSeed,
-} from "../../identity/src/domains.ts";
+  SANDBOX_DOMAIN, VAULT_DOMAIN, derive, entropyFrom, rootSeed, fromTestVector} from "../../identity/src/domains.ts";
 
-const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(1), "i6 fixture"));
+const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(1), "i6 fixture")));
 const sandbox = channelSecret(derive(SANDBOX_DOMAIN, seed), "toy channel");
 const real = channelSecret(derive(VAULT_DOMAIN, seed), "real channel");
 const blobId = blobIdFrom(new Uint8Array(64));
@@ -42,6 +41,11 @@ const asReal: Pointer<typeof VAULT_DOMAIN> = sandboxPointer;
 // call sites the types cannot reach. It throws when it runs, which
 // `i6-sandbox-separation.test.ts` asserts. A fixture that expected it to fail the build would
 // be testing the opposite of the design.
+
+// 4b. Seed a REAL root from sandbox material — I6's harm running backwards. Disposable keys
+//     that may have been through a browser becoming the root of an identity that cannot be
+//     rotated. `entropyFrom` takes only a named external source, so `expose` cannot reach it.
+rootSeed(entropyFrom(expose(sandbox, SANDBOX_DOMAIN)));
 
 // 5. Derive a "real" channel from sandbox material by relabelling the root.
 const relabelled: typeof real = sandbox;

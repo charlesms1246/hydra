@@ -17,7 +17,7 @@ import { coverPlan, coverBody, coverId, coverKey, COVER_RATE, COVER_LEAD_BLOCKS 
 import { channelSecret } from "../../channel/src/pointer.ts";
 import { sealForChannel, wireBytes, encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
-import { rootSeed, entropyFrom, derive, VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 
 function lcg(seed: number) {
   let s = seed >>> 0;
@@ -29,7 +29,7 @@ const MESSAGES = 12;
 const CHANCE = 1 / MESSAGES;
 const cfg = { blockMs: BLOCK };
 const chan = channelSecret(
-  derive(VAULT_DOMAIN, rootSeed(entropyFrom(new Uint8Array(32).fill(6), "cover vector"))),
+  derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(6), "cover vector")))),
   "alice→bob",
 );
 
