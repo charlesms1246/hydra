@@ -1,0 +1,128 @@
+/**
+ * Phase 10 — the disclosure statement is generated, and says nothing it cannot compute.
+ *
+ * `HYDRA_HANDOFF.md` Phase 10 and standing rule §4: privacy claims are computed, never
+ * asserted; if it cannot be computed, the product does not say it.
+ *
+ * A generator satisfies that only if it actually tracks the things it claims to. So these
+ * checks are mostly adversarial towards the statement itself: every claim must cite a real
+ * file, every measured number must equal the constant it came from, the uncomfortable
+ * disclosures must be present, and the reassuring vocabulary a hand-written statement drifts
+ * into must be absent.
+ */
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+import { statement, render, MEASURED } from "../../claims/src/statement.ts";
+import { OBSERVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
+import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
+import { COVER_RATE } from "../../channel/src/cover.ts";
+import { NOTE_FELTS } from "../../channel/src/note.ts";
+
+const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const s = statement();
+const all = [...s.whoCanSeeWhat, ...s.whatIsPartial, ...s.whatWeCannotSee];
+
+test("every claim cites a source file that exists", () => {
+  // A claim whose provenance is a path nobody can open is a hand-written claim with a citation
+  // stapled to it.
+  for (const claim of all) {
+    const files = [...claim.from.matchAll(/([\w./-]+\.(ts|md))/g)].map((m) => m[1]);
+    assert.ok(files.length > 0, `no source cited for: ${claim.says}`);
+    for (const f of files) {
+      const candidates = [join(PACKAGES, f), join(PACKAGES, "..", "..", "claude-docs", f.replace(/^claude-docs\//, "")),
+                          join(PACKAGES, "adversary", "test", f), join(PACKAGES, "..", "..", f)];
+      assert.ok(candidates.some(existsSync), `${f} cited by "${claim.says.slice(0, 60)}…" does not exist`);
+    }
+  }
+});
+
+test("the statement covers every row of the disclosure table, both columns", () => {
+  // The generator must not be able to quietly omit a disclosure. If a row exists, it is said.
+  // Coverage is asserted row by row rather than by a count, so adding a row to the table
+  // fails here instead of silently changing an arithmetic expectation.
+  for (const o of OBSERVABLE) {
+    assert.ok(s.whoCanSeeWhat.some((c) => c.says.includes(o.what)), `${o.id} is not stated`);
+  }
+  for (const o of NOT_OBSERVABLE) {
+    assert.ok(s.whatWeCannotSee.some((c) => c.says.includes(o.what)), `${o.id} is not stated`);
+  }
+  assert.equal(s.whatWeCannotSee.length, NOT_OBSERVABLE.length);
+  // The chain and the pool's auditor are disclosures the vault's table does not cover, and
+  // they are the two most consequential ones. They must be stated on top of it.
+  assert.ok(s.whoCanSeeWhat.length >= OBSERVABLE.length + 2,
+    "the chain and the auditor are not stated beyond the vault's own table");
+});
+
+test("the numbers it quotes are the numbers the code runs on", () => {
+  // Not copies. If a default moves, the statement moves with it in the same commit, or this
+  // fails and someone has to decide which of the two is wrong.
+  assert.equal(MEASURED.jitterBlocks, MIN_JITTER_BLOCKS);
+  assert.equal(MEASURED.coverRate, COVER_RATE);
+  assert.equal(MEASURED.noteFelts, NOTE_FELTS);
+  const text = render(s);
+  assert.ok(text.includes(String(MIN_JITTER_BLOCKS)), "the jitter number is not in the output");
+  assert.ok(text.includes(String(NOTE_FELTS)), "the on-chain footprint is not in the output");
+});
+
+test("the uncomfortable disclosures are present and unhedged", () => {
+  // The three a hand-written statement would soften, drop, or move to a footnote. Each is the
+  // conclusion of a decision record, and each is a reason someone might choose not to use this.
+  const text = render(s).toLowerCase();
+  assert.ok(text.includes("auditor can decrypt every message"),
+    "the pool's escrow is not stated plainly");
+  assert.ok(/first message of a session/.test(text),
+    "the first-message leak is not stated");
+  assert.ok(/repeat within a conversation/.test(text),
+    "deterministic encryption's repeat visibility is not stated");
+});
+
+test("a partial guarantee always carries its number", () => {
+  // `complete: false` is the flag that says "this is qualified". A qualified claim that states
+  // no boundary is one the reader will round up to a guarantee — so each must either carry a
+  // figure or say plainly what it does NOT cover. Not every partial guarantee is numeric:
+  // "the server can see a repeat within a conversation, not across them" is a scope, not a
+  // measurement, and demanding a number there would invite a fabricated one.
+  for (const claim of s.whatIsPartial) {
+    assert.equal(claim.complete, false);
+    assert.ok(/\d/.test(claim.says) || /\bnot\b/.test(claim.says),
+      `partial claim states neither a figure nor a boundary: ${claim.says}`);
+  }
+  // And the reassuring half is not allowed to be qualified silently in the other direction.
+  for (const claim of s.whatWeCannotSee) assert.equal(claim.complete, true);
+});
+
+test("the statement uses none of the vocabulary that means nothing", () => {
+  // The words a privacy page reaches for when it has no measurement. Any of them appearing
+  // here means someone wrote a claim instead of computing one.
+  const banned = [
+    "military-grade", "bank-level", "unbreakable", "完全", "absolutely secure",
+    "we never", "we do not log", "your data is safe", "fully anonymous", "100%",
+    "end-to-end encrypted and therefore", "trust us", "industry-standard",
+  ];
+  const text = render(s).toLowerCase();
+  for (const phrase of banned) {
+    assert.ok(!text.includes(phrase), `the statement says "${phrase}"`);
+  }
+});
+
+test("the statement makes no promise about behaviour, only about capability", () => {
+  // "We will not read your messages" is a promise; "we cannot" is a property. Only the second
+  // survives a change of operator, a subpoena, or a sale — and only the second is computable.
+  for (const claim of all) {
+    assert.ok(!/\bwe (will|won't|will not|promise|pledge)\b/i.test(claim.says),
+      `a promise rather than a property: ${claim.says}`);
+  }
+  // Which is why the operator is named as a role, not as us.
+  assert.ok(render(s).includes("Whoever runs"));
+});
+
+test("render is deterministic and lists everything", () => {
+  assert.equal(render(statement()), render(statement()));
+  const lines = render(s).split("\n").filter((l) => l.startsWith("- "));
+  assert.equal(lines.length, all.length);
+});

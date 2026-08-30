@@ -1,0 +1,8 @@
+{
+  "name": "@hydra-platform/claims",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 10 — the disclosure statement, generated from measured values.",
+  "engines": { "node": ">=24" }
+}
