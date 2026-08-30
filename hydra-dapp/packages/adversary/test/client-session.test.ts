@@ -192,7 +192,7 @@ test("selection happens after the fetch, on the client", () => {
   // The separation that matters. A function that fetched and selected in one step would be one
   // refactor away from fetching only the selected id — and that refactor would pass every test
   // that does not exist to stop it.
-  const vault = new Vault({ invites: ["r1", "r2", "r3"], buckets: BUCKETS });
+  const vault = new Vault({ invites: ["r1", "r2", "r3"], buckets: BUCKETS, observeReads: true });
   const seen: SeenPointer[] = [];
   for (let seq = 0; seq < 3; seq++) {
     const out = send(config, new TextEncoder().encode(`secret ${seq}`), seq, seq * BLOCK, lcg(seq + 7));

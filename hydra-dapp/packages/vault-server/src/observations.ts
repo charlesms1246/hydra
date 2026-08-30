@@ -71,9 +71,9 @@ export const OBSERVABLE: readonly Observation[] = [
     why: "the server stores bytes and can count them; bucketing before encryption is what limits this to a bucket",
   },
   {
-    id: "blob.storedAt",
-    what: "when the object arrived, to the second",
-    why: "the server writes it down when it happens; upload jitter is what stops this joining the chain timeline",
+    id: "blob.arrival",
+    what: "when an unpinned object arrived, to the second — derived, not stored",
+    why: "the server keeps no arrival time, but it must keep an expiry deadline to enforce a TTL, and that deadline minus a published constant IS the arrival time. Pinned objects carry no deadline and so disclose no arrival. Upload jitter is what stops either joining the chain timeline",
   },
   {
     id: "blob.expiry",
@@ -83,12 +83,12 @@ export const OBSERVABLE: readonly Observation[] = [
   {
     id: "read.ids",
     what: "the set of ids in a read request, and when",
-    why: "the server has to be asked for something to return it",
+    why: "the server has to be asked for something in order to return it, so an operator watching the process sees every read. Writing them down is a separate choice and is off by default — the rows are here because the capability is unavoidable, not because this build retains it",
   },
   {
     id: "read.hit",
     what: "whether each requested id was present",
-    why: "the response says so; a miss is indistinguishable from an object that expired",
+    why: "the response says so, and it must; a miss is indistinguishable from an object that expired or one that was never sent, which is what makes decoy padding in a read batch free",
   },
   {
     id: "invite.redeemed",

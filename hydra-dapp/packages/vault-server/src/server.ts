@@ -79,7 +79,14 @@ type Stored = {
   readonly class: "encrypted" | "public";
   readonly id: string;
   readonly bucket: number;
-  readonly storedAt: number;
+  /**
+   * When this expires, or null when pinned.
+   *
+   * There was a `arrival` beside this and it earned nothing: the server never read it, and
+   * for anything with a TTL it is `expiresAt` minus a published constant — so it disclosed
+   * arrival time twice for unpinned objects and, for pinned ones, disclosed it where nothing
+   * otherwise would have. Keeping only the deadline is the smaller record.
+   */
   readonly expiresAt: number | null;
   readonly bytes: Uint8Array;
 };
@@ -122,6 +129,17 @@ export type VaultOptions = {
    * because they are true of any on-disk vault — not because this implementation chose them.
    */
   readonly dir?: string;
+  /**
+   * Keep a log of reads. **Off by default**, and the rows stay on the table either way.
+   *
+   * The server has to be asked for something in order to return it, so an operator watching
+   * the process sees every read as it happens. It does not have to write them down, and this
+   * code did — a list of every id ever requested, growing forever, which nothing in the server
+   * consumed. That is the same conflation the transport rows already avoid: seeing is forced,
+   * recording is a choice, and the disclosure table states capabilities while the default
+   * build keeps as little as it can.
+   */
+  readonly observeReads?: boolean;
 };
 
 export class Vault {
@@ -133,12 +151,14 @@ export class Vault {
   readonly #now: () => number;
   readonly #buckets: readonly number[];
   readonly #dir: string | null;
+  readonly #observeReads: boolean;
 
   constructor(options: VaultOptions = {}) {
     this.#invites = new Set(options.invites ?? []);
     this.#now = options.now ?? (() => Date.now());
     this.#buckets = options.buckets ?? [1024, 4096, 16384, 65536, 262144];
     this.#dir = options.dir ?? null;
+    this.#observeReads = options.observeReads ?? false;
     if (this.#dir) {
       mkdirSync(this.#dir, { recursive: true });
       this.#load();
@@ -240,13 +260,11 @@ export class Vault {
       }
       this.#invitesRedeemed++;
     }
-    const storedAt = this.#now();
-    const expiresAt = r.pin ? null : storedAt + DEFAULT_TTL_MS;
+    const expiresAt = r.pin ? null : this.#now() + DEFAULT_TTL_MS;
     const stored: Stored = {
       class: encrypted ? "encrypted" : "public",
       id: r.id,
       bucket: r.body.length,
-      storedAt,
       expiresAt,
       bytes: Uint8Array.from(r.body),
     };
@@ -280,7 +298,7 @@ export class Vault {
     }
     // Unauthenticated: the id is the capability. Nothing is checked but existence, because
     // there is nobody to check it against — there are no accounts.
-    this.#reads.push({ at: this.#now(), ids: [...r.ids], hits });
+    if (this.#observeReads) this.#reads.push({ at: this.#now(), ids: [...r.ids], hits });
     return { ok: true, op: "fetch", found };
   }
 
@@ -321,7 +339,6 @@ export class Vault {
       "blob.class": o.class,
       "blob.id": o.id,
       "blob.bucket": o.bucket,
-      "blob.storedAt": o.storedAt,
       "blob.expiry": o.expiresAt,
     }));
     const totals: Record<string, { objects: number; bytes: number }> = {};
@@ -341,6 +358,9 @@ export class Vault {
     const seen = new Set<string>();
     const o = this.observe();
     for (const row of o.rows) for (const k of Object.keys(row)) seen.add(k);
+    // Arrival is not stored, but a TTL deadline minus a published constant is an arrival time.
+    // Pinned objects carry no deadline, so for those it is genuinely absent.
+    if (o.rows.some((r) => r["blob.expiry"] !== null)) seen.add("blob.arrival");
     if (o.reads.length) { seen.add("read.ids"); seen.add("read.hit"); }
     if (o.invitesRedeemed) seen.add("invite.redeemed");
     if (o.transport.length) {

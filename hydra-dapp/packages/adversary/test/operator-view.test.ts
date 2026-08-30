@@ -64,7 +64,9 @@ const errorOf = (r: Reply): string => {
 function session() {
   let clock = 1_700_000_000_000;
   const invites = ["invite-a", "invite-b", "invite-c", "invite-d"];
-  const vault = new Vault({ invites, now: () => clock, buckets: BUCKETS });
+  // Opting in, because this session is about what an operator can see. The default build
+  // keeps no read log at all — see the `observeReads` note in server.ts.
+  const vault = new Vault({ invites, now: () => clock, buckets: BUCKETS, observeReads: true });
 
   const alice = channelSecret(vaultRoot, "alice→bob");
   const carol = channelSecret(vaultRoot, "alice→carol");
@@ -127,7 +129,11 @@ test("everything the table claims is observable actually is", async () => {
   try {
     const onDisk = new Vault({ invites: ["d1"], buckets: BUCKETS, dir });
     const blob = sealForChannel(channelSecret(vaultRoot, "on-disk"), new TextEncoder().encode("x"));
-    onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "d1", pin: true });
+    // Unpinned, deliberately: `blob.arrival` is derivable only from a TTL deadline, and the
+    // session's own objects are all pinned by the time it ends. A vault holding nothing but
+    // pinned objects genuinely discloses no arrival time, which is the distinction the row
+    // makes and this is what exercises the other side of it.
+    onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "d1" });
     for (const k of onDisk.observedKeys()) observed.add(k);
     // And the limiter mode that produces `rate.peerBucket`, for the same reason.
     const peered = new Vault({ buckets: BUCKETS });
@@ -461,7 +467,7 @@ test("the bytes on disk are exactly the bytes the client sent", async () => {
     // The sidecar holds only what the table names.
     const meta = JSON.parse(await readFile(join(dir, `${blob.id}.json`), "utf8")) as Record<string, unknown>;
     for (const key of Object.keys(meta)) {
-      assert.ok(["class", "id", "bucket", "storedAt", "expiresAt"].includes(key),
+      assert.ok(["class", "id", "bucket", "arrival", "expiresAt"].includes(key),
         `the sidecar holds ${key}, which is not on the disclosure table`);
     }
   } finally {
@@ -577,4 +583,54 @@ test("a per-peer server reports the row; a global one does not", async () => {
   p.server.close();
   assert.ok(peered.observedKeys().includes("rate.peerBucket"),
     "the per-peer mode did not disclose its bucket");
+});
+
+// ---------------------------------------------------------------------------
+// Seeing is forced; recording is a choice
+// ---------------------------------------------------------------------------
+
+test("the default build keeps no read log at all", () => {
+  // The server must be asked for something in order to return it, so an operator watching the
+  // process sees every read. It does not have to write them down, and it did — an unbounded
+  // list of every id ever requested, which nothing in the server consumed.
+  const vault = new Vault({ buckets: BUCKETS });
+  for (let i = 0; i < 5; i++) {
+    vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: pad([`enc:${i}`]) });
+  }
+  assert.deepEqual(vault.observe().reads, [], "the default build retained a read log");
+  for (const id of vault.observedKeys()) {
+    assert.ok(!id.startsWith("read."), `${id} was recorded without being asked for`);
+  }
+  // Reads still work — this is about retention, not about refusing to serve.
+  const res = vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: pad(["enc:absent"]) });
+  assert.equal(res.ok, true);
+});
+
+test("no arrival time is stored, and for pinned objects none is derivable", () => {
+  // `storedAt` was kept on every object and read by nothing. For anything with a TTL it was
+  // also redundant — `expiresAt` minus a published constant is the arrival time — so it
+  // disclosed arrival twice for unpinned objects and, for pinned ones, disclosed it where
+  // nothing otherwise would have.
+  const vault = new Vault({ invites: ["a1", "a2"], buckets: BUCKETS });
+  const chan = channelSecret(vaultRoot, "arrival");
+  const pinned = sealForChannel(chan, new TextEncoder().encode("kept"));
+  const ttl = sealForChannel(chan, new TextEncoder().encode("expires"));
+  vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: pinned.id, body: bytes(pinned), invite: "a1", pin: true });
+
+  // Pinned only: no deadline, so no arrival time anywhere in the record.
+  const pinnedRows = vault.observe().rows;
+  assert.equal(pinnedRows.length, 1);
+  assert.equal(pinnedRows[0]["blob.expiry"], null);
+  assert.ok(!Object.keys(pinnedRows[0]).some((k) => /arrival|storedAt/i.test(k)),
+    "an arrival time is stored on the object");
+  assert.ok(!vault.observedKeys().includes("blob.arrival"),
+    "a vault of pinned objects claimed to disclose arrival times");
+
+  // Add an unpinned one and the arrival becomes derivable — which the table says, and which is
+  // why removing the field was a real reduction only for the pinned case.
+  vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: ttl.id, body: bytes(ttl), invite: "a2" });
+  assert.ok(vault.observedKeys().includes("blob.arrival"));
+  const withTtl = vault.observe().rows.find((r) => r["blob.expiry"] !== null)!;
+  assert.equal(Number(withTtl["blob.expiry"]) - DEFAULT_TTL_MS <= Date.now(), true,
+    "the deadline does not imply an arrival time — recheck the blob.arrival row");
 });
