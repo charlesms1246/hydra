@@ -8,8 +8,9 @@
  *   node test/drive.mjs 100 30 e TAB
  *   node test/drive.mjs 80 24 t DOWN ENTER
  *
- * Key names: ENTER ESC TAB UP DOWN LEFT RIGHT PGUP PGDN SPACE; anything else is sent
- * as literal characters.
+ * Key names: ENTER ESC TAB UP DOWN LEFT RIGHT PGUP PGDN SPACE; `WAIT:<ms>` pauses
+ * without sending anything, which is how an operation that spawns a real process gets
+ * driven to its result frame; anything else is sent as literal characters.
  */
 
 import { drive } from "../sandbox/drive.mjs";

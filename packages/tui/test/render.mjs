@@ -15,7 +15,7 @@
  */
 
 import { render } from "ink";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable, PassThrough } from "node:stream";
@@ -28,7 +28,7 @@ import { fit, wrap, windowOf, indicatorFor } from "../src/layout.mjs";
 import { C, DISCLOSURE } from "../src/theme.mjs";
 import { BINDINGS, duplicateBindings, helpGroups, scopesFor, dispatch } from "../src/keymap.mjs";
 import { App, TX_ACTIONS, RIG_IDS } from "../src/app.mjs";
-import { PAGES, NavBar, StatusBar, QuitPrompt } from "../src/chrome.mjs";
+import { PAGES, Bar, NavBar, StatusBar, QuitPrompt } from "../src/chrome.mjs";
 import { About } from "../src/about.mjs";
 import { comboBindings } from "../src/keymap.mjs";
 import { whatDoesThisLeak } from "../../leak/src/leak.mjs";
@@ -40,6 +40,14 @@ import { SELECTOR_NUM_OF_CHANNELS } from "../../core/src/chain.mjs";
 import { wallets } from "../../core/src/wallets.mjs";
 import { latestBlocks } from "../../core/src/chain.mjs";
 import { check } from "../../cli/src/doctor.mjs";
+import { Form } from "../src/forms.mjs";
+import { ActivityPage, ACTIVITY_FIELDS, detailPairs } from "../src/activity.mjs";
+import { RUN_FIELDS, runFields } from "../src/runflow.mjs";
+import { advance, PASTE, TYPE, fieldValue } from "../src/forms.mjs";
+import { whyNotRunnable, validate } from "../../core/src/flows.mjs";
+import { mcpTools } from "../../core/src/services.mjs";
+import { fullAddr } from "../src/wallets.mjs";
+import { discoverOperations } from "../../core/src/toolchain.mjs";
 
 /**
  * In debug mode Ink writes one complete frame per render (ink/build/ink.js:104),
@@ -559,7 +567,7 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
   check_("every nav destination is reachable by its own letter", () => {
     const want = {
       wallets: "manage", activity: "query", tools: "tools",
-      run: "build a flow", log: "log ·", about: "guide ", overview: "the auditor",
+      run: "build a flow", log: "log ·", about: "What it is", overview: "the auditor",
     };
     for (const [k, needle] of Object.entries(want)) {
       if (!seen[k]?.includes(needle)) throw new Error(`${k}: "${needle}" not on screen`);
@@ -810,7 +818,9 @@ await (async () => {
     }
     return out;
   };
-  const navTree = walk(NavBar({ width: 118, active: "wallets", cursor: 3 }));
+  // `Bar`, not `NavBar`: NavBar is a one-line wrapper around it, and walking the
+  // wrapper's tree finds the <Bar> element rather than the cells it renders.
+  const navTree = walk(Bar({ width: 118, items: PAGES, active: "wallets", cursor: 3 }));
   const navText = strip(await frame(html`<${NavBar} width=${118} active="wallets" cursor=${3} />`));
 
   check_("the nav paints the current page and brackets the cursor", () => {
@@ -878,18 +888,22 @@ await (async () => {
     seen[id] = h.last();
   }
   h.app.unmount();
-  check_("the nav is the first row, and the status bar the second on every page but the overview", () => {
-    const isNav = (f) => /Overview \(o\)/.test(f.split("\n")[0] ?? "");
-    const isBar = (f) => /devnet .*·.*indexer .*·.*prover/.test(f.split("\n")[1] ?? "");
-    for (const [id, f] of Object.entries(seen)) {
-      if (!isNav(f)) throw new Error(`${id} does not open with the nav bar`);
-    }
-    if (isBar(seen.overview)) throw new Error("the overview repeats the status bar");
+  check_("the status bar is the first row and the nav the second, except on the overview", () => {
+    const line = (f, i) => f.split("\n")[i] ?? "";
+    const isNav = (l) => /Overview \(o\)/.test(l);
+    const isBar = (l) => /devnet .*·.*indexer .*·.*prover/.test(l);
     for (const id of ["wallets", "tools", "about"]) {
-      if (!isBar(seen[id])) throw new Error(`${id} has no status bar`);
+      if (!isBar(line(seen[id], 0))) throw new Error(`${id} does not open with the status bar`);
+      if (!isNav(line(seen[id], 1))) throw new Error(`${id} has no nav under the status bar`);
     }
+    // The overview shows the same facts in full, so it carries no status bar and
+    // the nav is its first row.
+    if (isBar(line(seen.overview, 0)) || isBar(line(seen.overview, 1))) {
+      throw new Error("the overview repeats the status bar");
+    }
+    if (!isNav(line(seen.overview, 0))) throw new Error("the overview does not open with the nav");
     if (!seen.overview.includes("the auditor")) throw new Error("the overview lost the auditor strip");
-    return "nav first everywhere; the overview omits the status bar, the rest carry it";
+    return "status first, nav second; the overview has the nav first and no status bar";
   });
   check_("the overview dashboard shows every block the brief asks for", () => {
     for (const needle of ["stack", "chain", "tooling", "wallets", "the auditor"]) {
@@ -919,6 +933,217 @@ await (async () => {
       if (x.w > x.cols || x.r >= x.rows) throw new Error(`${x.cols}x${x.rows}: overflowed at ${x.w}x${x.r}`);
     }
     return seen.map((x) => `${x.cols}x${x.rows}→${x.w}c/${x.r}r`).join(" ");
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The redesign's four load-bearing behaviours, each one a defect that shipped.
+// ---------------------------------------------------------------------------
+
+check_("a text field shows what you type into it, not the value it had", () => {
+  // The bug: the cell rendered `values[f.id]` while the keystrokes accumulated in a
+  // prompt nobody drew, so every character was recorded and none appeared. There is
+  // no way to tell that apart from a field that does not work.
+  const values = { name: "", type: "transfer", from: "alice", to: "bob", token: "STRK", amount: "50" };
+  const rows = Form({
+    fields: RUN_FIELDS, values, selected: 0, focused: true, width: 100,
+    prompt: { field: "name", label: "name:", value: "nightly" },
+  });
+  const text = (n) => JSON.stringify(n).replace(/\\+/g, "");
+  if (!text(rows[0]).includes("nightly")) throw new Error("the typed text is not in the field");
+  // And only in that field: a prompt opened elsewhere must not leak into the form.
+  const other = Form({
+    fields: RUN_FIELDS, values, selected: 0, focused: true, width: 100,
+    prompt: { field: "token to track", label: "token", value: "0xdead" },
+  });
+  if (text(other[0]).includes("0xdead")) throw new Error("a foreign prompt bled into the form");
+  return "typed text lands in its own field and nowhere else";
+});
+
+check_("the transaction grid reports only what the node returned", () => {
+  const row = { block: 12, hash: "0xabc", ts: 1_700_000_000, count: 1 };
+  const receipt = {
+    available: true, found: true, hash: "0xabc", finality: "ACCEPTED_ON_L2",
+    execution: "SUCCEEDED", blockNumber: 12, actualFee: { amount: "0x2540be400", unit: "FRI" },
+    events: 2, sender: "0xf00", nonce: "0x3", type: "INVOKE", version: "0x3",
+    calldata: 9, gas: { l1: 0, l1Data: 224, l2: 1310720 }, revertReason: null,
+  };
+  const pairs = detailPairs(row, receipt, 20);
+  const by = Object.fromEntries(pairs.map(([k, v]) => [k, String(v)]));
+  if (by.from !== "0xf00") throw new Error("the sender is not the one on the transaction");
+  if (by.confirmations !== "8 blocks") throw new Error(`confirmations read "${by.confirmations}"`);
+  // The two that must never read as decoded. `events` is a length and `calls` is a
+  // felt count; a grid that printed them bare would look like a block explorer that
+  // had decoded them.
+  if (!by.events.includes("count only")) throw new Error("events not marked as a count");
+  if (!by.calls.includes("not decoded")) throw new Error("calldata not marked as undecoded");
+  // No value and no `to`, because an invoke has neither without decoding calldata.
+  for (const absent of ["value", "to"]) {
+    if (absent in by) throw new Error(`"${absent}" is on the grid and cannot be known`);
+  }
+  if (detailPairs(row, null, 20).some(([, v]) => String(v).includes("reading")) === false) {
+    throw new Error("no loading state while the receipt is in flight");
+  }
+  return `${pairs.length} pairs · from 0xf00 · events and calls both marked`;
+});
+
+await draw("Activity @120x32", html`
+  <${ActivityPage} width=${118} height=${28}
+    data=${{ available: true, head: 20, blocks: [{ number: 20, txs: ["0xabc"], txCount: 1, timestamp: 1_700_000_000 }] }}
+    values=${{ depth: "8", hash: "", match: "", txonly: false }}
+    focus="list" selected=${0} formSel=${0} prompt=${null}
+    receipt=${{ available: true, found: true, hash: "0xabc", finality: "ACCEPTED_ON_L2",
+      execution: "SUCCEEDED", blockNumber: 20, actualFee: { amount: "0x1", unit: "FRI" },
+      events: 2, sender: "0xf00", nonce: "0x1", type: "INVOKE", version: "0x3",
+      calldata: 4, gas: null, revertReason: null }} />`, 120, 32);
+
+check_("Activity reads detail, then query, then history — in that order", () => {
+  const text = results.find((r) => r.name === "Activity @120x32")?.text ?? "";
+  const at = (needle) => text.indexOf(needle);
+  const [detail, query, list] = [at(" transaction "), at(" query "), at(" transactions ")];
+  if (detail < 0 || query < 0 || list < 0) throw new Error("a section is missing");
+  if (!(detail < query && query < list)) throw new Error("the sections are out of order");
+  if (!text.includes("0xf00")) throw new Error("the grid does not show the sender");
+  return "transaction · query · transactions";
+});
+
+check_("the build operations are read from the checkout, not typed in", () => {
+  const root = mkdtempSync(join(tmpdir(), "hydra-ws-"));
+  const write = (rel, body) => {
+    mkdirSync(join(root, rel, ".."), { recursive: true });
+    writeFileSync(join(root, rel), body);
+  };
+  write("Scarb.toml", '[workspace]\nmembers = [\n  "packages/alpha",\n  "packages/beta",\n]\n\n[workspace.dependencies]\nstarknet = "2.17.0"\n');
+  write("packages/alpha/Scarb.toml", '[package]\nname = "alpha"\n');
+  write("packages/beta/Scarb.toml", '[package]\nname = "beta"\n');
+  // Pins a different Cairo than the workspace, which is what makes the flag needed.
+  write("e2e/contracts/odd/Scarb.toml", '[package]\nname = "odd_contracts"\n\n[dependencies]\nstarknet = "2.11.4"\n');
+  write("e2e/contracts/same/Scarb.toml", '[package]\nname = "same_contracts"\n\n[dependencies]\nstarknet = "2.17.0"\n');
+  write("Cargo.toml", '[workspace]\nmembers = [\n  "crates/lib-only",\n  "crates/has-bin",\n]\n');
+  write("crates/lib-only/Cargo.toml", '[package]\nname = "lib-only"\n');
+  write("crates/lib-only/src/lib.rs", "");
+  write("crates/has-bin/Cargo.toml", '[package]\nname = "has-bin"\n');
+  write("crates/has-bin/src/main.rs", "");
+
+  const ops = discoverOperations(root);
+  const id = (x) => ops.find((o) => o.id === x);
+  for (const want of ["build:alpha", "build:beta", "test:alpha", "test:beta",
+    "build:e2e:odd_contracts", "build:cargo:has-bin", "build:workspace", "test:all"]) {
+    if (!id(want)) throw new Error(`${want} was not discovered`);
+  }
+  // A library crate has nothing to run, so a build button for it would do nothing
+  // anyone asked for.
+  if (id("build:cargo:lib-only")) throw new Error("a crate with no main.rs got a build op");
+  // The flag is derived from the version mismatch itself, not remembered per package.
+  if (!id("build:e2e:odd_contracts").cmd.includes("--ignore-cairo-version")) {
+    throw new Error("the Cairo-version mismatch did not produce the flag");
+  }
+  if (id("build:e2e:same_contracts").cmd.includes("--ignore-cairo-version")) {
+    throw new Error("a matching Cairo version got the flag anyway");
+  }
+  // Never timed here, so there is no estimate rather than an invented one.
+  if (id("build:alpha").seconds !== null) throw new Error("an unmeasured package got a duration");
+  if (id("build:e2e:odd_contracts").dir !== "e2e/contracts/odd") throw new Error("wrong cwd for an e2e package");
+  return `${ops.length} ops from 2 members, 2 e2e packages and 1 binary crate`;
+});
+
+check_("addresses are printed in full, padded the way an explorer prints them", () => {
+  const full = fullAddr("0x34ba56f92265f0868c57d3fe72ecab144fc96f97954bbbc4252cef8e8a979ba");
+  if (full.length !== 66) throw new Error(`${full.length} characters, expected 66`);
+  if (!full.startsWith("0x0")) throw new Error("not left-padded to 64 hex digits");
+  if (fullAddr(null) !== "—") throw new Error("a missing address is not an address");
+  return full.slice(0, 12) + "… (66 chars)";
+});
+
+{
+  // The one button for adding an account restarted the stack with the count it
+  // already had, so it discarded the chain and changed nothing.
+  const h = await mount(120, 32);
+  await new Promise((r) => setTimeout(r, 400));
+  await h.press("b");
+  await h.press("+");
+  const frame = h.last();
+  h.app.unmount();
+  check_("`+` restarts with one MORE account than the stack has", () => {
+    const m = /restart the stack with (\d+) user accounts \(it has (\d+)\)/.exec(frame);
+    if (!m) throw new Error("no restart prompt");
+    if (Number(m[1]) !== Number(m[2]) + 1) throw new Error(`${m[2]} → ${m[1]} is not one more`);
+    if (!frame.includes("alice or bob only")) throw new Error("does not say the new account cannot run flows");
+    return `${m[2]} → ${m[1]} accounts`;
+  });
+}
+
+check_("from and to are pickers over the stack's own accounts", () => {
+  const accounts = [
+    { name: "alice", flows: true }, { name: "bob", flows: true },
+    { name: "admin", flows: false }, { name: "user3", flows: false },
+  ];
+  const f = Object.fromEntries(runFields(accounts).map((x) => [x.id, x]));
+  if (f.from.kind !== "enum" || f.to.kind !== "enum") throw new Error("still free text");
+  // `from` has to sign. control.mjs:41 wraps alice and bob only, and `up.mjs` records
+  // which those are, so offering admin as a sender would be offering a call that 500s.
+  if (f.from.options.join() !== ["alice", "bob", PASTE].join()) {
+    throw new Error(`from offers ${f.from.options.join(", ")}`);
+  }
+  // `to` is anyone — a recipient does not sign.
+  if (f.to.options.join() !== ["alice", "bob", "admin", "user3", PASTE].join()) {
+    throw new Error(`to offers ${f.to.options.join(", ")}`);
+  }
+  // Cycling onto PASTE is a request for a value, not a value.
+  if (advance(f.to, { to: "user3" }) !== TYPE) throw new Error("PASTE was stored as a value");
+  if (advance(f.to, { to: "alice" }) !== "bob") throw new Error("the cycle does not advance");
+  // A pasted address is not in the options, so the cycle resumes at the first name
+  // rather than getting stuck.
+  if (advance(f.to, { to: "0xdead" }) !== "alice") throw new Error("a pasted address traps the cycle");
+  // And it is shortened for the column rather than truncated, so the tail survives.
+  const shown = fieldValue(f.to, { to: "0x" + "ab".repeat(32) });
+  if (!shown.startsWith("0xababab") || !shown.endsWith("ababab")) throw new Error(`shown as ${shown}`);
+  // No stack, no options but the escape hatch — and the hint says why.
+  const empty = Object.fromEntries(runFields([]).map((x) => [x.id, x]));
+  if (empty.from.options.join() !== PASTE) throw new Error("invented an account with no stack");
+  if (!/no stack/.test(empty.from.hint)) throw new Error("does not say why the picker is empty");
+  return "from = signers + paste · to = every account + paste";
+});
+
+check_("a flow says which of two different reasons stops it running", () => {
+  const flow = (o) => validate({ name: "f", type: "transfer", token: "STRK", ...o }).flow;
+  if (flow({ from: "alice", to: "bob" }).runnable !== true) throw new Error("a plain transfer is not runnable");
+  // Two failures, and they are not the same failure. One is a gap in this stack's
+  // API; the other is a party nobody here holds a key for, which no API can fix.
+  const pastedTo = flow({ from: "alice", to: "0xdead" });
+  if (pastedTo.runnable || !/control API takes account names/.test(pastedTo.reason)) {
+    throw new Error(`to-address: ${pastedTo.reason}`);
+  }
+  const pastedFrom = flow({ from: "0xdead", to: "bob" });
+  if (pastedFrom.runnable || !/holds no key/.test(pastedFrom.reason)) {
+    throw new Error(`from-address: ${pastedFrom.reason}`);
+  }
+  if (!/no control endpoint/.test(whyNotRunnable({ type: "withdraw", from: "alice", to: "bob" }))) {
+    throw new Error("withdraw no longer reports its missing endpoint");
+  }
+  // A pasted address is 66 characters. The old 40-character clamp stored a prefix,
+  // which is a different address and would have been queried as one.
+  const long = "0x" + "c".repeat(64);
+  if (flow({ from: "alice", to: long }).to !== long) throw new Error("the stored address was truncated");
+  return "endpoint gap · unsignable from · unnamed to — three distinct reasons";
+});
+
+{
+  const tools = await mcpTools();
+  check_("the MCP tool surface is readable without starting the server", () => {
+    // packages/mcp is gitignored, so a clone can genuinely lack it. That is a skip,
+    // not a failure — but where it IS present the names have to be data.
+    if (!tools) return { skip: "packages/mcp/src/manifest.mjs is not present here" };
+    if (tools.length !== 9) throw new Error(`${tools.length} tools, expected 9`);
+    const effects = tools.filter((t) => t.effects);
+    if (effects.length !== 3) throw new Error(`${effects.length} side-effecting, expected 3`);
+    for (const t of effects) {
+      if (!t.confirm) throw new Error(`${t.name} changes something and names no confirmation`);
+    }
+    for (const t of tools) {
+      if (!t.name || !t.title || !t.group || !t.wraps) throw new Error(`${t.name}: incomplete entry`);
+    }
+    return `${tools.length} tools · ${effects.length} side-effecting · read from the manifest`;
   });
 }
 
