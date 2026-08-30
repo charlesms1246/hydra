@@ -101,23 +101,24 @@ export function check() {
     });
   }
 
-  // Not a version pin, but it stops `hydra up` dead, and the failure it produces
-  // (ETIMEDOUT on a port nothing is using) points nowhere near the cause.
+  // Not a version pin, and no longer fatal — `up()` picks devnet's port itself rather than
+  // letting the npm wrapper probe for one (see pinDevnetPort in up.mjs). Still reported,
+  // because it is a real property of the machine and it makes startup measurably slower.
   const loopback = loopbackProbe();
+  const refuses = loopback === "ECONNREFUSED" || loopback === "in use";
   rows.push({
-    status: loopback === "ECONNREFUSED" || loopback === "in use" ? OK : BAD,
+    status: refuses ? OK : WARN,
     name: "loopback refuses",
     want: "ECONNREFUSED",
     got: loopback,
     hint:
-      "An unbound 127.0.0.1 port is being blackholed instead of refused. On WSL2 this is\n" +
-      "       `networkingMode=mirrored` in %USERPROFILE%\\.wslconfig. starknet-devnet's npm\n" +
-      "       wrapper reads anything but ECONNREFUSED as fatal, so `hydra up` fails with\n" +
-      "       `connect ETIMEDOUT 127.0.0.1:6050` before devnet starts. Either set\n" +
-      "       networkingMode=NAT and run `wsl --shutdown` (this changes how the whole WSL\n" +
-      "       instance reaches Windows services — do not do it casually), or run the stack\n" +
-      "       somewhere that is not mirrored-mode WSL.",
-    // Editing the user's .wslconfig and restarting WSL is not this tool's call to make.
+      "An unbound 127.0.0.1 port is blackholed here rather than refused — on WSL2 that is\n" +
+      "       `networkingMode=mirrored`. `hydra up` handles it: it chooses devnet's port by\n" +
+      "       binding instead of by connecting. The cost is a slower first readiness poll,\n" +
+      "       because starknet-devnet's own health check waits out its 30s HTTP timeout once\n" +
+      "       before devnet answers. Set networkingMode=NAT and `wsl --shutdown` if you want\n" +
+      "       that back — but it changes how all of WSL reaches Windows services, so it is\n" +
+      "       not something this tool should do for you.",
     cmd: null,
   });
 
@@ -165,8 +166,12 @@ export function report(rows) {
   const broken = rows.filter((r) => r.status === BAD);
   const drifted = rows.filter((r) => r.status === WARN);
   if (drifted.length) {
-    console.log("\n  Version drift — the stack may still work, but this is unverified:");
-    for (const r of drifted) console.log(`    ${r.name}: want ${r.want}, got ${r.got}`);
+    // Was "Version drift"; the loopback row is the first warning that is not about a version.
+    console.log("\n  Warnings — the stack should still work, but this is not the verified setup:");
+    for (const r of drifted) {
+      console.log(`    ${r.name}: want ${r.want}, got ${r.got}`);
+      if (r.hint) console.log(`       ${r.hint}`);
+    }
   }
   if (broken.length) {
     console.log("\n  Missing:");

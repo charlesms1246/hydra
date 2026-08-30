@@ -13,7 +13,8 @@ import { readState } from "../../core/src/state.mjs";
 import { whatDoesThisLeak } from "../../leak/src/leak.mjs";
 import { check } from "./doctor.mjs";
 
-const dot = (up) => (up ? "●" : "○");
+// Three states, matching theme.mjs glyph(): serving-and-current, serving-but-behind, absent.
+const dot = (up, warn) => (up ? "●" : warn ? "◐" : "○");
 
 /**
  * The configuration `hydra up` actually runs, declared honestly. It lives here,
@@ -52,7 +53,10 @@ export const COMMANDS = {
       const L = [];
       L.push(`  ${dot(s.devnet.up)} devnet    ${s.devnet.up ? s.devnet.url : "down"}` +
         (s.devnet.blockNumber !== null && s.devnet.up ? `   block ${s.devnet.blockNumber}` : ""));
-      L.push(`  ${dot(s.indexer.up)} indexer   ${s.indexer.up ? s.indexer.url : "down"}` +
+      // Reachable-but-lagging gets its own dot: green would hide it, red would say
+      // "restart me" about a service that is answering.
+      L.push(`  ${dot(s.indexer.up && s.indexer.healthy, s.indexer.up)} indexer   ` +
+        `${s.indexer.up ? s.indexer.url : "down"}` +
         (s.indexer.up ? `   lag ${s.indexer.lagSecs ?? "?"}s` : ""));
       L.push(`  ${dot(true)} prover    ${s.prover.mode}`);
       L.push(`  ${dot(s.agents.mcp.present)} mcp       ${s.agents.mcp.present ? "present" : "missing"}`);
@@ -76,7 +80,8 @@ export const COMMANDS = {
     help: "discovery service status",
     run: async () => (await status()).indexer,
     render: (i) => i.up
-      ? `  ● indexer up at ${i.url}\n    status ${i.status}   head ${i.blockNumber}   lag ${i.lagSecs}s`
+      ? `  ${i.healthy ? "●" : "◐"} indexer up at ${i.url}\n    status ${i.status}   head ${i.blockNumber}   lag ${i.lagSecs}s` +
+        (i.healthy ? "" : "\n    lagging, not down — an idle devnet mints no blocks; a transaction clears it")
       : `  ○ indexer down (${i.reason ?? "no state"})`,
   },
 
@@ -178,14 +183,18 @@ export const COMMANDS = {
     render: (d) => {
       const L = d.rows.map((r) =>
         `  [${r.status}] ${r.name.padEnd(24)} want ${String(r.want).padEnd(14)} got ${r.got}`);
-      const broken = d.rows.filter((r) => r.status.trim() !== "ok");
-      if (broken.length) {
-        L.push("", "  to fix:");
-        for (const r of broken) {
+      // MISS and WARN are different asks. A WARN is already handled — filing it under
+      // "to fix" tells the reader to go and fix something that is working.
+      const section = (title, rows) => {
+        if (!rows.length) return;
+        L.push("", `  ${title}`);
+        for (const r of rows) {
           L.push(`    ${r.name}`);
           for (const line of String(r.hint ?? "no automatic fix").split("\n")) L.push(`      ${line.trim()}`);
         }
-      }
+      };
+      section("to fix:", d.rows.filter((r) => r.status.trim() === "MISS"));
+      section("worth knowing:", d.rows.filter((r) => r.status.trim() === "WARN"));
       return L.join("\n");
     },
   },

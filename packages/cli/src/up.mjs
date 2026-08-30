@@ -7,6 +7,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { upstreamPath } from "./doctor.mjs";
@@ -25,11 +26,52 @@ function freePort() {
   });
 }
 
+/**
+ * Hand `starknet-devnet` an explicit port, chosen by binding.
+ *
+ * Its npm wrapper picks a port by *connecting* to candidates and accepting one only on
+ * ECONNREFUSED — every other error is rethrown, not skipped
+ * (`node_modules/starknet-devnet/dist/util.js`, `isFreePort`). WSL2 running
+ * `networkingMode=mirrored` drops connections to unbound IPv4 loopback ports instead of
+ * resetting them, so that probe sits for ~135s and then throws, and `hydra up` dies with
+ * `connect ETIMEDOUT 127.0.0.1:6050` having never spawned devnet. (`::1` still refuses
+ * correctly, which is why nothing else on such a machine notices.) 6050 is exactly the
+ * port it tries first: DEFAULT_DEVNET_PORT 5050 plus its 1000 step.
+ *
+ * `ensureUrl` skips that probe entirely when `--port` is already in the args, so supplying
+ * one avoids it. Binding is the better test anyway — it asks the kernel for a free port
+ * rather than inferring one from a refused connection — so this is unconditional rather
+ * than gated on detecting the mirrored-mode case, which would leave the path untested on
+ * every machine that does not need it.
+ *
+ * Patched rather than configured because upstream's `Devnet.initialize()` builds its own
+ * arg list and `DevnetConfig` exposes only `userAccounts` (`sdk/src/testing/devnet.ts`),
+ * so there is no supported way to pass a port. An ESM `import` of a CJS package shares the
+ * require cache, so this reaches the same class object the SDK imports afterwards.
+ */
+async function pinDevnetPort(upstream) {
+  const require_ = createRequire(join(upstream, "sdk", "package.json"));
+  const { Devnet } = require_("starknet-devnet");
+  const original = Devnet.spawnInstalled;
+  if (original.hydraPinsPort) return;          // up() can run more than once per process
+  const patched = async function (config = {}) {
+    const args = [...(config.args ?? [])];
+    if (!args.includes("--port")) args.push("--port", String(await freePort()));
+    return original.call(this, { ...config, args });
+  };
+  patched.hydraPinsPort = true;
+  Devnet.spawnInstalled = patched;
+}
+
 async function waitForHealth(url, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const r = await fetch(`${url}/health`);
+      // Per-request timeout, not just an overall deadline. A connect to a port nothing has
+      // bound yet is refused instantly on most systems, but WSL2 in networkingMode=mirrored
+      // drops it instead — and fetch() has no default timeout, so the await never returns
+      // and the deadline below is never re-checked. The 30s budget would become a hang.
+      const r = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1_000) });
       if (r.ok) return true;
     } catch {
       /* not up yet */
@@ -41,6 +83,7 @@ async function waitForHealth(url, timeoutMs = 30_000) {
 
 export async function up() {
   const up_ = upstreamPath();
+  await pinDevnetPort(up_);
   const { Devnet } = await import(join(up_, "sdk/dist/testing/index.js"));
 
   console.log("\n  starting devnet and deploying the privacy pool…");
