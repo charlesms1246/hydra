@@ -31,6 +31,26 @@ export type Observation = {
 };
 
 /**
+ * A thing the operator CANNOT see, and the name of the code that makes it so.
+ *
+ * `mechanism` exists because a `why` is prose, and prose is where a claim goes to stop being
+ * true. `read.target` sat here for a week saying "clients fetch their whole channel set" while
+ * no client did — the reason read like an explanation and was actually a wish.
+ *
+ * So every row names a mechanism, `adversary/test/not-observable-mechanisms.test.ts` maps each
+ * name to an assertion about the code, and the mapping is checked in both directions. A new row
+ * with no mechanism fails; a mechanism with no row fails. Neither can be added alone.
+ */
+export type Guarantee = Observation & {
+  readonly mechanism:
+    | "no-key-in-server"
+    | "no-channel-field"
+    | "min-read-batch"
+    | "invite-destroyed"
+    | "pad-before-seal";
+};
+
+/**
  * Everything observable. Adding a field to a stored record or a log line without adding a row
  * here fails the operator-view test, which is the point of keeping it as data.
  */
@@ -121,30 +141,35 @@ export const OBSERVABLE_IDS: readonly string[] = OBSERVABLE.map((o) => o.id);
  * the other column — and unlike the prose version, each of these is checked against the
  * capture rather than believed.
  */
-export const NOT_OBSERVABLE: readonly Observation[] = [
+export const NOT_OBSERVABLE: readonly Guarantee[] = [
   {
     id: "content.plaintext",
     what: "the contents of an encrypted blob",
     why: "the server never holds a key; sealing happens client-side",
+      mechanism: "no-key-in-server",
   },
   {
     id: "channel.membership",
     what: "which blobs belong to the same channel",
     why: "nothing in an upload names a channel, and reads arrive as batches over a client's whole set",
+      mechanism: "no-channel-field",
   },
   {
     id: "read.target",
     what: "which specific blob a reader actually wanted",
-    why: "clients fetch their whole channel set padded to a floor, and the encrypted endpoint refuses anything narrower, so the wanted id is one of at least eight in every batch",
+    why: "the encrypted endpoint refuses a read of fewer than eight ids, and a client pads its channel set to that floor, so the wanted id is one of at least eight in every batch",
+      mechanism: "min-read-batch",
   },
   {
     id: "uploader.identity",
     what: "who uploaded an object",
     why: "there are no accounts, and an invite is destroyed at redemption rather than recorded against what it created",
+      mechanism: "invite-destroyed",
   },
   {
     id: "blob.trueLength",
     what: "the exact byte length of a message",
     why: "padding to a bucket happens before encryption, so the true length never reaches the wire",
+      mechanism: "pad-before-seal",
   },
 ];

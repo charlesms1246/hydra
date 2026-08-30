@@ -20,7 +20,19 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { OBSERVABLE_IDS } from "./observations.ts";
-import { MIN_READ_BATCH } from "../../client/src/read.ts";
+
+/**
+ * The smallest encrypted read this vault will serve.
+ *
+ * Owned by the server because the server is what enforces it. It lived in the client for one
+ * commit, which pulled the identity package into the server's module graph through a chain of
+ * imports — and the server's whole claim is that it holds no keys. The dependency direction is
+ * part of the guarantee, not a matter of taste.
+ *
+ * Eight: wide enough that "one of these" is worth saying, small enough that a client with one
+ * message reaches it by padding rather than by waiting.
+ */
+export const MIN_READ_BATCH = 8;
 
 export const ENCRYPTED_ENDPOINT = "/v1/enc";
 export const PUBLIC_ENDPOINT = "/v1/pub";

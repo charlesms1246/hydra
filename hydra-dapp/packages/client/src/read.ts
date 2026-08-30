@@ -21,18 +21,19 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 import { recoverBlobId, ID_BYTES } from "../../channel/src/pointer.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 
 /**
- * The smallest encrypted read the vault will serve.
+ * Re-exported from the server, which owns it because the server enforces it.
  *
- * Eight because a batch has to be wide enough that "one of these" is worth saying, and small
- * enough that a client with one message can reach it by padding rather than by waiting. It is
- * a floor, not a target: a real channel set is usually larger and should be sent whole.
+ * A second copy here would be a number that could drift below what the vault accepts, and the
+ * drift would show up as clients being refused rather than as a weakened guarantee — which is
+ * the failure that gets "fixed" by lowering the server's floor.
  */
-export const MIN_READ_BATCH = 8;
+export { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 
 /** A pointer seen on chain, with the sequence number it was published at. */
 export type SeenPointer = { readonly seq: number; readonly pointer: Uint8Array };
