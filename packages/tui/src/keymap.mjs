@@ -1,17 +1,23 @@
 /**
- * One table, three consumers: the input handler, the footer, and `?`.
+ * One table, three consumers: the input handler, the `Keys` page, and the nav.
  *
- * The old useInput was a 47-line conditional and the footer was a hand-written
- * string, so j/k moved the selection on three tabs and were documented on none
- * (app.mjs:255-265). Here a binding cannot exist undocumented: adding a row to
- * BINDINGS is the only edit needed to add a key, and both the footer and the help
- * overlay are generated from it.
+ * Two rules this table exists to enforce.
  *
- * The other correction is that dispatch does NOT start with `if (busy) return`.
- * That line (app.mjs:206) made the keyboard dead for the ~120 seconds `hydra up`
- * takes, including `q`. Here `busy` gates the MUTATING bindings only; navigation,
- * the log, help, esc and quit stay live, and a suppressed key says so.
+ * **No modifier combos.** Every binding is a key you can press alone. The old
+ * table needed Shift for `?` (help), `L` (log), `G` (last) and `N` (next action),
+ * which is four of the most-used destinations behind a chord.
+ *
+ * **w/a/s/d are movement, everywhere, always.** `a`/`d` move along the bottom
+ * nav; `w`/`s` move within the focused list. They are never destinations, which
+ * is why the page letters are o/b/c/f/x/t/l/k — binding `w` to Wallets as well
+ * would make one key mean two things depending on where you happened to be.
+ *
+ * Enter is shared and resolved by precedence, not by mode: while the nav cursor
+ * sits somewhere other than the page you are on, Enter opens that page; the
+ * moment it agrees with the page, Enter belongs to the page again.
  */
+
+import { PAGES, pageIndex } from "./chrome.mjs";
 
 /** Ink's key object, in the vocabulary the table is written in. */
 function matches(spec, input, key) {
@@ -23,9 +29,6 @@ function matches(spec, input, key) {
     case "enter": return key.return;
     case "esc": return key.escape;
     case "tab": return key.tab && !key.shift;
-    case "shift-tab": return key.tab && key.shift;
-    case "pgup": return key.pageUp;
-    case "pgdn": return key.pageDown;
     default: return input === spec;
   }
 }
@@ -35,126 +38,103 @@ function matches(spec, input, key) {
  * precedence model — there is no other.
  */
 export function scopesFor(s) {
+  if (s.quitting) return ["quit"];
   if (s.confirm) return ["confirm"];
-  if (s.overlay === "help") return ["help", "global"];
-  if (s.overlay === "log") return ["log", "list", "global"];
-  if (s.overlay === "run") return ["transact", "list", "global"];
-  if (s.overlay === "rig:tools") return ["tools", "rig", "list", "global"];
-  if (s.overlay === "rig:wallets") return ["wallets", "rig", "list", "global"];
-  if (s.overlay?.startsWith("rig:")) return ["rig", "list", "global"];
-  if (!s.report) return ["empty", "global"];
-  return ["matrix", "drawer", "global"];
+  // Above the pages: while the cursor is parked elsewhere, Enter is the nav's.
+  const navFirst = s.navCursor !== pageIndex(s.page);
+  const page = {
+    disclosure: s.report ? ["disclosure", "list"] : ["empty"],
+    wallets: ["wallets", "list"],
+    tools: ["tools", "list"],
+    run: ["run", "list"],
+    log: ["log", "list"],
+    keys: ["keys"],
+    activity: ["list"],
+    overview: ["overview"],
+  }[s.page] ?? [];
+  return navFirst ? ["nav", ...page, "global"] : [...page, "nav", "global"];
 }
 
+const jump = (id) => ({
+  scope: "global",
+  keys: [PAGES.find((p) => p.id === id).key],
+  label: `go to ${PAGES.find((p) => p.id === id).label}`,
+  run: (s, a) => a.goto(id),
+});
+
 export const BINDINGS = [
-  // ---- matrix ------------------------------------------------------------
-  { scope: "matrix", keys: ["h", "left"], label: "move a field left", foot: "hjkl cell",
-    run: (s, a) => a.cursor({ field: Math.max(0, s.cursor.field - 1), scroll: 0 }) },
-  { scope: "matrix", keys: ["l", "right"], label: "move a field right",
-    run: (s, a) => a.cursor({ field: Math.min(s.fieldCount - 1, s.cursor.field + 1), scroll: 0 }) },
-  { scope: "matrix", keys: ["k", "up"], label: "move a party up",
+  // ---- the nav bar -------------------------------------------------------
+  { scope: "nav", keys: ["a", "left"], label: "move the nav cursor left",
+    run: (s, a) => a.navMove(-1) },
+  { scope: "nav", keys: ["d", "right"], label: "move the nav cursor right",
+    run: (s, a) => a.navMove(1) },
+  { scope: "nav", keys: ["enter"], label: "open the page under the nav cursor",
+    when: (s) => s.navCursor !== pageIndex(s.page), run: (s, a) => a.openCursor() },
+
+  // ---- movement, in any list --------------------------------------------
+  { scope: "list", keys: ["w", "up"], label: "move up", run: (s, a) => a.moveSel(-1) },
+  { scope: "list", keys: ["s", "down"], label: "move down", run: (s, a) => a.moveSel(1) },
+  { scope: "list", keys: ["/"], label: "filter this list", run: (s, a) => a.startFilter() },
+
+  // ---- disclosure --------------------------------------------------------
+  { scope: "disclosure", keys: ["w", "up"], label: "select the party above",
     run: (s, a) => a.cursor({ party: Math.max(0, s.cursor.party - 1), scroll: 0 }) },
-  { scope: "matrix", keys: ["j", "down"], label: "move a party down",
+  { scope: "disclosure", keys: ["s", "down"], label: "select the party below",
     run: (s, a) => a.cursor({ party: Math.min(s.partyCount - 1, s.cursor.party + 1), scroll: 0 }) },
-  { scope: "matrix", keys: ["["], label: "previous run in the ledger", foot: "[ ] runs",
-    run: (s, a) => a.selectRun(s.cursor.run + 1) },
-  { scope: "matrix", keys: ["]"], label: "next run in the ledger",
-    run: (s, a) => a.selectRun(s.cursor.run - 1) },
-  { scope: "matrix", keys: ["n"], label: "previous action within this run",
-    when: (s) => s.actionCount > 1,
-    run: (s, a) => a.cursor({ action: Math.max(0, s.cursor.action - 1), scroll: 0 }) },
-  { scope: "matrix", keys: ["N"], label: "next action within this run",
-    when: (s) => s.actionCount > 1,
-    run: (s, a) => a.cursor({ action: Math.min(s.actionCount - 1, s.cursor.action + 1), scroll: 0 }) },
-
-  // ---- drawer ------------------------------------------------------------
-  { scope: "drawer", keys: ["enter"], label: "expand the drawer over the matrix", foot: "enter expand",
-    run: (s, a) => a.cursor({ expanded: !s.cursor.expanded }) },
-  { scope: "drawer", keys: ["tab"], label: "cycle why → notes → anonymity set", foot: "tab drawer",
+  { scope: "disclosure", keys: ["tab"], label: "next field — amount, token, counterparty, timing, addresses",
+    run: (s, a) => a.cursor({ field: (s.cursor.field + 1) % s.fieldCount, scroll: 0 }) },
+  { scope: "disclosure", keys: ["e"], label: "cycle the drawer — why, notes, anonymity set",
     run: (s, a) => a.cycleDrawer(1) },
-  { scope: "drawer", keys: ["shift-tab"], label: "cycle the drawer backwards",
-    run: (s, a) => a.cycleDrawer(-1) },
-  { scope: "drawer", keys: ["pgdn"], label: "scroll the drawer down",
-    run: (s, a) => a.cursor({ scroll: s.cursor.scroll + 3 }) },
-  { scope: "drawer", keys: ["pgup"], label: "scroll the drawer up",
-    run: (s, a) => a.cursor({ scroll: Math.max(0, s.cursor.scroll - 3) }) },
+  { scope: "disclosure", keys: ["enter"], label: "expand the drawer over the matrix",
+    run: (s, a) => a.cursor({ expanded: !s.cursor.expanded }) },
+  { scope: "disclosure", keys: ["["], label: "previous run", run: (s, a) => a.selectRun(s.cursor.run + 1) },
+  { scope: "disclosure", keys: ["]"], label: "next run", run: (s, a) => a.selectRun(s.cursor.run - 1) },
 
-  // ---- empty state -------------------------------------------------------
-  { scope: "empty", keys: ["e"], label: "load packages/leak/examples/private-transfer.json",
-    foot: "e example", footRank: 1, run: (s, a) => a.loadExample() },
+  // ---- empty disclosure --------------------------------------------------
+  { scope: "empty", keys: ["e"], label: "load the bundled private-transfer example",
+    run: (s, a) => a.loadExample() },
 
-  // ---- the ? overlay -----------------------------------------------------
-  // The keymap outgrew the screen: 45 bindings do not fit in the 22 rows a
-  // 100x30 terminal leaves, let alone the 16 an 80x24 one does. Without these
-  // the `help` scope had no bindings at all, so more than half of `?` was
-  // unreachable from inside the TUI while README claimed `?` lists every key.
-  { scope: "help", keys: ["j", "down"], label: "scroll the key list down", foot: "jk scroll",
-    run: (s, a) => a.moveSel(1) },
-  { scope: "help", keys: ["k", "up"], label: "scroll the key list up", run: (s, a) => a.moveSel(-1) },
-  { scope: "help", keys: ["g"], label: "first binding", run: (s, a) => a.jumpSel("first") },
-  { scope: "help", keys: ["G"], label: "last binding", foot: "g G ends", run: (s, a) => a.jumpSel("last") },
-  { scope: "help", keys: ["pgdn"], label: "a page of bindings down", foot: "pgup pgdn page",
-    run: (s, a) => a.pageSel(1) },
-  { scope: "help", keys: ["pgup"], label: "a page of bindings up", run: (s, a) => a.pageSel(-1) },
+  // ---- wallets -----------------------------------------------------------
+  { scope: "wallets", keys: ["m"], label: "mint devnet funds to the selected account",
+    mutates: true, run: (s, a) => a.fundWallet() },
 
-  // ---- windowed lists ----------------------------------------------------
-  { scope: "list", keys: ["j", "down"], label: "move down", foot: "jk row",
-    run: (s, a) => a.moveSel(1) },
-  { scope: "list", keys: ["k", "up"], label: "move up", run: (s, a) => a.moveSel(-1) },
-  { scope: "list", keys: ["g"], label: "first item", run: (s, a) => a.jumpSel("first") },
-  { scope: "list", keys: ["G"], label: "last item", foot: "g G ends", run: (s, a) => a.jumpSel("last") },
-  { scope: "list", keys: ["pgdn"], label: "page down", run: (s, a) => a.pageSel(1) },
-  { scope: "list", keys: ["pgup"], label: "page up", run: (s, a) => a.pageSel(-1) },
-  { scope: "list", keys: ["/"], label: "filter this list", foot: "/ filter",
-    run: (s, a) => a.startFilter() },
-  { scope: "list", keys: ["enter"], label: "open the selected row", foot: "enter open",
-    run: (s, a) => a.descend() },
+  // ---- tools -------------------------------------------------------------
+  { scope: "tools", keys: ["i"], label: "run this row's fix (shows the command first)",
+    mutates: true, run: (s, a) => a.askFix() },
 
-  // ---- rig panes ---------------------------------------------------------
-  { scope: "wallets", keys: ["f"], label: "fund the selected account", foot: "f fund", mutates: true,
-    run: (s, a) => a.fundWallet() },
-  { scope: "tools", keys: ["i"], label: "run the fix for this row (shows cmd and cwd first)",
-    foot: "i fix", mutates: true, run: (s, a) => a.askFix() },
-
-  // ---- run menu ----------------------------------------------------------
-  { scope: "transact", keys: ["enter"], label: "preview this flow's disclosure, then y runs it",
-    foot: "enter preview", mutates: true, run: (s, a) => a.askFlow() },
+  // ---- run ---------------------------------------------------------------
+  { scope: "run", keys: ["enter"], label: "preview what this flow discloses, then y runs it",
+    mutates: true, run: (s, a) => a.askFlow() },
 
   // ---- confirm -----------------------------------------------------------
-  { scope: "confirm", keys: ["y"], label: "run it", foot: "y run", run: (s, a) => a.confirmYes() },
-  { scope: "confirm", keys: ["n", "esc"], label: "cancel", foot: "n cancel",
-    run: (s, a) => a.confirmNo() },
+  { scope: "confirm", keys: ["y"], label: "yes, run it", run: (s, a) => a.confirmYes() },
+  { scope: "confirm", keys: ["n", "esc"], label: "no, cancel", run: (s, a) => a.confirmNo() },
+
+  // ---- quit --------------------------------------------------------------
+  { scope: "quit", keys: ["b"], label: "quit and leave the stack running",
+    run: (s, a) => a.quitLeaveRunning() },
+  { scope: "quit", keys: ["s"], label: "stop the stack, then quit", run: (s, a) => a.quitAndStop() },
+  { scope: "quit", keys: ["q"], label: "quit without stopping anything",
+    run: (s, a) => a.quitLeaveRunning() },
+  { scope: "quit", keys: ["esc", "n"], label: "stay", run: (s, a) => a.cancelQuit() },
+
+  // ---- destinations ------------------------------------------------------
+  ...PAGES.map((p) => jump(p.id)),
 
   // ---- global ------------------------------------------------------------
-  { scope: "global", keys: ["x"], label: "run menu — shield, register, transfer, re-discover notes",
-    foot: "x run", footRank: 1, run: (s, a) => a.toggleOverlay("run") },
-  { scope: "global", keys: ["s"], label: "rig · services", foot: "s w a t rig", footRank: 1,
-    run: (s, a) => a.toggleOverlay("rig:services") },
-  { scope: "global", keys: ["w"], label: "rig · wallets", run: (s, a) => a.toggleOverlay("rig:wallets") },
-  { scope: "global", keys: ["a"], label: "rig · activity", run: (s, a) => a.toggleOverlay("rig:activity") },
-  { scope: "global", keys: ["t"], label: "rig · tools", run: (s, a) => a.toggleOverlay("rig:tools") },
-  { scope: "global", keys: ["L"], label: "the log — live while busy", foot: "L log", footRank: 1,
-    run: (s, a) => a.toggleOverlay("log") },
-  { scope: "global", keys: ["u"], label: "start the stack", foot: "u up", mutates: true,
+  { scope: "global", keys: ["u"], label: "start the stack", mutates: true,
     when: (s) => !s.up, run: (s, a) => a.bringUp() },
   // Deliberately NOT gated on s.up. The half-dead stack — devnet gone, the
   // indexer child from the same `hydra up` still alive with a recorded pid — is
   // exactly the state that needs cleaning up, and it is the state where s.up is
-  // false. bringDown()'s else-branch signals both pids from recorded state.
-  { scope: "global", keys: ["d"], label: "stop the stack — works from recorded pids with devnet already gone",
-    foot: "d down", mutates: true, run: (s, a) => a.bringDown() },
-  { scope: "global", keys: ["r"], label: "refresh the focused source now", foot: "r refresh",
-    run: (s, a) => a.refreshFocused() },
-  { scope: "global", keys: ["esc"],
-    label: "clear filter → collapse drawer → up one level → close overlay, in that order",
+  // false.
+  { scope: "global", keys: ["p"], label: "stop the stack", mutates: true,
+    run: (s, a) => a.bringDown() },
+  { scope: "global", keys: ["r"], label: "refresh this page's data now", run: (s, a) => a.refreshFocused() },
+  { scope: "global", keys: ["esc"], label: "clear the filter, then collapse, then back to Overview",
     run: (s, a) => a.escape() },
-  { scope: "global", keys: ["?"], label: "this list", foot: "? keys", tail: true,
-    run: (s, a) => a.toggleOverlay("help") },
-  // Live while busy on purpose. Ink's own Ctrl-C handler
-  // (ink/build/components/App.js:143) already exits mid-fix, so swallowing q was
-  // strictly worse than an honest prompt.
-  { scope: "global", keys: ["q"], label: "quit (asks first if something is running)", foot: "q",
-    tail: true, run: (s, a) => (s.busy ? a.askQuit() : a.exit()) },
+  { scope: "global", keys: ["q"], label: "quit — asks what to do with a running stack",
+    run: (s, a) => a.askQuit() },
 ];
 
 /** The whole body of useInput. */
@@ -173,55 +153,27 @@ export function dispatch(s, input, key, api) {
       if (b.scope !== scope) continue;
       if (!b.keys.some((k) => matches(k, input, key))) continue;
       if (b.when && !b.when(s)) continue;
-      if (b.mutates && s.busy) return api.note("working — L watches the log, q quits", "warn");
+      if (b.mutates && s.busy) return api.note("working — l watches the log, q quits", "warn");
       return b.run(s, api);
     }
   }
   return undefined;
 }
 
-/** The footer. It cannot omit a bound key, which is how j/k went undocumented. */
-export function footerFor(s, width) {
-  const live = scopesFor(s);
-  const parts = [];
-  const tail = [];
-  for (const scope of live) {
-    for (const b of BINDINGS) {
-      if (b.scope !== scope || !b.foot) continue;
-      if (b.when && !b.when(s)) continue;
-      (b.tail ? tail : parts).push({ foot: b.foot, rank: b.footRank ?? 2 });
-    }
-  }
-  // `? keys` and `q` are reserved out of the budget first: a footer that runs out
-  // of room and drops the way to see the other keys, or the way out, is worse
-  // than one that drops a key you can rediscover from `?`.
-  const suffix = tail.map((p) => p.foot).join(" · ");
-  const budget = width - 2 - (suffix ? suffix.length + 3 : 0);
-  // Rank 1 is the set of destinations you cannot find by guessing — the rig
-  // letters, the run menu, the log. They are placed before the navigation keys
-  // for the region you are already looking at, so a narrow terminal keeps them.
-  let out = "";
-  for (const p of [...parts].sort((a, b) => a.rank - b.rank)) {
-    const next = out ? `${out} · ${p.foot}` : p.foot;
-    if (next.length > budget) break;
-    out = next;
-  }
-  return suffix ? (out ? `${out} · ${suffix}` : suffix) : out;
-}
-
 const SCOPE_TITLE = {
-  global: "global", matrix: "matrix", drawer: "drawer", empty: "empty",
-  list: "list", rig: "rig", wallets: "wallets", tools: "tools",
-  transact: "transact", confirm: "confirm", log: "log", help: "help",
+  nav: "the nav bar", list: "moving in a list", disclosure: "disclosure",
+  empty: "disclosure (nothing loaded)", wallets: "wallets", tools: "tools",
+  run: "run", confirm: "confirm", quit: "quitting", global: "anywhere",
+  keys: "keys", log: "log", overview: "overview",
 };
 
-/** The `?` overlay, grouped by scope, in table order. */
+/** The `Keys` page, grouped by scope, in table order. */
 export function helpGroups() {
   const groups = [];
   for (const b of BINDINGS) {
     let g = groups.find((x) => x.scope === b.scope);
     if (!g) groups.push((g = { scope: b.scope, title: SCOPE_TITLE[b.scope] ?? b.scope, rows: [] }));
-    g.rows.push({ keys: b.keys.join(" "), label: b.label });
+    g.rows.push({ keys: b.keys.join(" / "), label: b.label });
   }
   return groups;
 }
@@ -238,4 +190,18 @@ export function duplicateBindings() {
     }
   }
   return dupes;
+}
+
+/** Every binding must be pressable without a modifier. Asserted by the test suite. */
+export function comboBindings() {
+  const NAMED = new Set(["up", "down", "left", "right", "enter", "esc", "tab"]);
+  const out = [];
+  for (const b of BINDINGS) {
+    for (const k of b.keys) {
+      if (NAMED.has(k)) continue;
+      // A single character that is not its own lowercase needs Shift to type.
+      if (k.length !== 1 || k !== k.toLowerCase()) out.push(`${b.scope}:${k}`);
+    }
+  }
+  return out;
 }

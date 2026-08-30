@@ -49,10 +49,14 @@ function matrixGeom(interior) {
   for (const [want, minField] of [[31, WIDEST_MARK + 2], [16, WIDEST_MARK + 1], [13, WIDEST_MARK]]) {
     const fieldW = Math.min(WIDEST_MARK + 2, Math.floor((interior - want) / 5));
     if (fieldW >= minField) {
-      // Capped, not stretched: at 200 columns a 130-wide label gutter is not more
-      // information, it is more whitespace. The design has no third column.
-      const partyW = Math.min(31, interior - fieldW * 5);
-      return { partyW, fieldW, marks: partyW >= 29 ? "long" : "short" };
+      // Fill the width. This used to cap the box near 98 columns on the grounds
+      // that a wide label gutter is whitespace rather than information — true of
+      // the gutter, but it left two thirds of a 190-column terminal empty and the
+      // page has nothing else on it. So the party column takes a bounded share
+      // and the five field columns divide the rest.
+      const partyW = Math.max(13, Math.min(40, Math.floor(interior * 0.28)));
+      const wide = Math.max(fieldW, Math.floor((interior - partyW) / 5));
+      return { partyW: interior - wide * 5, fieldW: wide, marks: partyW >= 29 ? "long" : "short" };
     }
   }
   return null;
@@ -65,7 +69,7 @@ function matrixGeom(interior) {
  * reads as "private", which is the single misreading this tool exists to stop.
  * The matrix is never shed and never rolled up.
  */
-export function fit(cols, rows) {
+export function fit(cols, rows, fixed = 4) {
   const draw = rows - 1;                       // one row of headroom, see above
   const padX = cols >= 80 ? 1 : 0;
   const contentW = cols - padX * 2;
@@ -74,7 +78,7 @@ export function fit(cols, rows) {
 
   const MATRIX = 10;                           // 2 border + head + 5 parties + rule + auditor
   const LEGEND = 1;
-  const FIXED = 4;                             // header, config, status, footer
+  const FIXED = fixed;                         // chrome the page cannot use
   let remaining = draw - FIXED - MATRIX - LEGEND;
 
   const plan = { ledger: 4, drawerBody: 4, drawerCites: 2, notes: 2 };

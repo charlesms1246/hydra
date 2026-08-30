@@ -29,14 +29,15 @@ const SOURCES = {
   },
   blocks: {
     cadenceMs: 3000,
-    gate: (ctx) => ctx.overlay === "rig:activity" && ctx.up,
+    // The overview shows recent chain activity too, so it needs this as well.
+    gate: (ctx) => (ctx.page === "activity" || ctx.page === "overview") && ctx.up,
     fn: () => latestBlocks(Number(process.env.HYDRA_BLOCKS ?? 8)).catch(() => null),
   },
   wallets: {
     // wallets.mjs:39-46 is one awaited RPC per account per token, serially — six
     // round trips on a three-account devnet. It does not belong on a 2s timer.
     cadenceMs: 5000,
-    gate: (ctx) => ctx.overlay === "rig:wallets" && ctx.up,
+    gate: (ctx) => (ctx.page === "wallets" || ctx.page === "overview") && ctx.up,
     fn: () => wallets().catch(() => null),
   },
   doctor: {
@@ -45,20 +46,20 @@ const SOURCES = {
     // the tools rig and on `r`, and nowhere else. There is no spinner because a
     // blocked event loop cannot animate one — the visible pause is the signal.
     cadenceMs: null,
-    gate: (ctx) => ctx.overlay === "rig:tools",
+    gate: (ctx) => ctx.page === "tools" || ctx.page === "overview",
     fn: async () => {
       try { return { rows: check() }; } catch (e) { return { rows: [], error: e.message }; }
     },
   },
 };
 
-export function useSources(overlay) {
+export function useSources(page) {
   const [data, setData] = useState({});
   const [ages, setAges] = useState({});
   const inflight = useRef({});
   const lastRun = useRef({});
-  const ctx = useRef({ overlay, up: false });
-  ctx.current.overlay = overlay;
+  const ctx = useRef({ page, up: false });
+  ctx.current.page = page;
 
   const run = useCallback(async (name) => {
     const src = SOURCES[name];
@@ -104,7 +105,7 @@ export function useSources(overlay) {
     for (const [name, src] of Object.entries(SOURCES)) {
       if (src.gate(ctx.current) && data[name] === undefined) run(name);
     }
-  }, [overlay, run, data]);
+  }, [page, run, data]);
 
   const staleness = useCallback(
     (name) => (ages[name] ? Math.round((Date.now() - ages[name]) / 1000) : null),

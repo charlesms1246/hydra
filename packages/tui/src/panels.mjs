@@ -32,63 +32,10 @@ const Field = ({ k, v, color, w }) => html`
 // services
 // ---------------------------------------------------------------------------
 
-const servicesPane = {
-  id: "services",
-  title: (s) => (s?.stack ? `rig · services · pool ${String(s.stack.poolAddress).slice(0, 14)}…` : "rig · services"),
-  right: (s) => (s?.devnet?.up ? "stack up" : "no stack"),
-  notice: (s) => (s === undefined ? "loading…" : s === null ? "status() failed — r retries" : null),
-  items: (s) => {
-    if (!s) return [];
-    const sk = s.agents.skills;
-    return [
-      { name: "devnet", up: s.devnet.up, value: s.devnet.up ? s.devnet.url : (s.devnet.reason ?? "down"),
-        note: s.devnet.up && s.devnet.blockNumber !== null ? `block ${s.devnet.blockNumber}` : null,
-        detail: { url: s.devnet.url, chainId: s.devnet.chainId, block: s.devnet.blockNumber,
-          pid: s.devnet.pid, "pid alive": String(s.devnet.pidAlive), reason: s.devnet.reason } },
-      { name: "indexer", up: s.indexer.up && s.indexer.healthy, warn: s.indexer.up,
-        value: s.indexer.up ? s.indexer.url : (s.indexer.reason ?? "down"),
-        note: s.indexer.up
-          ? `lag ${s.indexer.lagSecs ?? "?"}s${s.indexer.healthy ? "" : " · idle, not down"}`
-          : null,
-        detail: { url: s.indexer.url, status: s.indexer.status, block: s.indexer.blockNumber,
-          "lag secs": s.indexer.lagSecs, pid: s.indexer.pid, "pid alive": String(s.indexer.pidAlive) } },
-      // The old panel hard-coded up=false warn=true and the literal
-      // "no proving URL needed" here. status() already carries prover.note;
-      // rendering it is how the TUI and `hydra status --json` stay one sentence.
-      { name: "prover", up: false, warn: true, value: s.prover.mode, note: s.prover.note,
-        detail: { mode: s.prover.mode, note: s.prover.note } },
-      { name: "mcp", up: s.agents.mcp.present, value: s.agents.mcp.present ? "present" : "missing",
-        detail: { path: s.agents.mcp.path } },
-      { name: "skills", up: sk.installed.length === sk.expected.length, warn: sk.installed.length > 0,
-        value: `${sk.installed.length}/${sk.expected.length} installed`,
-        detail: { dir: sk.dir, installed: sk.installed.join(", ") || "none", expected: sk.expected.join(", ") } },
-      { name: "accounts", up: (s.accounts ?? []).length > 0, value: `${(s.accounts ?? []).length} funded`,
-        detail: Object.fromEntries((s.accounts ?? []).map((a) => [a.name, a.address])) },
-    ];
-  },
-  row: (it, i, sel, w) => html`
-    <${Box} key=${it.name}>
-      <${Box} width=${2}><${Text} color=${C.accent}>${sel ? "▸" : " "}<//><//>
-      <${Box} width=${10}><${Text} color=${C.muted}>${it.name}<//><//>
-      <${Box} width=${2}><${Text} color=${tone(it.up, it.warn)}>${glyph(it.up, it.warn)}<//><//>
-      <${Text} color=${sel ? C.accent : undefined}>${pad(it.value, Math.max(1, w - 16))}<//>
-    <//>`,
-  detail: (it, s, w) => [
-    ...Object.entries(it.detail ?? {}).map(([k, v]) => html`<${Field} key=${k} k=${k} v=${v} w=${w} />`),
-    html`<${Text} key="src">${" "}<//>`,
-    html`<${Text} key="src2" color=${C.muted} dimColor>
-      ${"  status() — packages/core/src/services.mjs:30, the object `hydra status --json` prints"}<//>`,
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// wallets
-// ---------------------------------------------------------------------------
-
 const walletsPane = {
   id: "wallets",
   title: () => "rig · wallets",
-  right: (w) => (w?.available ? "f funds the selected account" : ""),
+  right: (w) => (w?.available ? "m mints devnet funds to the selected account" : ""),
   notice: (w) => (w === undefined ? "loading…" : w === null ? "wallets() failed — r retries"
     : !w.available ? `${w.reason} · u starts one` : null),
   items: (w) => (w?.available ? w.wallets : []),
@@ -242,7 +189,6 @@ export function visibleItems(pane, data, filter) {
 }
 
 export const PANES = {
-  services: servicesPane,
   wallets: walletsPane,
   activity: activityPane,
   tools: toolsPane,
@@ -317,7 +263,7 @@ export const LogPane = ({ lines, title, width, height, selected, filter }) => {
   return html`
     <${Frame} width=${width ?? 94} height=${height ?? 10} focused=${true}
       title=${`log · ${title || "hydra"}${filter?.text ? ` · /${filter.text}${filter.typing ? "_" : ""}` : ""}`}
-      right=${`${indicatorFor(shown.length, start, end)} · / filter · G end`}>
+      right=${`${indicatorFor(shown.length, start, end)} · / filter · s w scroll`}>
       ${win.map((l, i) => {
         const sev = l.sev === "warn" ? C.warn : l.sev === "bad" ? C.bad : C.muted;
         return html`
@@ -376,40 +322,6 @@ export const Transact = ({ actions, selected, width, height }) => {
  * terminal shows them", which at 80x24 hid 23 of 39 bindings behind a terminal
  * the reader may not have, while README claimed `?` lists every key.
  */
-export const Help = ({ groups, width, height, selected = 0 }) => {
-  const rows = [];
-  for (const g of groups) {
-    for (const [i, r] of g.rows.entries()) {
-      rows.push({ scope: i === 0 ? g.title : "", keys: r.keys, label: r.label });
-    }
-  }
-  const body = Math.max(1, (height ?? 20) - 2);
-  const sel = Math.min(Math.max(0, selected), Math.max(0, rows.length - 1));
-  const { start, end } = windowOf(rows.length, sel, body);
-  const shown = rows.slice(start, end);
-  return html`
-    <${Frame} width=${width} height=${height} focused=${true} title="? keys"
-      right=${`${indicatorFor(rows.length, start, end)} · jk scrolls · g G ends`}>
-      ${shown.map((r, i) => html`
-        <${Box} key=${start + i}>
-          <${Box} width=${10}><${Text} color=${C.accent}>${" " + r.scope}<//><//>
-          <${Box} width=${14}><${Text} color=${start + i === sel ? C.accent : undefined}>${r.keys}<//><//>
-          <${Text} color=${C.muted}>${r.label.slice(0, Math.max(1, width - 28))}<//>
-        <//>`)}
-      ${Array.from({ length: Math.max(0, body - shown.length) }, (_, i) =>
-        html`<${Text} key=${"hp" + i}>${" "}<//>`)}
-    <//>`;
-};
-
-// The five names the previous panels.mjs exported, kept so `hydra` consumers and
-// the existing render tests keep working. Each is now the pane contract rendered
-// at list level, which is the only place list rendering can happen.
-const paneOnly = (pane) => ({ data, selected = 0, width = 96, height = 12 }) =>
-  html`<${Rig} pane=${pane} data=${data} nav=${{ level: 0, sel: [selected] }}
-    width=${width} height=${height} />`;
-
-export const Services = ({ s, selected, width, height }) =>
-  paneOnly(servicesPane)({ data: s === null ? null : s, selected, width, height });
 export const Wallets = ({ w, selected, width, height }) =>
   paneOnly(walletsPane)({ data: w === null ? null : w, selected, width, height });
 export const Activity = ({ b, selected, width, height }) =>

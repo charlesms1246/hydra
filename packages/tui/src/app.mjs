@@ -22,9 +22,12 @@ import { fileURLToPath } from "node:url";
 import { html, React } from "./ui.mjs";
 import { C, glyph, mark, tone } from "./theme.mjs";
 import { fit, useSize, MIN_COLS, MIN_ROWS } from "./layout.mjs";
-import { BINDINGS, dispatch, footerFor, helpGroups } from "./keymap.mjs";
+import { BINDINGS, dispatch, helpGroups } from "./keymap.mjs";
+import { PAGES, pageIndex, NavBar, StatusBar, QuitPrompt, KeysPage } from "./chrome.mjs";
+import { Overview } from "./overview.mjs";
+import { Splash, timings } from "./splash.mjs";
 import { useSources } from "./sources.mjs";
-import { PANES, Rig, LogPane, Confirm, Transact, Help, visibleItems } from "./panels.mjs";
+import { PANES, Rig, LogPane, Confirm, Transact, visibleItems } from "./panels.mjs";
 import {
   leakConfig, ConfigStrip, Ledger, Matrix, Legend, WhyDrawer, NotesDrawer, AnonDrawer, EmptyState,
 } from "./disclosure.mjs";
@@ -63,7 +66,7 @@ export const TX_ACTIONS = [
 
 const LOG_MAX = 200;
 const DRAWERS = ["why", "notes", "anon"];
-const RIG_IDS = ["services", "wallets", "activity", "tools"];
+const RIG_IDS = ["wallets", "activity", "tools"];
 const clock = () => new Date().toTimeString().slice(0, 8);
 
 /**
@@ -83,11 +86,18 @@ function App() {
   const [cursor, setCursorState] = useState({
     run: 0, action: 0, party: 0, field: 0, drawer: "why", expanded: false, scroll: 0,
   });
-  const [overlay, setOverlay] = useState(null);
+  const [page, setPage] = useState("overview");
+  const [navCursor, setNavCursor] = useState(0);
+  // Splash phases: the mark fills cyan while the real sources report in, seals
+  // red once they all have, then hands over. `ready` is the steady state.
+  const [phase, setPhase] = useState("loading");
+  const [sealT, setSealT] = useState(0);
+  const [quitting, setQuitting] = useState(false);
+  const [, setTick] = useState(0);
+  const bornAt = useRef(Date.now());
   const [navs, setNavs] = useState({});
   const [runSel, setRunSel] = useState(0);
   const [logSel, setLogSel] = useState(0);
-  const [helpSel, setHelpSel] = useState(0);
   const [filter, setFilter] = useState(null);
   const [busy, setBusy] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -106,7 +116,7 @@ function App() {
   // alive for the poller's whole 120-second deadline after Ink had exited.
   const pollRef = useRef(null);
 
-  const { data, staleness, refresh } = useSources(overlay);
+  const { data, staleness, refresh } = useSources(page);
   const svc = data.status;
   const up = Boolean(svc?.devnet?.up);
 
@@ -136,23 +146,24 @@ function App() {
 
   const entry = ledger[cursor.run] ?? null;
   const report = entry?.report ?? null;
-  const nav = navs[overlay] ?? { level: 0, sel: [0, 0] };
-  const paneId = overlay?.startsWith("rig:") ? overlay.slice(4) : null;
+  const nav = navs[page] ?? { level: 0, sel: [0, 0] };
+  const paneId = RIG_IDS.includes(page) ? page : null;
   const pane = paneId ? PANES[paneId] : null;
 
   const cursorSet = useCallback((patch) => setCursorState((c) => ({ ...c, ...patch })), []);
   const setNav = useCallback((patch) => {
-    setNavs((n) => ({ ...n, [overlay]: { ...(n[overlay] ?? { level: 0, sel: [0, 0] }), ...patch } }));
-  }, [overlay]);
+    setNavs((n) => ({ ...n, [page]: { ...(n[page] ?? { level: 0, sel: [0, 0] }), ...patch } }));
+  }, [page]);
 
   // ---- the list under the cursor, whichever it is ------------------------
   const listCtx = useMemo(() => {
-    if (overlay === "run") return { len: TX_ACTIONS.length, get: () => runSel, set: setRunSel, height: 6 };
+    if (page === "run") return { len: TX_ACTIONS.length, get: () => runSel, set: setRunSel, height: 6 };
     // `?` is a list like any other. It has to be: 45 bindings do not fit on one
     // screen at any size this TUI supports, and an unscrollable `?` documents
     // fewer than half of them.
-    if (overlay === "help") return { len: BINDINGS.length, get: () => helpSel, set: setHelpSel, height: geom.rigRows - 2 };
-    if (overlay === "log") return { len: log.length, get: () => (logSel < 0 ? log.length - 1 : logSel), set: setLogSel, height: geom.rigRows - 2 };
+    // No entry for `keys`: it lays out in columns to fit and never scrolls, so
+    // there is no selection to move.
+    if (page === "log") return { len: log.length, get: () => (logSel < 0 ? log.length - 1 : logSel), set: setLogSel, height: geom.rigRows - 2 };
     if (pane) {
       const items = visibleItems(pane, data[srcOf(paneId)], filter);
       if (nav.level === 1 && pane.subItems) {
@@ -163,7 +174,7 @@ function App() {
         set: (v) => setNav({ sel: [v, 0] }), height: geom.rigRows - 2 };
     }
     return { len: 0, get: () => 0, set: () => {}, height: 1 };
-  }, [overlay, pane, paneId, data, nav, filter, runSel, logSel, helpSel, log.length, geom.rigRows, setNav]);
+  }, [page, pane, paneId, data, nav, filter, runSel, logSel, log.length, geom.rigRows, setNav]);
 
   // ---- the things that touch the world -----------------------------------
   const bringUp = useCallback(() => {
@@ -171,7 +182,8 @@ function App() {
     setBusy({ label: "starting the stack — this takes a moment", since: Date.now() });
     setLogTitle("hydra up");
     setLog([]);
-    setOverlay("log");
+    setPage("log");
+    setNavCursor(pageIndex("log"));
     stackRef.current = startStack((l) => addLine(l));
     stackRef.current.child.on("close", () => {
       stackRef.current = null;
@@ -242,7 +254,8 @@ function App() {
     setBusy({ label: `fixing ${row.name}`, since: Date.now() });
     setLogTitle(`fix: ${row.name}`);
     setLog([]);
-    setOverlay("log");
+    setPage("log");
+    setNavCursor(pageIndex("log"));
     const r = await runFix(row, (l) => addLine(l, /error|warning/i.test(l) ? "warn" : "info"));
     setBusy(null);
     note(r.ok ? `${row.name} fixed` : `fix failed (exit ${r.code ?? "?"}) ${r.reason ?? ""}`, r.ok ? "ok" : "bad");
@@ -265,9 +278,15 @@ function App() {
     pageSel: (d) => listCtx.set(Math.max(0, Math.min(listCtx.len - 1, listCtx.get() + d * listCtx.height))),
     startFilter: () => setFilter({ text: "", typing: true }),
     setFilter,
-    toggleOverlay: (id) => {
+    goto: (id) => {
       setFilter(null);
-      setOverlay((o) => (o === id ? null : id));
+      setPage(id);
+      setNavCursor(pageIndex(id));
+    },
+    navMove: (d) => setNavCursor((i) => Math.max(0, Math.min(PAGES.length - 1, i + d))),
+    openCursor: () => {
+      setFilter(null);
+      setPage(PAGES[navCursor]?.id ?? "overview");
     },
     /** enter descends: list → item → sub-item. Nothing else changes depth. */
     descend: () => {
@@ -287,7 +306,7 @@ function App() {
       if (filter) return setFilter(null);
       if (cursor.expanded) return cursorSet({ expanded: false });
       if (nav.level > 0) return setNav({ level: nav.level - 1 });
-      if (overlay) return setOverlay(null);
+      if (page !== "overview") { setPage("overview"); return setNavCursor(0); }
       return note("esc has nothing to close — q quits", "info");
     },
     refreshFocused: () => {
@@ -310,7 +329,7 @@ function App() {
       if (!row) return note("no row selected", "warn");
       if (row.status.trim() === "ok") return note("nothing to fix on that row", "info");
       const d = describeFix(row);
-      if (!d.runnable) return note(`${d.reason} — enter opens the whole hint`, "warn");
+      if (!d.runnable) return note(d.reason, "warn");
       setConfirm({
         kind: "fix", row, cmd: d.cmd, cwd: d.cwd,
         prompt: "run this? it executes a real command",
@@ -342,20 +361,46 @@ function App() {
         legend: Boolean(preview),
       });
     },
-    askQuit: () => setConfirm({
-      kind: "quit", prompt: `${busy?.label ?? "something"} is running — quit anyway?`,
-      lines: ["a stack this TUI started will be signalled; a fix will keep running in the background"],
-    }),
+    /**
+     * Quitting is a question, not a confirmation.
+     *
+     * A stack this TUI started is a devnet, a discovery service and a control API,
+     * and both answers are right some of the time: leaving them up is what you want
+     * before running `hydra status` or a test, and wrong when you are done. The old
+     * prompt only appeared when something was mid-flight and always signalled the
+     * stack, so the background case needed you to kill the terminal instead.
+     */
+    askQuit: () => setQuitting(true),
+    cancelQuit: () => setQuitting(false),
+    quitLeaveRunning: () => {
+      // Drop the supervision handle first: the unmount effect signals whatever it
+      // still holds, which is exactly what "leave it running" must not do.
+      stackRef.current = null;
+      clearInterval(pollRef.current);
+      exit();
+    },
+    quitAndStop: async () => {
+      setQuitting(false);
+      setBusy({ label: "stopping the stack", since: Date.now() });
+      try {
+        if (stackRef.current) { await stackRef.current.stop(); stackRef.current = null; }
+        else await stopStack();
+      } catch { /* reported below either way */ }
+      clearInterval(pollRef.current);
+      exit();
+    },
     confirmYes: () => {
       const c = confirm;
       setConfirm(null);
       if (c.kind === "fix") return doFix(c.row);
       if (c.kind === "flow") {
         if (c.action.run && !txAvailable) return note("no running stack — u starts one", "warn");
-        setOverlay(null);
+        // Land on Disclosure, not back on the run menu: the point of running a
+        // flow is the report it produces, and it is one page away.
+        setPage("disclosure");
+        setNavCursor(pageIndex("disclosure"));
         return doFlow(c.action);
       }
-      if (c.kind === "quit") return exit();
       return undefined;
     },
     confirmNo: () => { setConfirm(null); note("cancelled"); },
@@ -373,97 +418,127 @@ function App() {
       }
     },
   }), [exit, note, cursorSet, ledger.length, listCtx, pane, paneId, nav, data, filter, cursor.expanded,
-       overlay, refresh, bringUp, bringDown, confirm, doFix, doFlow, runSel, svc, txAvailable, busy, setNav]);
+       page, navCursor, refresh, bringUp, bringDown, confirm, doFix, doFlow, runSel, svc, txAvailable, setNav]);
 
   const keyState = {
-    cursor, report, overlay, confirm, filter, busy, up,
+    cursor, report, page, navCursor, quitting, confirm, filter, busy, up,
     partyCount: report?.parties?.length ?? 6,
     fieldCount: report?.fields?.length ?? 5,
     actionCount: report?.disclosures?.length ?? 1,
   };
   useInput((input, key) => dispatch(keyState, input, key, api));
 
+  // ---- splash -------------------------------------------------------------
+  // Progress is real: each step is a source that has actually reported. The
+  // elapsed-time floor only stops a warm stack from flashing the mark for 80ms —
+  // it can move the bar forward, never mark a step done that is not.
+  const steps = useMemo(() => [
+    { label: "reading the recorded stack state", done: data.status !== undefined },
+    { label: "probing devnet", done: svc?.devnet !== undefined },
+    { label: "probing the discovery service", done: svc?.indexer !== undefined },
+    { label: "checking the toolchain", done: data.doctor !== undefined },
+  ], [data.status, data.doctor, svc]);
+  const allDone = steps.every((x) => x.done);
+
+  useEffect(() => { refresh("doctor"); }, [refresh]);
+
+  // Held in a ref so the one interval below can read the current value without
+  // being torn down and rebuilt every time a source lands.
+  const allDoneRef = useRef(false);
+  allDoneRef.current = allDone;
+
+  // One clock for the whole splash.
+  //
+  // This was two effects and a `setSealT((t) => t)` used as a "poke" — which sets
+  // an identical value, so React bails out of the re-render, the effect's deps
+  // never change, and the splash sits at 4/4 for ever. A repaint is not a
+  // scheduler: if a transition depends on wall-clock time, something has to
+  // actually be ticking.
+  useEffect(() => {
+    if (phase !== "loading") return undefined;
+    const id = setInterval(() => {
+      setTick((n) => n + 1);
+      if (allDoneRef.current && Date.now() - bornAt.current >= timings().hold) setPhase("sealing");
+    }, 60);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  // The seal has its own clock. 40ms is 25fps: smooth over a 700ms sweep, and
+  // cheap enough that a blocked event loop drops frames rather than queueing them.
+  useEffect(() => {
+    if (phase !== "sealing") return undefined;
+    const began = Date.now();
+    const seal = Math.max(1, timings().seal);
+    const id = setInterval(() => {
+      const t = (Date.now() - began) / seal;
+      if (t >= 1) { clearInterval(id); setSealT(1); setPhase("ready"); }
+      else setSealT(t);
+    }, 40);
+    return () => clearInterval(id);
+  }, [phase]);
+
   // ---- render -------------------------------------------------------------
   const cfg = leakConfig(svc);
   const age = staleness("status");
-  const W = geom.contentW;
 
-  // Assembled to an exact width rather than laid out with flex. Ink wraps a Box
-  // whose children overflow, and a header that silently becomes two rows pushes
-  // the whole frame past stdout.rows — which is the one thing that must not happen.
-  const brand = cols >= 100 ? " hydra ── six heads " : " hydra ─ six heads ";
-  const glyphs = [
-    [glyph(up), tone(up), " devnet  "],
-    [glyph(svc?.indexer?.up && svc?.indexer?.healthy, svc?.indexer?.up),
-     tone(svc?.indexer?.up && svc?.indexer?.healthy, svc?.indexer?.up), " indexer  "],
-    ["◐", C.warn, ` prover ${svc?.prover?.mode ?? "?"}  `],
-  ];
-  const glyphW = glyphs.reduce((n, [g, , t]) => n + g.length + t.length, 0);
-  // "no stack" next to two lit dots reads as a contradiction. Devnet answering
-  // with no recorded state is not "no stack", it is "no pool address recorded".
-  const poolAddr = svc?.stack?.poolAddress;
-  const poolPart = poolAddr
-    ? `pool ${poolAddr.slice(0, 8)}…${poolAddr.slice(-4)}`
-    : up ? "no pool addr" : "no stack";
-  // The age is the one droppable word here, so it is dropped first rather than
-  // pushing the line past W and wrapping it into a second row — which at 70
-  // columns is what takes the frame to stdout.rows. height/overflow below is the
-  // guarantee; this is what keeps it from having to clip anything.
-  const room = W - brand.length - glyphW;
-  const withAge = poolPart + (age === null ? "  ↻ idle" : `  ↻${age}s`);
-  const tail = withAge.length < room ? withAge : poolPart.slice(0, Math.max(0, room - 1));
-  const gap = Math.max(1, room - tail.length);
-  const header = html`
-    <${Box} width=${W} height=${1} overflow="hidden">
-      <${Text} bold>${brand.slice(0, W)}<//>
-      <${Text} color=${C.muted}>${(cols >= 100 ? "─".repeat(gap - 1) + " " : " ".repeat(gap))}<//>
-      ${glyphs.map(([g, col, t]) => html`
-        <${Box} key=${t}>
-          <${Text} color=${col}>${g}<//>
-          <${Text} color=${C.muted}>${t}<//>
-        <//>`)}
-      <${Text} color=${C.muted}>${tail}<//>
-    <//>`;
-
-  const statusLine = html`
-    <${Box} width=${W}>
-      <${Text} color=${busy ? C.warn : msg.sev === "bad" ? C.bad : msg.sev === "ok" ? C.ok : msg.sev === "warn" ? C.warn : C.muted}>
-        ${(" " + (busy ? `${busy.label}  (L watches the log)` : msg.text)).slice(0, W - 7)}<//>
-      <${Box} flexGrow=${1} />
-      <${Text} color=${C.muted}>${busy ? clock().slice(0, 5) : msg.at.slice(0, 5)}<//>
-    <//>`;
-
-  const footer = html`
-    <${Text} color=${C.muted}>${" " + footerFor(keyState, W)}<//>`;
-
-  // Below the floor there is no layout to degrade — the matrix cannot show 30
-  // cells at full width, and a summary would be worse than an absence. Say the
-  // size and stop, in fewer rows than the terminal has.
+  // Below the floor there is no layout to degrade. Say the size and stop, in
+  // fewer rows than the terminal has.
   if (tooSmall) {
     return html`
       <${Box} flexDirection="column" width=${cols}>
         <${Text} bold>${" hydra".slice(0, cols)}<//>
-        <${Text} color=${C.warn}>${` ${MIN_COLS}x${MIN_ROWS} needed · ? for keys`.slice(0, cols)}<//>
+        <${Text} color=${C.warn}>${` ${MIN_COLS}x${MIN_ROWS} needed`.slice(0, cols)}<//>
         <${Text} color=${C.muted}>${` this is ${cols}x${rows} · q quits`.slice(0, cols)}<//>
       <//>`;
   }
 
+  if (phase !== "ready") {
+    const elapsed = Date.now() - bornAt.current;
+    const done = steps.filter((x) => x.done).length;
+    return html`
+      <${Box} flexDirection="column" width=${cols} height=${rows - 1} overflow="hidden">
+        <${Splash} cols=${cols} rows=${rows - 1}
+          progress=${Math.max(done / steps.length, Math.min(0.92, elapsed / Math.max(1, timings().hold)))}
+          seal=${phase === "sealing" ? sealT : null} steps=${steps}
+          note=${up ? "stack up" : "no stack — u starts one"} />
+      <//>`;
+  }
+
+  // One row of headroom below everything: Ink clears the whole terminal the
+  // moment a frame reaches stdout.rows (ink/build/ink.js:121).
+  const draw = rows - 1;
+  const showStatusBar = page !== "overview";
+  const bodyRows = draw - 1 - 1 - (showStatusBar ? 1 : 0);   // nav, message, status
+  const W = geom.contentW;
+
   let content;
-  if (confirm) {
+  if (quitting) {
     content = html`
-      <${Box} flexDirection="column" height=${geom.rigRows}>
+      <${Box} flexDirection="column" height=${bodyRows} overflow="hidden">
+        <${QuitPrompt} width=${W} running=${up || Boolean(svc?.stack)}
+          managed=${Boolean(stackRef.current)} />
+      <//>`;
+  } else if (confirm) {
+    content = html`
+      <${Box} flexDirection="column" height=${bodyRows} overflow="hidden">
         <${Confirm} c=${confirm} width=${W} />
       <//>`;
-  } else if (overlay === "help") {
-    content = html`<${Help} groups=${helpGroups()} width=${W} height=${geom.rigRows} selected=${helpSel} />`;
-  } else if (overlay === "log") {
+  } else if (page === "overview") {
     content = html`
-      <${LogPane} lines=${log} title=${logTitle} width=${W} height=${geom.rigRows}
+      <${Overview} cols=${W} rows=${bodyRows} svc=${svc} wal=${data.wallets}
+        blocks=${data.blocks} doctor=${data.doctor} ledger=${ledger} control=${txAvailable}
+        note=${AUDITOR_NOTE} />`;
+  } else if (page === "keys") {
+    content = html`<${KeysPage} groups=${helpGroups()} width=${W} height=${bodyRows} />`;
+  } else if (page === "log") {
+    content = html`
+      <${LogPane} lines=${log} title=${logTitle} width=${W} height=${bodyRows}
         selected=${logSel < 0 ? log.length - 1 : logSel} filter=${filter} />`;
-  } else if (overlay === "run") {
+  } else if (page === "run") {
     content = html`
-      <${Box} flexDirection="column" height=${geom.rigRows}>
-        <${Transact} actions=${TX_ACTIONS} selected=${runSel} width=${W} height=${Math.min(9, geom.rigRows)} />
+      <${Box} flexDirection="column" height=${bodyRows} overflow="hidden">
+        <${Transact} actions=${TX_ACTIONS} selected=${runSel} width=${W}
+          height=${Math.min(9, bodyRows)} />
         ${txAvailable ? null : html`
           <${Text} color=${C.warn}>${"  no running stack — u starts one; the preview still works"}<//>`}
       <//>`;
@@ -476,80 +551,72 @@ function App() {
       : data[srcOf(paneId)];
     content = html`
       <${Rig} pane=${pane} data=${gated} nav=${nav} width=${W}
-        height=${geom.rigRows} filter=${filter} receipt=${receipt} />`;
+        height=${bodyRows} filter=${filter} receipt=${receipt} />`;
   } else if (!report) {
     content = html`
-      <${Box} flexDirection="column" height=${geom.rigRows}>
-        <${EmptyState} hasStack=${up} width=${geom.boxW} height=${geom.rigRows} />
+      <${Box} flexDirection="column" height=${bodyRows} overflow="hidden">
+        <${ConfigStrip} cfg=${cfg} width=${W} />
+        <${EmptyState} hasStack=${up} width=${geom.boxW} height=${bodyRows - 1} />
       <//>`;
   } else {
-    const drawerRows = geom.drawerBody;
     const drawerW = geom.boxW;
     const drawer =
       cursor.drawer === "notes"
         ? html`<${NotesDrawer} report=${report} auditorNote=${AUDITOR_NOTE} width=${drawerW}
-            bodyRows=${cursor.expanded ? geom.expandedBody : drawerRows + geom.drawerCites}
+            bodyRows=${cursor.expanded ? geom.expandedBody : geom.drawerBody + geom.drawerCites}
             scroll=${cursor.scroll} focused=${true} />`
         : cursor.drawer === "anon"
           ? html`<${AnonDrawer} report=${report} actionIndex=${cursor.action} width=${drawerW}
-              bodyRows=${cursor.expanded ? geom.expandedBody : drawerRows + geom.drawerCites}
+              bodyRows=${cursor.expanded ? geom.expandedBody : geom.drawerBody + geom.drawerCites}
               scroll=${cursor.scroll} focused=${true} />`
           : html`<${WhyDrawer} report=${report} actionIndex=${cursor.action} cursor=${cursor}
-              width=${drawerW} bodyRows=${cursor.expanded ? geom.expandedBody : drawerRows}
+              width=${drawerW} bodyRows=${cursor.expanded ? geom.expandedBody : geom.drawerBody}
               citeRows=${geom.drawerCites} scroll=${cursor.scroll}
               focused=${true} expanded=${cursor.expanded} />`;
 
-    // The caveat is the frame's right title, where it fits at every width. The
-    // upstream commit joins it only when there is room: the admission that the
-    // report describes the DECLARED action, not the receipt, is not droppable.
     const right = geom.boxW - 2 >= 90
       ? `${SHAPE_CAVEAT} · ${report.upstreamCommit.slice(0, 8)}`
       : SHAPE_CAVEAT;
     const headline = `who learns what · ${entry.label}`.slice(0, Math.max(8, geom.boxW - 10 - right.length));
-    // Pinned to the planned height and clipped. fit() budgets these regions, but a
-    // budget a region can quietly exceed is not a guarantee — see layout.mjs
-    // reportRows. This is the guarantee: the frame is FIXED + reportRows, which is
-    // at most rows-1, at every width, with a report on screen.
     content = html`
-      <${Box} flexDirection="column" height=${geom.reportRows} overflow="hidden">
+      <${Box} flexDirection="column" height=${bodyRows} overflow="hidden">
+        <${ConfigStrip} cfg=${cfg} width=${W} />
         ${geom.ledgerRows > 0 ? html`
-          <${Box} flexDirection="column">
-            ${geom.ledgerRule ? html`
-              <${Text} color=${C.muted}>
-                ${(" ── ran this session " + "─".repeat(Math.max(0, W - 46)) +
-                   ` ${ledger.length} runs · ${report.unknownCount} UNKNOWN cells ──`).slice(0, W)}<//>` : null}
-            <${Ledger} runs=${ledger} selected=${cursor.run} rows=${geom.ledgerRows} width=${W} />
-          <//>` : null}
+          <${Ledger} runs=${ledger} selected=${cursor.run} rows=${geom.ledgerRows} width=${W} />` : null}
         ${cursor.expanded ? null : html`
           <${Matrix} report=${report} actionIndex=${cursor.action} cursor=${cursor}
             geom=${geom} width=${geom.boxW} focused=${true}
             headline=${headline} right=${right} />`}
         ${cursor.expanded ? null : html`<${Legend} width=${W} />`}
         ${drawer}
-        ${geom.notesRows > 0 ? html`
-          <${Text} color=${C.muted}>
-            ${(" ── notes " + report.notes.length + " · anonymity set " +
-               (report.anonymitySets[cursor.action]?.size ?? "UNKNOWN") + " " +
-               "─".repeat(Math.max(0, W - 60)) + " tab cycles this region ──").slice(0, W)}<//>` : null}
-        ${geom.notesRows > 1 ? html`
-          <${Text} color=${C.unknown}>
-            ${("  " + (report.notes.find((n) => n.kind === "unknown")?.text ?? report.notes[0]?.text ?? "")).slice(0, W)}<//>` : null}
       <//>`;
   }
 
+  const statusText = quitting
+    ? "choose what happens to the stack"
+    : busy
+      ? `${busy.label}  (l watches the log)`
+      : msg.text;
+  const statusColour = busy ? C.warn
+    : msg.sev === "bad" ? C.bad : msg.sev === "ok" ? C.ok : msg.sev === "warn" ? C.warn : C.muted;
+
   return html`
-    <${Box} flexDirection="column" paddingX=${geom.padX} width=${cols}>
-      ${header}
-      <${ConfigStrip} cfg=${cfg} width=${W} />
+    <${Box} flexDirection="column" paddingX=${geom.padX} width=${cols} height=${draw}
+      overflow="hidden">
+      ${showStatusBar ? html`<${StatusBar} width=${W} svc=${svc} />` : null}
       ${content}
-      ${statusLine}
-      ${footer}
+      <${Box} width=${W} height=${1} overflow="hidden">
+        <${Text} color=${statusColour}>${(" " + statusText).slice(0, Math.max(0, W - 8))}<//>
+        <${Box} flexGrow=${1} />
+        <${Text} color=${C.muted}>${age === null ? "" : `↻${age}s`}<//>
+      <//>
+      <${NavBar} width=${W} active=${page} cursor=${navCursor} />
     <//>`;
 }
 
 /** Pane id → the source that feeds it. One place, so they cannot drift. */
 function srcOf(paneId) {
-  return { services: "status", wallets: "wallets", activity: "blocks", tools: "doctor" }[paneId];
+  return { wallets: "wallets", activity: "blocks", tools: "doctor" }[paneId];
 }
 
 export async function start() {
