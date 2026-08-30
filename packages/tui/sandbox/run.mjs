@@ -55,7 +55,12 @@ if (world.running) {
     // Our own pid, so pidAlive() reports true without inventing a process.
     indexerPid: process.pid, devnetPid: process.pid,
     tokens: world.tokens,
-    accounts: world.accounts.map((a) => ({ name: a.name, address: a.address })),
+    // `flows` mirrors what `up.mjs` records: control.mjs wraps alice and bob only,
+    // so admin holds funds and cannot be a `from`. Without this the Run page's
+    // picker would offer a signer the control API has never heard of.
+    accounts: world.accounts.map((a) => ({
+      name: a.name, address: a.address, flows: a.name === "alice" || a.name === "bob",
+    })),
   }, null, 2));
 }
 

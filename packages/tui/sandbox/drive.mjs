@@ -29,6 +29,10 @@ export async function drive(cols, rows, keys = [], settleMs = 400) {
 
   await new Promise((r) => setTimeout(r, settleMs));
   for (const k of keys) {
+    // `WAIT:<ms>` is a pause, not a keystroke — the only way to drive something that
+    // spawns a real process (a build, a test run) and still capture its result frame.
+    const wait = /^WAIT:(\d+)$/.exec(k);
+    if (wait) { await new Promise((r) => setTimeout(r, Number(wait[1]))); continue; }
     stdin.write(KEY[k] ?? k);
     await new Promise((r) => setTimeout(r, 220));
   }

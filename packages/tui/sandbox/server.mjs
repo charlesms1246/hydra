@@ -30,7 +30,7 @@ function rpcResult(w, method, params) {
         block_hash: "0x" + n.toString(16),
         // Only the head carries the backdating; older blocks stay ordered behind it.
         timestamp: Math.floor(Date.now() / 1000) - w.headAgeSecs - (w.blockNumber - n) * 12,
-        transactions: Array.from({ length: n % 3 }, (_, i) => "0x" + (n * 10 + i).toString(16)),
+        transactions: w.blockTxs.get(n) ?? [],
       };
     }
     case "starknet_call": {
@@ -53,11 +53,26 @@ function rpcResult(w, method, params) {
       const rec = w.txs.get(params?.[0]);
       if (!rec) throw new Error("Transaction hash not found");
       return {
+        type: rec.type ?? "INVOKE",
         finality_status: "ACCEPTED_ON_L2",
         execution_status: "SUCCEEDED",
         block_number: rec.blockNumber,
         actual_fee: { amount: "0x5af3107a4000", unit: "FRI" },
         events: [{}, {}],
+        execution_resources: { l1_gas: 0, l1_data_gas: 224, l2_gas: 1310720 },
+      };
+    }
+    // The sender lives here and nowhere else, which is why chain.mjs reads it.
+    case "starknet_getTransactionByHash": {
+      const rec = w.txs.get(params?.[0]);
+      if (!rec) throw new Error("Transaction hash not found");
+      return {
+        transaction_hash: params[0],
+        type: rec.type ?? "INVOKE",
+        version: "0x3",
+        sender_address: rec.sender,
+        nonce: "0x" + rec.blockNumber.toString(16),
+        calldata: ["0x1", "0x0", "0x0", "0x0"],
       };
     }
     default:

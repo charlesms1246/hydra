@@ -55,9 +55,24 @@ export function createWorld(scenario = "up") {
     // view, and it is the one fact that decides whether a transfer discloses its
     // recipient, so the sandbox has to model it or the disclosure preview is fiction.
     channels: new Map(),
+    // hash -> {blockNumber, sender, type}, and blockNumber -> [hash]. Both, because
+    // the Activity page reads a block to get hashes and then reads each hash back;
+    // a world that only had one of the two answered half of that and 404'd the rest.
     txs: new Map(),
+    blockTxs: new Map(),
     log: [],
   };
+
+  // Chain history before the sandbox started. The old server invented a hash per
+  // block from `n % 3` and never registered it, so every receipt the Activity page
+  // asked for came back "not found" — a page of rows that all led nowhere.
+  for (let n = 1; n <= w.blockNumber; n++) {
+    const hashes = Array.from({ length: n % 3 }, (_, i) => "0x" + (n * 10 + i).toString(16));
+    if (hashes.length) w.blockTxs.set(n, hashes);
+    hashes.forEach((h, i) => w.txs.set(h, {
+      blockNumber: n, sender: ACCOUNTS[(n + i) % ACCOUNTS.length].address, type: "INVOKE",
+    }));
+  }
 
   w.note = (line) => {
     w.log.push(`${new Date().toISOString().slice(11, 19)}  ${line}`);
@@ -72,10 +87,14 @@ export function createWorld(scenario = "up") {
   };
 
   /** A transaction mints a block, which is also what clears the indexer's lag. */
-  w.mineBlock = (txHash) => {
+  w.mineBlock = (txHash, sender) => {
     w.blockNumber++;
     w.headAgeSecs = 0;
-    if (txHash) w.txs.set(txHash, { blockNumber: w.blockNumber, at: Date.now() });
+    if (txHash) {
+      w.txs.set(txHash, { blockNumber: w.blockNumber, at: Date.now(), type: "INVOKE",
+        sender: sender ?? ACCOUNTS[0].address });
+      w.blockTxs.set(w.blockNumber, [txHash]);
+    }
     return w.blockNumber;
   };
 
