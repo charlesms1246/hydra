@@ -1,0 +1,13 @@
+{
+  "name": "@hydra-platform/channel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts"
+  },
+  "description": "Phase 2 \u2014 the pointer. Invariant I3 lives here."
+}

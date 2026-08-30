@@ -1,0 +1,13 @@
+{
+  "name": "@hydra-platform/adversary",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts"
+  },
+  "description": "Harnesses that attack the invariants. Kept as well as the code it attacks."
+}
