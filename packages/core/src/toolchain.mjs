@@ -9,10 +9,16 @@
  *
  * Durations below were measured on this machine with a warm cache, and are here so
  * the UI can say "this takes about a minute" instead of appearing to hang.
+ *
+ * The operation LIST is discovered, not typed: `discoverOperations` reads the
+ * workspace manifests, so a package added upstream appears here without an edit.
+ * What stays hand-written is the metadata that cannot be read off a manifest — a
+ * measured duration, and which artifact proves a build ran. `OPERATIONS` below is
+ * what discovery falls back to when there is no checkout to read.
  */
 
 import { spawn } from "node:child_process";
-import { statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -49,6 +55,141 @@ export const OPERATIONS = [
   { id: "test-vesu", group: "test", label: "vesu_lending_anonymizer", seconds: 8,
     cmd: "snforge test -p vesu_lending_anonymizer", mutates: null },
 ];
+
+/**
+ * Measured seconds, by package. Read off real runs on this machine; a package with
+ * no entry gets no estimate rather than a made-up one, and the UI says "unmeasured".
+ */
+const MEASURED = {
+  privacy: { build: 6, test: 33 },
+  shadow_account_anonymizer: { build: 2, test: 6 },
+  ekubo_swap_anonymizer: { build: 2, test: 3 },
+  vesu_lending_anonymizer: { build: 2, test: 8 },
+  test_token: { build: 1 },
+  ekubo_contracts: { build: 1 },
+  vesu_contracts: { build: 2 },
+  "discovery-service": { build: 2 },
+  // The whole-workspace runs, measured as themselves. Summing the per-package
+  // figures overstates both: one `scarb build` compiles the shared dependency once
+  // where four separate ones compile it four times.
+  __workspace__: { build: 6, test: 37 },
+};
+
+/** The file whose existence proves a package built. Only the ones doctor also checks. */
+const ARTIFACT = {
+  privacy: "target/dev/privacy_Privacy.contract_class.json",
+  test_token: "e2e/contracts/test-token/target/dev/test_token_TestToken.contract_class.json",
+  "discovery-service": "target/release/discovery-service",
+};
+
+const read = (f) => { try { return readFileSync(f, "utf8"); } catch { return null; } };
+
+/** `members = [ "a", "b" ]` out of a workspace manifest. Not a TOML parser. */
+function members(text) {
+  const m = /\[workspace\][\s\S]*?members\s*=\s*\[([^\]]*)\]/.exec(text ?? "");
+  if (!m) return [];
+  return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+}
+
+/** `[package] name = "x"` — the first `name` at the top level, which is the package's. */
+function packageName(text) {
+  const m = /\[package\][\s\S]*?\bname\s*=\s*"([^"]+)"/.exec(text ?? "");
+  return m ? m[1] : null;
+}
+
+/** The `starknet = "2.17.0"` a manifest pins, workspace-level or package-level. */
+function cairoDep(text) {
+  const m = /^\s*starknet\s*=\s*"([^"]+)"/m.exec(text ?? "");
+  return m ? m[1] : null;
+}
+
+/**
+ * Every buildable and testable component in the checkout, read from its manifests.
+ *
+ * Three sources, because upstream has three: the Cairo workspace's `members`, the
+ * standalone `e2e/contracts/*` packages (each its own workspace, which is why they
+ * cannot be built from the root), and the Cargo workspace's crates — of which only
+ * the ones with a `src/main.rs` produce a binary worth building.
+ *
+ * Returns `OPERATIONS` unchanged when there is no readable checkout, so the Build
+ * page has something to show before `hydra bootstrap` has ever run.
+ */
+export function discoverOperations(upstream) {
+  const root = read(join(upstream, "Scarb.toml"));
+  if (!root) return OPERATIONS;
+
+  const ops = [];
+  const secs = (name, kind) => MEASURED[name]?.[kind] ?? null;
+
+  // ---- the Cairo workspace ------------------------------------------------
+  const pkgs = [];
+  for (const dir of members(root)) {
+    const name = packageName(read(join(upstream, dir, "Scarb.toml")));
+    if (name) pkgs.push({ name, dir });
+  }
+  if (pkgs.length > 1) {
+    ops.push({ id: "build:workspace", group: "build", label: "all pool packages", dir: ".",
+      cmd: `scarb build ${pkgs.map((p) => `-p ${p.name}`).join(" ")}`,
+      seconds: secs("__workspace__", "build"),
+      artifact: ARTIFACT.privacy, mutates: "target/dev/*.contract_class.json" });
+    ops.push({ id: "build:test-targets", group: "build", label: "test targets", dir: ".",
+      cmd: "scarb build -t", seconds: 2,
+      artifact: "target/dev/privacy_unittest.test.starknet_artifacts.json",
+      mutates: "target/dev/*_unittest.*" });
+  }
+  for (const p of pkgs) {
+    ops.push({ id: `build:${p.name}`, group: "build", label: p.name, dir: ".",
+      cmd: `scarb build -p ${p.name}`, seconds: secs(p.name, "build"),
+      artifact: ARTIFACT[p.name] ?? null, mutates: "target/dev/" });
+  }
+
+  // ---- the e2e contracts, each its own workspace --------------------------
+  const rootCairo = cairoDep(root);
+  let e2eDirs = [];
+  try {
+    e2eDirs = readdirSync(join(upstream, "e2e/contracts"), { withFileTypes: true })
+      .filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  } catch { e2eDirs = []; }
+  for (const d of e2eDirs) {
+    const text = read(join(upstream, "e2e/contracts", d, "Scarb.toml"));
+    const name = packageName(text);
+    if (!name) continue;
+    // A package pinning a different Cairo than the workspace will not build without
+    // this flag. Derived from the two manifests rather than remembered per package,
+    // because the thing that makes it necessary is the mismatch itself.
+    const pinned = cairoDep(text);
+    const flag = pinned && rootCairo && pinned !== rootCairo ? " --ignore-cairo-version" : "";
+    ops.push({ id: `build:e2e:${name}`, group: "build", label: `e2e ${name}`,
+      dir: `e2e/contracts/${d}`, cmd: `scarb build${flag}`, seconds: secs(name, "build"),
+      artifact: ARTIFACT[name] ?? null, mutates: `e2e/contracts/${d}/target/` });
+  }
+
+  // ---- the Cargo workspace ------------------------------------------------
+  for (const dir of members(read(join(upstream, "Cargo.toml")))) {
+    const name = packageName(read(join(upstream, dir, "Cargo.toml")));
+    if (!name) continue;
+    // A library crate has nothing to run; `hydra up` spawns the binary, so a build
+    // op for a crate with no `src/main.rs` would be a button with no consequence.
+    try { statSync(join(upstream, dir, "src/main.rs")); } catch { continue; }
+    ops.push({ id: `build:cargo:${name}`, group: "build", label: name, dir: ".",
+      cmd: `cargo build --release -p ${name}`, seconds: secs(name, "build"),
+      artifact: ARTIFACT[name] ?? null, mutates: `target/release/${name}` });
+  }
+
+  // ---- tests --------------------------------------------------------------
+  if (pkgs.length) {
+    ops.push({ id: "test:all", group: "test", label: "all packages", dir: ".",
+      cmd: "snforge test", seconds: secs("__workspace__", "test"),
+      artifact: null, mutates: null });
+  }
+  for (const p of pkgs) {
+    ops.push({ id: `test:${p.name}`, group: "test", label: p.name, dir: ".",
+      cmd: `snforge test -p ${p.name}`, seconds: secs(p.name, "test"),
+      artifact: null, mutates: null });
+  }
+
+  return ops.length ? ops : OPERATIONS;
+}
 
 /**
  * Is the deployed pool older than the artifact on disk?

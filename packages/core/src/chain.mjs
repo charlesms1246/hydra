@@ -25,12 +25,31 @@ export async function latestBlocks(n = 8) {
   return { available: true, head: top, blocks };
 }
 
+/**
+ * One transaction, as fully as the node will describe it.
+ *
+ * TWO calls, not one. The receipt carries the outcome — finality, execution, fee,
+ * an event COUNT — and nothing about who sent it; the sender lives on the
+ * transaction object, which nothing here used to ask for. So the Activity page
+ * had no `from` column for a reason that was true of the code and not of the
+ * chain.
+ *
+ * What is still absent is absent from the RPC, not from this function: there is no
+ * `to` on a Starknet invoke (the calls are encoded in `calldata`), no transferred
+ * value without decoding them, and the receipt's `events` are counted rather than
+ * returned. Those stay unreported rather than guessed at.
+ */
 export async function txStatus(hash) {
   const st = await readState();
   if (!st) return { available: false, reason: "no running stack — run `hydra up`" };
   const r = await rpc(st.devnetUrl, "starknet_getTransactionReceipt", [hash]);
   if (!r.ok) return { available: true, found: false, error: r.error };
   const rc = r.result;
+  // Best-effort: a receipt with no matching transaction is not a failure worth
+  // discarding the receipt over, so this fills what it can and leaves nulls.
+  const t = await rpc(st.devnetUrl, "starknet_getTransactionByHash", [hash]);
+  const tx = t.ok ? t.result : null;
+  const res = rc.execution_resources ?? null;
   return {
     available: true,
     found: true,
@@ -40,7 +59,17 @@ export async function txStatus(hash) {
     blockNumber: rc.block_number ?? null,
     actualFee: rc.actual_fee ?? null,
     events: (rc.events ?? []).length,
+    messages: (rc.messages_sent ?? []).length,
     revertReason: rc.revert_reason ?? null,
+    type: rc.type ?? tx?.type ?? null,
+    version: tx?.version ?? null,
+    sender: tx?.sender_address ?? tx?.contract_address ?? null,
+    nonce: tx?.nonce ?? null,
+    // The length of the encoded call array, NOT a decoded call list. An invoke's
+    // calldata is [n, (to, selector, len, ...args) * n] and decoding it to name a
+    // `to` is a guess this does not make.
+    calldata: Array.isArray(tx?.calldata) ? tx.calldata.length : null,
+    gas: res ? { l1: res.l1_gas ?? null, l1Data: res.l1_data_gas ?? null, l2: res.l2_gas ?? null } : null,
   };
 }
 

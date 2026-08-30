@@ -136,10 +136,18 @@ export async function up() {
     indexerPid: child.pid,
     devnetPid: process.pid,
     tokens: { STRK: env.strk, ETH: env.eth },
+    // Every account devnet predeployed, not just the three the flows use. Raising
+    // HYDRA_ACCOUNTS produced them and nothing recorded them, so the TUI's "one more
+    // account" restarted the chain and showed the same three rows. `flows` marks the
+    // two the control API can act as — control.mjs:41 wraps alice and bob only, so
+    // the others hold funds and cannot run a pool flow.
     accounts: [
-      { name: "alice", address: String(env.alice.address) },
-      { name: "bob", address: String(env.bob.address) },
-      { name: "admin", address: String(env.admin.address) },
+      { name: "alice", address: String(env.alice.address), flows: true },
+      { name: "bob", address: String(env.bob.address), flows: true },
+      { name: "admin", address: String(env.admin.address), flows: false },
+      ...(env.extraAccounts ?? []).map((a, i) => ({
+        name: `user${i + 3}`, address: String(a.address), flows: false,
+      })),
     ],
   });
 
@@ -156,6 +164,7 @@ export async function up() {
     alice             ${env.alice.address}
     bob               ${env.bob.address}
     admin             ${env.admin.address}
+${(env.extraAccounts ?? []).map((a, i) => `    user${i + 3}             ${a.address}`).join("\n")}
 
   Proving is mocked. Discovery is local. No proving-service or indexer URL is needed.
 ${AUDITOR_NOTE}
