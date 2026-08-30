@@ -9,5 +9,8 @@
   "scripts": {
     "test": "node --test test/*.test.ts"
   },
-  "description": "Phase 2 \u2014 the pointer. Invariant I3 lives here."
+  "description": "Phase 2 — the pointer. Invariant I3 lives here.",
+  "dependencies": {
+    "@scure/starknet": "^2.4.0"
+  }
 }
