@@ -43,3 +43,60 @@ export async function txStatus(hash) {
     revertReason: rc.revert_reason ?? null,
   };
 }
+
+/**
+ * starknet_keccak("get_num_of_channels"), the pool's public channel-count view
+ * (`upstream: packages/privacy/src/interface.cairo:623`, impl at `privacy.cairo:1078`).
+ *
+ * Hardcoded the same way SELECTOR_BALANCE_OF is, because computing a selector needs
+ * keccak and this package has no dependencies. Derived with starknet.js
+ * `hash.getSelectorFromName`, which reproduces the balanceOf selector already in
+ * wallets.mjs — that agreement is the check that the derivation is right, and a test
+ * pins this value.
+ */
+export const SELECTOR_NUM_OF_CHANNELS =
+  "0x3dd96f9f4c6d6e8a31f13b4f6bddb32618aaea7439310de036bc5c244a43c3d";
+
+/**
+ * How many channels have been opened to `recipient`.
+ *
+ * This is the one fact that decides whether a transfer discloses its recipient:
+ * OpenChannel appends to `recipient_channels[recipient_addr]`, keyed by the
+ * PLAINTEXT address, and only on the first transfer into that channel. So a count
+ * of zero means the next transfer opens one and the recipient becomes public.
+ *
+ * Returns `known: false` rather than a number when it cannot tell. A caller that
+ * turns "I could not ask" into "no channel" would be manufacturing the reassuring
+ * branch, which is exactly what packages/leak/src/leak.mjs:139-147 refuses to do.
+ */
+export async function channelsTo(recipient) {
+  const st = await readState();
+  if (!st?.poolAddress) return { known: false, reason: "no running stack" };
+  if (!recipient) return { known: false, reason: "no recipient" };
+  const r = await rpc(st.devnetUrl, "starknet_call", [
+    {
+      contract_address: st.poolAddress,
+      entry_point_selector: SELECTOR_NUM_OF_CHANNELS,
+      calldata: [String(recipient)],
+    },
+    "latest",
+  ]);
+  if (!r.ok || !Array.isArray(r.result) || !r.result.length) {
+    return { known: false, reason: r.error ?? "call returned nothing" };
+  }
+  try {
+    return { known: true, count: Number(BigInt(r.result[0])) };
+  } catch {
+    return { known: false, reason: "unparseable u64" };
+  }
+}
+
+/**
+ * Does a transfer to `recipient` open a channel?
+ *
+ * `undefined` when unknown, which is the value packages/leak reads as UNKNOWN.
+ */
+export async function opensChannelTo(recipient) {
+  const r = await channelsTo(recipient);
+  return r.known ? r.count === 0 : undefined;
+}

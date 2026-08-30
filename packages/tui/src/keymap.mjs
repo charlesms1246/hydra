@@ -48,7 +48,7 @@ export function scopesFor(s) {
     tools: ["tools", "list"],
     run: ["run", "list"],
     log: ["log", "list"],
-    keys: ["keys"],
+    about: ["about"],
     activity: ["list"],
     overview: ["overview"],
   }[s.page] ?? [];
@@ -97,6 +97,12 @@ export const BINDINGS = [
   // ---- wallets -----------------------------------------------------------
   { scope: "wallets", keys: ["m"], label: "mint devnet funds to the selected account",
     mutates: true, run: (s, a) => a.fundWallet() },
+  { scope: "wallets", keys: ["n"], label: "track another ERC20 by address",
+    run: (s, a) => a.askToken() },
+  { scope: "wallets", keys: ["v"], label: "export addresses and balances to JSON",
+    mutates: true, run: (s, a) => a.exportWallets() },
+  { scope: "wallets", keys: ["+"], label: "restart the stack with one more devnet account",
+    mutates: true, run: (s, a) => a.askMoreAccounts() },
 
   // ---- tools -------------------------------------------------------------
   { scope: "tools", keys: ["i"], label: "run this row's fix (shows the command first)",
@@ -105,6 +111,9 @@ export const BINDINGS = [
   // ---- run ---------------------------------------------------------------
   { scope: "run", keys: ["enter"], label: "preview what this flow discloses, then y runs it",
     mutates: true, run: (s, a) => a.askFlow() },
+
+  // ---- about -------------------------------------------------------------
+  { scope: "about", keys: ["tab"], label: "next guide section", run: (s, a) => a.cycleSection(1) },
 
   // ---- confirm -----------------------------------------------------------
   { scope: "confirm", keys: ["y"], label: "yes, run it", run: (s, a) => a.confirmYes() },
@@ -139,6 +148,16 @@ export const BINDINGS = [
 
 /** The whole body of useInput. */
 export function dispatch(s, input, key, api) {
+  // A prompt is a one-line text field. Like the filter below it is not a binding
+  // scope, because while it is open every printable key is data rather than a
+  // command — `q` types a q, it does not quit.
+  if (s.prompt) {
+    if (key.escape) return api.closePrompt();
+    if (key.return) return api.submitPrompt();
+    if (key.backspace || key.delete) return api.setPrompt(s.prompt.value.slice(0, -1));
+    if (input && !key.ctrl && !key.meta) return api.setPrompt(s.prompt.value + input);
+    return undefined;
+  }
   // `/` opens a one-line text mode. It is not a binding scope because while it is
   // open every printable key is data, not a command.
   if (s.filter?.typing) {
@@ -164,7 +183,7 @@ const SCOPE_TITLE = {
   nav: "the nav bar", list: "moving in a list", disclosure: "disclosure",
   empty: "disclosure (nothing loaded)", wallets: "wallets", tools: "tools",
   run: "run", confirm: "confirm", quit: "quitting", global: "anywhere",
-  keys: "keys", log: "log", overview: "overview",
+  about: "about", log: "log", overview: "overview",
 };
 
 /** The `Keys` page, grouped by scope, in table order. */

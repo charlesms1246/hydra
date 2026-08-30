@@ -22,8 +22,10 @@ import { fileURLToPath } from "node:url";
 import { html, React } from "./ui.mjs";
 import { C, glyph, mark, tone } from "./theme.mjs";
 import { fit, useSize, MIN_COLS, MIN_ROWS } from "./layout.mjs";
-import { BINDINGS, dispatch, helpGroups } from "./keymap.mjs";
-import { PAGES, pageIndex, NavBar, StatusBar, QuitPrompt, KeysPage } from "./chrome.mjs";
+import { BINDINGS, dispatch } from "./keymap.mjs";
+import { PAGES, pageIndex, NavBar, StatusBar, QuitPrompt } from "./chrome.mjs";
+import { About, SECTION_COUNT } from "./about.mjs";
+import { WalletsPage } from "./wallets.mjs";
 import { Overview } from "./overview.mjs";
 import { Splash, timings } from "./splash.mjs";
 import { useSources } from "./sources.mjs";
@@ -31,8 +33,8 @@ import { PANES, Rig, LogPane, Confirm, Transact, visibleItems } from "./panels.m
 import {
   leakConfig, ConfigStrip, Ledger, Matrix, Legend, WhyDrawer, NotesDrawer, AnonDrawer, EmptyState,
 } from "./disclosure.mjs";
-import { faucet } from "../../core/src/wallets.mjs";
-import { txStatus } from "../../core/src/chain.mjs";
+import { faucet, addToken, exportWallets } from "../../core/src/wallets.mjs";
+import { txStatus, opensChannelTo } from "../../core/src/chain.mjs";
 import { startStack, stopStack } from "../../core/src/stack.mjs";
 import { describeFix, runFix } from "../../core/src/install.mjs";
 import { status } from "../../core/src/services.mjs";
@@ -59,7 +61,12 @@ export const TX_ACTIONS = [
     run: () => TX.register("bob"), leak: { type: "register" } },
   { id: "transfer", label: "transfer  50 STRK  alice → bob",
     run: () => TX.transfer({ from: "alice", to: "bob", amount: "50", token: "STRK" }),
-    leak: { type: "transfer", token: "STRK", amount: "50", counterparty: "bob", opensChannel: false } },
+    // `opensChannel` is deliberately absent. It used to be hardcoded `false` — the
+    // reassuring branch — which asserted a fact this program cannot know from the
+    // action alone, and turned 5 UNKNOWN cells into 1. It is resolved from chain
+    // by `resolveLeak` below, and stays undefined (so: UNKNOWN) when that fails.
+    recipient: "bob",
+    leak: { type: "transfer", token: "STRK", amount: "50", counterparty: "bob" } },
   { id: "notes", label: "notes     re-discover for alice and bob", run: null,
     note: "the only discoverNotes() call there is" },
 ];
@@ -93,6 +100,8 @@ function App() {
   const [phase, setPhase] = useState("loading");
   const [sealT, setSealT] = useState(0);
   const [quitting, setQuitting] = useState(false);
+  const [section, setSection] = useState(0);
+  const [prompt, setPromptState] = useState(null);
   const [, setTick] = useState(0);
   const bornAt = useRef(Date.now());
   const [navs, setNavs] = useState({});
@@ -177,14 +186,14 @@ function App() {
   }, [page, pane, paneId, data, nav, filter, runSel, logSel, log.length, geom.rigRows, setNav]);
 
   // ---- the things that touch the world -----------------------------------
-  const bringUp = useCallback(() => {
+  const bringUp = useCallback((env = {}) => {
     if (stackRef.current) return note("a stack is already supervised by this TUI", "warn");
     setBusy({ label: "starting the stack — this takes a moment", since: Date.now() });
     setLogTitle("hydra up");
     setLog([]);
     setPage("log");
     setNavCursor(pageIndex("log"));
-    stackRef.current = startStack((l) => addLine(l));
+    stackRef.current = startStack((l) => addLine(l), env);
     stackRef.current.child.on("close", () => {
       stackRef.current = null;
       setBusy(null);
@@ -220,7 +229,22 @@ function App() {
   }, [addLine, note]);
 
   /** Runs one flow, then records the whole disclosure report against it. */
-  const doFlow = useCallback(async (action) => {
+  /**
+   * The leak action for a flow, with anything chain-dependent actually read.
+   *
+   * Only `opensChannel` today. The pool's channel count is a public view, so this
+   * is computable rather than assertable — and when the read fails the field is
+   * left undefined, which packages/leak reports as UNKNOWN rather than as "no".
+   */
+  const resolveLeak = useCallback(async (action) => {
+    if (!action?.leak) return null;
+    if (!action.recipient) return action.leak;
+    const who = (svc?.accounts ?? []).find((a) => a.name === action.recipient);
+    const opens = await opensChannelTo(who?.address).catch(() => undefined);
+    return opens === undefined ? action.leak : { ...action.leak, opensChannel: opens };
+  }, [svc]);
+
+  const doFlow = useCallback(async (action, leakAction) => {
     if (!action.run) {
       setBusy({ label: "re-discovering notes for alice and bob", since: Date.now() });
       const [a, b] = await Promise.all([TX.notes("alice"), TX.notes("bob")]);
@@ -236,9 +260,8 @@ function App() {
     addLine(r.ok ? `ok in ${r.ms ?? "?"}ms  tx ${r.txHash ?? "(none)"}` : `failed: ${r.error}`,
       r.ok ? "info" : "bad");
 
-    const rep = action.leak
-      ? whatDoesThisLeak({ config: leakConfig(svc), actions: [action.leak] })
-      : null;
+    const la = leakAction ?? action.leak;
+    const rep = la ? whatDoesThisLeak({ config: leakConfig(svc), actions: [la] }) : null;
     setLedger((prev) => [
       { id: `${Date.now()}`, at: clock(), label: action.label, ok: r.ok, txHash: r.txHash,
         ms: r.ms, error: r.error, report: rep, source: "run" },
@@ -284,6 +307,7 @@ function App() {
       setNavCursor(pageIndex(id));
     },
     navMove: (d) => setNavCursor((i) => Math.max(0, Math.min(PAGES.length - 1, i + d))),
+    cycleSection: (d) => setSection((i) => (i + d + SECTION_COUNT) % SECTION_COUNT),
     openCursor: () => {
       setFilter(null);
       setPage(PAGES[navCursor]?.id ?? "overview");
@@ -316,8 +340,48 @@ function App() {
       if (src !== "status") refresh("status");
     },
     bringUp, bringDown,
+    setPrompt: (value) => setPromptState((p) => (p ? { ...p, value } : p)),
+    closePrompt: () => { setPromptState(null); note("cancelled"); },
+    submitPrompt: () => {
+      const p = prompt;
+      setPromptState(null);
+      if (p?.onSubmit) p.onSubmit(p.value);
+    },
+    askToken: () => setPromptState({
+      label: "token to track  SYMBOL 0xaddress",
+      value: "",
+      onSubmit: (raw) => {
+        const [sym, address] = String(raw).trim().split(/\s+/);
+        note(`checking ${sym ?? "?"}…`);
+        addToken({ symbol: sym, address })
+          .then((r) => note(r.ok ? `tracking ${r.symbol}` : `not tracked: ${r.error}`, r.ok ? "ok" : "bad"))
+          .then(() => { refresh("wallets"); refresh("status"); });
+      },
+    }),
+    exportWallets: () => {
+      note("exporting…");
+      exportWallets()
+        .then((r) => note(r.ok ? `wrote ${r.accounts} accounts to ${r.path}` : `export failed: ${r.error}`,
+          r.ok ? "ok" : "bad"));
+    },
+    /**
+     * devnet has no add-an-account call — its set is fixed by `--accounts N` at
+     * spawn — so this is a restart, and the prompt says so rather than implying
+     * the running chain is about to grow one.
+     */
+    askMoreAccounts: () => {
+      const have = (svc?.accounts ?? []).length || 3;
+      setConfirm({
+        kind: "accounts", count: have,
+        prompt: `restart the stack with ${have} accounts?`,
+        lines: [
+          "devnet fixes its accounts when it starts; there is no call that adds one.",
+          "this stops the running stack and starts a new one — the chain is discarded.",
+        ],
+      });
+    },
     fundWallet: () => {
-      const target = visibleItems(PANES.wallets, data.wallets, filter)[nav.sel[0] ?? 0];
+      const target = (data.wallets?.wallets ?? [])[nav.sel[0] ?? 0];
       if (!target) return note("no account selected", "warn");
       note(`funding ${target.name}…`);
       faucet({ address: target.address })
@@ -338,15 +402,21 @@ function App() {
         lines: ["once started it cannot be cancelled from here — it keeps running in the background"],
       });
     },
-    askFlow: () => {
+    askFlow: async () => {
       const action = TX_ACTIONS[runSel];
       if (!action) return undefined;
+      // Resolved before the preview is built, so the cells you are shown are the
+      // cells the run will report. The read is one starknet_call and needs no
+      // proving; when there is no stack it returns undefined and the recipient
+      // column reads UNKNOWN, which is the honest answer.
+      const leakAction = await resolveLeak(action);
       // The preview is computed by whatDoesThisLeak, which is pure and needs no
       // stack, so it is shown either way. Only `y` needs a running control API.
-      const preview = action.leak
-        ? whatDoesThisLeak({ config: leakConfig(svc), actions: [action.leak] })
+      const preview = leakAction
+        ? whatDoesThisLeak({ config: leakConfig(svc), actions: [leakAction] })
         : null;
       return setConfirm({
+        leakAction,
         kind: "flow", action,
         prompt: action.run ? `run ${action.label}? it submits a real transaction` : `run ${action.label}?`,
         // mark(), not a local replace(): this screen is shown immediately before a
@@ -393,13 +463,17 @@ function App() {
       const c = confirm;
       setConfirm(null);
       if (c.kind === "fix") return doFix(c.row);
+      if (c.kind === "accounts") {
+        note("restarting with one more account…");
+        return bringDown().then(() => bringUp({ HYDRA_ACCOUNTS: String(c.count) }));
+      }
       if (c.kind === "flow") {
         if (c.action.run && !txAvailable) return note("no running stack — u starts one", "warn");
         // Land on Disclosure, not back on the run menu: the point of running a
         // flow is the report it produces, and it is one page away.
         setPage("disclosure");
         setNavCursor(pageIndex("disclosure"));
-        return doFlow(c.action);
+        return doFlow(c.action, c.leakAction);
       }
       return undefined;
     },
@@ -418,10 +492,10 @@ function App() {
       }
     },
   }), [exit, note, cursorSet, ledger.length, listCtx, pane, paneId, nav, data, filter, cursor.expanded,
-       page, navCursor, refresh, bringUp, bringDown, confirm, doFix, doFlow, runSel, svc, txAvailable, setNav]);
+       page, navCursor, section, prompt, refresh, resolveLeak, bringUp, bringDown, confirm, doFix, doFlow, runSel, svc, txAvailable, setNav]);
 
   const keyState = {
-    cursor, report, page, navCursor, quitting, confirm, filter, busy, up,
+    cursor, report, page, navCursor, quitting, confirm, filter, prompt, busy, up,
     partyCount: report?.parties?.length ?? 6,
     fieldCount: report?.fields?.length ?? 5,
     actionCount: report?.disclosures?.length ?? 1,
@@ -528,8 +602,8 @@ function App() {
       <${Overview} cols=${W} rows=${bodyRows} svc=${svc} wal=${data.wallets}
         blocks=${data.blocks} doctor=${data.doctor} ledger=${ledger} control=${txAvailable}
         note=${AUDITOR_NOTE} />`;
-  } else if (page === "keys") {
-    content = html`<${KeysPage} groups=${helpGroups()} width=${W} height=${bodyRows} />`;
+  } else if (page === "about") {
+    content = html`<${About} width=${W} height=${bodyRows} section=${section} />`;
   } else if (page === "log") {
     content = html`
       <${LogPane} lines=${log} title=${logTitle} width=${W} height=${bodyRows}
@@ -542,6 +616,11 @@ function App() {
         ${txAvailable ? null : html`
           <${Text} color=${C.warn}>${"  no running stack — u starts one; the preview still works"}<//>`}
       <//>`;
+  } else if (page === "wallets") {
+    content = html`
+      <${WalletsPage} width=${W} height=${bodyRows}
+        data=${data.wallets === undefined && !up ? { available: false, reason: "no running stack — u starts one" } : data.wallets}
+        selected=${nav.sel[0] ?? 0} prompt=${prompt} tokens=${svc?.tokens} />`;
   } else if (pane) {
     // A gated source never runs, so its data stays undefined and the pane would
     // sit on "loading…" forever with a dead devnet. Hand it the reason instead:
@@ -603,6 +682,7 @@ function App() {
   return html`
     <${Box} flexDirection="column" paddingX=${geom.padX} width=${cols} height=${draw}
       overflow="hidden">
+      <${NavBar} width=${W} active=${page} cursor=${navCursor} />
       ${showStatusBar ? html`<${StatusBar} width=${W} svc=${svc} />` : null}
       ${content}
       <${Box} width=${W} height=${1} overflow="hidden">
@@ -610,7 +690,6 @@ function App() {
         <${Box} flexGrow=${1} />
         <${Text} color=${C.muted}>${age === null ? "" : `↻${age}s`}<//>
       <//>
-      <${NavBar} width=${W} active=${page} cursor=${navCursor} />
     <//>`;
 }
 
@@ -630,6 +709,10 @@ export async function start() {
     console.log("\n  (not a tty — no TUI. `hydra help` lists the --json commands.)\n");
     return;
   }
+  // Clear the terminal, including its scrollback, before the first frame. Ink
+  // draws in place and never owns the rows above it, so without this the mark
+  // comes up under whatever the shell was already showing.
+  process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
   const app = render(html`<${App} />`);
   await app.waitUntilExit();
 }

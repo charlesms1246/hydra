@@ -51,6 +51,10 @@ export function createWorld(scenario = "up") {
     ),
     notes: { alice: [], bob: [] },
     registered: new Set(["alice"]),
+    // recipient address -> channels opened to it. The pool exposes this as a public
+    // view, and it is the one fact that decides whether a transfer discloses its
+    // recipient, so the sandbox has to model it or the disclosure preview is fiction.
+    channels: new Map(),
     txs: new Map(),
     log: [],
   };

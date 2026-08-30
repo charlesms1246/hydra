@@ -91,9 +91,13 @@ function runsFor(line, y, byRow, fill, seal) {
  * @param steps    [{ label, done }] — what is actually being waited on
  */
 export const Splash = ({ cols, rows, progress, seal, steps, note }) => {
-  // Two rows for the caption block, one for the step line, one of headroom.
-  const artRows = Math.max(6, rows - 5);
+  // Two rows for the caption block, one for the step line, one of headroom — and a
+  // ceiling. Given the whole terminal the mark will happily take it, which on a
+  // 57-row screen is a wall of logo rather than a splash.
+  const artRows = Math.max(6, Math.min(26, rows - 5));
   const art = useMemo(() => scaled(cols - 2, artRows), [cols, artRows]);
+  // The raster is already sized to keep the mark round, so the leftover rows go
+  // above it — a mark pinned to the top of a tall terminal reads as a mistake.
   const geom = useMemo(() => rings(art), [art]);
   const byRow = useMemo(() => {
     const m = new Map();
@@ -121,6 +125,8 @@ export const Splash = ({ cols, rows, progress, seal, steps, note }) => {
 
   return html`
     <${Box} flexDirection="column" width=${cols} height=${rows}>
+      ${Array.from({ length: Math.max(0, Math.floor((artRows - art.length) / 2)) }, (_, i) =>
+        html`<${Text} key=${"pad" + i}>${" "}<//>`)}
       ${art.map((line, y) => html`
         <${Text} key=${"r" + y} wrap="truncate">
           ${left}${runsFor(line, y, byRow, fill, sealAt).map((r, i) =>

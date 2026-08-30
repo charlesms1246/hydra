@@ -11,6 +11,9 @@
 import { createServer } from "node:http";
 
 const u256 = (v) => ["0x" + (v & ((1n << 128n) - 1n)).toString(16), "0x" + (v >> 128n).toString(16)];
+/** Mirrors packages/core/src/chain.mjs, so a drift there shows up here as a miss. */
+const SELECTOR_NUM_OF_CHANNELS =
+  "0x3dd96f9f4c6d6e8a31f13b4f6bddb32618aaea7439310de036bc5c244a43c3d";
 const felt = (s) => BigInt(s);
 
 function rpcResult(w, method, params) {
@@ -31,8 +34,16 @@ function rpcResult(w, method, params) {
       };
     }
     case "starknet_call": {
+      const { contract_address, calldata, entry_point_selector } = params?.[0] ?? {};
+      // get_num_of_channels(recipient) -> u64. Modelled rather than stubbed to zero:
+      // zero means "the next transfer opens a channel and discloses the recipient",
+      // which is a disclosure claim, and answering it by accident is exactly the
+      // kind of fiction this sandbox must not put on the screen.
+      if (felt(entry_point_selector ?? "0x0") === felt(SELECTOR_NUM_OF_CHANNELS)) {
+        const key = String(felt(calldata?.[0] ?? "0x0"));
+        return ["0x" + (w.channels.get(key) ?? 0).toString(16)];
+      }
       // balanceOf(account) -> u256. wallets.mjs parses this itself; that is the point.
-      const { contract_address, calldata } = params?.[0] ?? {};
       const acct = w.accounts.find((a) => felt(a.address) === felt(calldata?.[0] ?? "0x0"));
       const token = Object.values(w.tokens).find((t) => felt(t) === felt(contract_address ?? "0x0"));
       if (!acct || !token) return u256(0n);
@@ -78,6 +89,9 @@ const CONTROL = {
   async transfer(w, { from = "alice", to = "bob", amount = "50", token = "STRK" }) {
     // The real pool refuses this exact case, and the refusal is worth being able to see.
     if (!w.registered.has(to)) throw new Error(`Missing channel context for recipient ${to}`);
+    // Opening the channel is what the pool does on the FIRST transfer into it.
+    const toAddr = String(felt(w.accounts.find((a) => a.name === to)?.address ?? "0x0"));
+    w.channels.set(toAddr, (w.channels.get(toAddr) ?? 0) + 1);
     const held = (w.notes[from] ?? []).reduce((n, x) => n + BigInt(x.amount), 0n);
     if (held < BigInt(amount)) throw new Error(`insufficient notes: have ${held}, need ${amount}`);
     w.notes[from] = [{ token: w.tokens[token], symbol: token, amount: String(held - BigInt(amount)) }];

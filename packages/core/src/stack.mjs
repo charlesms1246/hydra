@@ -27,9 +27,9 @@ export async function isRunning() {
  * Output is streamed through onLine so a caller can show progress — bringing the
  * stack up takes tens of seconds and silence reads as a hang.
  */
-export function startStack(onLine = () => {}) {
+export function startStack(onLine = () => {}, env = {}) {
   const child = spawn(process.execPath, [CLI, "up"], {
-    env: { ...process.env, HYDRA_QUIET: "1", PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}` },
+    env: { ...process.env, ...env, HYDRA_QUIET: "1", PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}` },
     stdio: ["ignore", "pipe", "pipe"],
   });
 

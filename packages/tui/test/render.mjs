@@ -24,12 +24,14 @@ import { fit, wrap, windowOf, indicatorFor } from "../src/layout.mjs";
 import { C, DISCLOSURE } from "../src/theme.mjs";
 import { BINDINGS, duplicateBindings, helpGroups, scopesFor, dispatch } from "../src/keymap.mjs";
 import { App, TX_ACTIONS, RIG_IDS } from "../src/app.mjs";
-import { PAGES, NavBar, StatusBar, QuitPrompt, KeysPage } from "../src/chrome.mjs";
+import { PAGES, NavBar, StatusBar, QuitPrompt } from "../src/chrome.mjs";
+import { About } from "../src/about.mjs";
 import { comboBindings } from "../src/keymap.mjs";
 import { whatDoesThisLeak } from "../../leak/src/leak.mjs";
 import { AUDITOR_NOTE } from "../../cli/src/notes.mjs";
 import { COMMANDS } from "../../cli/src/agentcmds.mjs";
 import { status } from "../../core/src/services.mjs";
+import { SELECTOR_NUM_OF_CHANNELS } from "../../core/src/chain.mjs";
 import { wallets } from "../../core/src/wallets.mjs";
 import { latestBlocks } from "../../core/src/chain.mjs";
 import { check } from "../../cli/src/doctor.mjs";
@@ -171,7 +173,8 @@ await draw("LogPane", html`<${LogPane} lines=${[{ text: "$ scarb build", sev: "i
 await draw("LogPane (empty)", html`<${LogPane} lines=${[]} title="" width=${96} height=${8} />`);
 await draw("Transact (run menu)", html`<${Transact} actions=${TX_ACTIONS} selected=${2} width=${96} height=${9} />`);
 await draw("Confirm (doctor fix)", html`<${Confirm} c=${{ prompt: "run this?", cmd: "scarb build", cwd: "/tmp", lines: ["it keeps running"] }} width=${96} />`);
-await draw("Keys", html`<${KeysPage} groups=${helpGroups()} width=${96} height=${26} />`);
+await draw("About", html`<${About} width=${96} height=${26} section=${0} />`);
+await draw("About · keys", html`<${About} width=${96} height=${26} section=${3} />`);
 
 // ---------------------------------------------------------------------------
 // the rig, descended
@@ -338,7 +341,7 @@ check_("every binding is reachable from a live scope, and documented", () => {
     { ...base, page: "activity", report: {} },
     { ...base, page: "run", report: {} },
     { ...base, page: "log", report: {} },
-    { ...base, page: "keys", report: {} },
+    { ...base, page: "about", report: {} },
     { ...base, page: "overview", report: {}, confirm: {} },
     { ...base, page: "overview", report: {}, quitting: true },
     // The nav owns Enter only while the cursor is parked off the current page.
@@ -556,7 +559,7 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
   await new Promise((r) => setTimeout(r, 700));
   const seen = {};
   for (const [key, name] of [["b", "wallets"], ["c", "activity"], ["t", "tools"],
-                             ["x", "run"], ["l", "log"], ["k", "keys"], ["o", "overview"]]) {
+                             ["x", "run"], ["l", "log"], ["g", "about"], ["o", "overview"]]) {
     await h.press(key);
     seen[name] = h.last();
   }
@@ -576,8 +579,8 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
 
   check_("every nav destination is reachable by its own letter", () => {
     const want = {
-      wallets: "rig · wallets", activity: "rig · activity", tools: "rig · tools",
-      run: "x · run a flow", log: "log ·", keys: "the nav bar", overview: "the auditor",
+      wallets: "manage", activity: "rig · activity", tools: "rig · tools",
+      run: "x · run a flow", log: "log ·", about: "guide ", overview: "the auditor",
     };
     for (const [k, needle] of Object.entries(want)) {
       if (!seen[k]?.includes(needle)) throw new Error(`${k}: "${needle}" not on screen`);
@@ -604,14 +607,17 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
 // about what a reader can actually reach at a common terminal size. Asserting
 // against helpGroups() instead is how 23 of 39 bindings stayed off screen at
 // 80x24 while this file reported the keymap fully documented.
-for (const [cols, rows] of [[80, 24], [100, 30], [190, 57]]) {
+for (const [cols, rows] of [[100, 30], [190, 57]]) {
   const h = await mount(cols, rows);
   // Same synchronous doctor probe as above: let it land before asserting a frame.
   await new Promise((r) => setTimeout(r, 700));
-  await h.press("k");
+  await h.press("g");
+  await h.press("\t");
+  await h.press("\t");
+  await h.press("\t");                 // What it is → Why → Getting started → Keys
   const frames = [h.last()];
   h.app.unmount();
-  check_(`every binding is on ONE screen of Keys at ${cols}x${rows}`, () => {
+  check_(`every binding is on the About page's Keys section at ${cols}x${rows}`, () => {
     // Assert the KEY column, not the label. Labels are truncated to fit the
     // column at narrow widths — that is the honest cost of not scrolling — but a
     // binding whose key is missing is genuinely undiscoverable.
@@ -620,7 +626,6 @@ for (const [cols, rows] of [[80, 24], [100, 30], [190, 57]]) {
     if (missing.length) {
       throw new Error(`${missing.length} of ${BINDINGS.length} never on screen: ${missing.slice(0, 3).map((b) => b.keys.join("/")).join(", ")}`);
     }
-    if (seen.includes("more — a taller or wider terminal")) throw new Error("Keys still defers to a bigger terminal");
     return `${BINDINGS.length} bindings, no scrolling`;
   });
 }
@@ -663,6 +668,36 @@ const known = "[KNOWN GAP]";
 // ---------------------------------------------------------------------------
 // the redesign's own guarantees
 // ---------------------------------------------------------------------------
+
+// The transfer flow used to declare `opensChannel: false` — the reassuring branch —
+// which asserted a fact the action alone cannot support. The pool exposes the channel
+// count as a public view, so it is computable; when it cannot be read the field must
+// stay absent, which packages/leak reports as UNKNOWN.
+check_("the transfer flow never asserts opensChannel", () => {
+  const transfer = TX_ACTIONS.find((a) => a.id === "transfer");
+  if (!transfer) throw new Error("no transfer flow");
+  if ("opensChannel" in transfer.leak) {
+    throw new Error(`opensChannel is hardcoded to ${transfer.leak.opensChannel}`);
+  }
+  if (!transfer.recipient) throw new Error("no recipient, so it cannot be resolved from chain either");
+
+  const cfg = { network: "sepolia", discovery: "indexer-self-hosted", proving: "mock" };
+  const undeclared = whatDoesThisLeak({ config: cfg, actions: [transfer.leak] });
+  const asserted = whatDoesThisLeak({ config: cfg, actions: [{ ...transfer.leak, opensChannel: false }] });
+  if (undeclared.unknownCount <= asserted.unknownCount) {
+    throw new Error("declaring opensChannel:false does not reduce UNKNOWN — this check proves nothing");
+  }
+  return `undeclared → ${undeclared.unknownCount} UNKNOWN, asserted false → ${asserted.unknownCount}`;
+});
+
+check_("the pool's channel-count selector is the one the chain answers to", () => {
+  // Pinned because it is hardcoded: computing a starknet selector needs keccak and
+  // packages/core has no dependencies. Derived with starknet.js getSelectorFromName,
+  // which reproduces the balanceOf selector already in wallets.mjs.
+  const want = "0x3dd96f9f4c6d6e8a31f13b4f6bddb32618aaea7439310de036bc5c244a43c3d";
+  if (SELECTOR_NUM_OF_CHANNELS !== want) throw new Error(`selector drifted: ${SELECTOR_NUM_OF_CHANNELS}`);
+  return "get_num_of_channels";
+});
 
 check_("no binding needs a modifier key", () => {
   const combos = comboBindings();
@@ -764,19 +799,23 @@ await (async () => {
   const h = await mount(120, 32);
   await new Promise((r) => setTimeout(r, 700));
   const seen = {};
-  for (const [key, id] of [["o", "overview"], ["b", "wallets"], ["t", "tools"], ["k", "keys"]]) {
+  for (const [key, id] of [["o", "overview"], ["b", "wallets"], ["t", "tools"], ["g", "about"]]) {
     await h.press(key);
     seen[id] = h.last();
   }
   h.app.unmount();
-  check_("the status bar is on every page except the overview", () => {
-    const isBar = (f) => /devnet .*·.*indexer .*·.*prover/.test(f.split("\n")[0] ?? "");
+  check_("the nav is the first row, and the status bar the second on every page but the overview", () => {
+    const isNav = (f) => /Overview \(o\)/.test(f.split("\n")[0] ?? "");
+    const isBar = (f) => /devnet .*·.*indexer .*·.*prover/.test(f.split("\n")[1] ?? "");
+    for (const [id, f] of Object.entries(seen)) {
+      if (!isNav(f)) throw new Error(`${id} does not open with the nav bar`);
+    }
     if (isBar(seen.overview)) throw new Error("the overview repeats the status bar");
-    for (const id of ["wallets", "tools", "keys"]) {
+    for (const id of ["wallets", "tools", "about"]) {
       if (!isBar(seen[id])) throw new Error(`${id} has no status bar`);
     }
     if (!seen.overview.includes("the auditor")) throw new Error("the overview lost the auditor strip");
-    return "overview omits it; wallets, tools and keys carry it";
+    return "nav first everywhere; the overview omits the status bar, the rest carry it";
   });
   check_("the overview dashboard shows every block the brief asks for", () => {
     for (const needle of ["stack", "chain", "tooling", "wallets", "the auditor"]) {

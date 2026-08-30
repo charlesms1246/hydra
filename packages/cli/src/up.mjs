@@ -87,7 +87,11 @@ export async function up() {
   const { Devnet } = await import(join(up_, "sdk/dist/testing/index.js"));
 
   console.log("\n  starting devnet and deploying the privacy pool…");
-  const devnet = new Devnet();
+  // devnet fixes its account set at spawn (`--accounts N`), so there is no way to
+  // add one to a running chain. Restarting with a higher count is the honest
+  // answer, and this is what makes it available.
+  const userAccounts = Math.max(2, Math.min(16, Number(process.env.HYDRA_ACCOUNTS ?? 2)));
+  const devnet = new Devnet({ userAccounts });
   const env = await devnet.initialize();
 
   const port = await freePort();

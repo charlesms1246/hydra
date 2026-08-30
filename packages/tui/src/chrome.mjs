@@ -25,7 +25,7 @@ export const PAGES = [
   { id: "run", key: "x", label: "Run", short: "Run" },
   { id: "tools", key: "t", label: "Tools", short: "Tls" },
   { id: "log", key: "l", label: "Log", short: "Log" },
-  { id: "keys", key: "k", label: "Keys", short: "Key" },
+  { id: "about", key: "g", label: "About", short: "Abt" },
 ];
 
 export const pageIndex = (id) => Math.max(0, PAGES.findIndex((p) => p.id === id));
@@ -83,6 +83,8 @@ export const StatusBar = ({ width, svc, note }) => {
     { g: glyph(ix?.up && ix?.healthy, ix?.up), t: tone(ix?.up && ix?.healthy, ix?.up),
       text: `indexer ${ix?.up ? (ix.healthy ? "ok" : `lag ${ix.lagSecs ?? "?"}s`) : "down"}` },
     { g: "◐", t: C.warn, text: `prover ${svc?.prover?.mode ?? "?"}` },
+    { g: glyph(svc?.agents?.mcp?.present), t: tone(svc?.agents?.mcp?.present),
+      text: `mcp ${svc?.agents?.mcp?.present ? "present" : "missing"}` },
   ];
   const pool = svc?.stack?.poolAddress;
   const right = pool ? `pool ${pool.slice(0, 8)}…${pool.slice(-4)}` : "no stack";
@@ -139,54 +141,5 @@ export const QuitPrompt = ({ width, running, managed }) => {
               <${Text} color=${keyColour} bold>${a}<//>
               <${Text} color=${C.muted}>${b}<//>
             <//>`)}
-    <//>`;
-};
-
-/**
- * The Keys page.
- *
- * Laid out in columns sized to the height, because the requirement is that
- * nothing scrolls and 36 bindings do not fit in the 20 rows an 80x24 terminal
- * leaves. Three columns turn that into 12 rows. If even that overflows it says
- * how many it dropped rather than quietly showing a subset — the previous help
- * overlay showed 16 of 39 at this size and gave no sign that it had.
- */
-export const KeysPage = ({ groups, width, height }) => {
-  const flat = [];
-  for (const g of groups) {
-    flat.push({ head: g.title });
-    for (const r of g.rows) flat.push(r);
-  }
-  const perCol = Math.max(1, height - 1);
-  // The key column is sized from the widest key string, never from a share of the
-  // width. A truncated label is a readability cost; a truncated KEY ("a / lef")
-  // is the one thing on this page that has to be exact.
-  const keyW = Math.max(...flat.filter((r) => r.keys).map((r) => r.keys.length)) + 2;
-  const maxCols = Math.max(1, Math.floor(width / (keyW + 14)));
-  const nCols = Math.max(1, Math.min(maxCols, Math.ceil(flat.length / perCol)));
-  const colW = Math.floor(width / nCols);
-  const labelW = Math.max(1, colW - keyW - 1);
-  const cols = Array.from({ length: nCols }, (_, i) => flat.slice(i * perCol, (i + 1) * perCol));
-  const shown = cols.reduce((n, c) => n + c.length, 0);
-
-  return html`
-    <${Box} flexDirection="column" width=${width} height=${height} overflow="hidden">
-      <${Box}>
-        ${cols.map((col, ci) => html`
-          <${Box} key=${"c" + ci} flexDirection="column" width=${colW}>
-            ${col.map((row, ri) => row.head
-              ? html`<${Text} key=${"h" + ri} color=${C.accent} bold>${row.head.slice(0, colW)}<//>`
-              : html`
-                <${Text} key=${"r" + ri} wrap="truncate">
-                  <${Text} color=${C.ok}>${row.keys.padEnd(keyW)}<//>
-                  <${Text} color=${C.muted}>${row.label.slice(0, labelW)}<//>
-                <//>`)}
-          <//>`)}
-      <//>
-      <${Text} color=${C.muted}>
-        ${shown < flat.length
-          ? `${flat.length - shown} more — a taller or wider terminal shows them`
-          : "every binding is on this screen · none needs a modifier key"}
-      <//>
     <//>`;
 };
