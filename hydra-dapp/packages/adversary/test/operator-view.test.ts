@@ -18,6 +18,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT, DEFAULT_TTL_MS } from "../../vault-server/src/server.ts";
+import { serve, MAX_BODY } from "../../vault-server/src/http.ts";
 import { OBSERVABLE, OBSERVABLE_IDS, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
 import { padTo, unpad, bucketFor, BUCKETS, SEAL_OVERHEAD } from "../../vault-client/src/buckets.ts";
@@ -92,10 +93,20 @@ test("everything the operator can observe is on the published table", () => {
     `observable but undocumented — add a row to observations.ts:\n${undocumented.join("\n")}`);
 });
 
-test("everything the table claims is observable actually is", () => {
+test("everything the table claims is observable actually is", async () => {
   // The other direction, and the one a disclosure table normally skips. A row nobody can
   // produce is a row that teaches readers the table is decorative.
+  //
+  // "A full session" has to mean over the transport as well, or the transport rows are
+  // unfalsifiable. Adding them without this is what made this check fail when they went in,
+  // which is the check doing its job.
   const { vault } = session();
+  const { url, server } = await serve(vault, 0, { observeTransport: true });
+  try {
+    await fetch(`${url}${PUBLIC_ENDPOINT}/pub:nothing`, { method: "POST", body: "[]" });
+  } finally {
+    server.close();
+  }
   const observed = new Set(vault.observedKeys());
   const unproduced = OBSERVABLE_IDS.filter((id) => !observed.has(id));
   assert.deepEqual(unproduced, [],
@@ -249,4 +260,102 @@ test("every table row carries a reason, and the ids are unique", () => {
   }
   const ids = [...OBSERVABLE, ...NOT_OBSERVABLE].map((o) => o.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate observation id");
+});
+
+// ---------------------------------------------------------------------------
+// Over HTTP, where the transport discloses more than the object did
+// ---------------------------------------------------------------------------
+
+test("served over HTTP, the vault still stores and returns what it should", async () => {
+  const vault = new Vault({ invites: ["http-1"], buckets: BUCKETS });
+  const { url, server } = await serve(vault);
+  try {
+    const chan = channelSecret(vaultRoot, "over-http");
+    const blob = sealForChannel(chan, new TextEncoder().encode("through a socket"));
+    const put = await fetch(`${url}${ENCRYPTED_ENDPOINT}/${blob.id}`, {
+      method: "PUT",
+      headers: { "x-hydra-invite": "http-1" },
+      body: bytes(blob),
+    });
+    assert.equal(put.status, 201, await put.text());
+
+    const got = await fetch(`${url}${ENCRYPTED_ENDPOINT}`, {
+      method: "POST",
+      body: JSON.stringify([blob.id, "enc:missing"]),
+    });
+    const { found } = await got.json() as { found: Record<string, string> };
+    assert.deepEqual(Object.keys(found), [blob.id], "the batch returned the wrong set");
+    assert.deepEqual(new Uint8Array(Buffer.from(found[blob.id], "base64")), bytes(blob));
+  } finally {
+    server.close();
+  }
+});
+
+test("the transport rows are real: an HTTP server can produce every one", async () => {
+  // The reason `transport.*` is on the table. The in-process object cannot produce these, and
+  // when they were added the over-claims check failed — correctly. This is what makes them
+  // honest rather than defensive.
+  const vault = new Vault({ invites: ["t-1"], buckets: BUCKETS });
+  const { url, server } = await serve(vault, 0, { observeTransport: true });
+  try {
+    await fetch(`${url}${PUBLIC_ENDPOINT}/pub:nothing`, { method: "POST", body: "[]" });
+    const seen = vault.observedKeys();
+    for (const id of ["transport.peer", "transport.headers", "transport.timing"]) {
+      assert.ok(seen.includes(id), `${id} is on the table but the server cannot produce it`);
+    }
+    const [record] = vault.observe().transport;
+    assert.ok(record.peer.length > 0, "no peer address was observable");
+    assert.ok(record.headers.length > 0, "no headers were observable");
+    assert.ok(record.at > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("but nothing about the transport is recorded by default", async () => {
+  // The difference between what an operator CAN see and what this build keeps. The rows stay
+  // on the table either way, because the gap between them is one argument.
+  const vault = new Vault({ invites: ["t-2"], buckets: BUCKETS });
+  const { url, server } = await serve(vault);
+  try {
+    await fetch(`${url}${PUBLIC_ENDPOINT}/pub:nothing`, { method: "POST", body: "[]" });
+    assert.deepEqual(vault.observe().transport, [], "the default build kept a transport record");
+    for (const id of vault.observedKeys()) {
+      assert.ok(!id.startsWith("transport."), `${id} was recorded without being asked for`);
+    }
+  } finally {
+    server.close();
+  }
+});
+
+test("the server refuses a body larger than the largest bucket", async () => {
+  // Refused, not truncated: a truncated body would be stored under an id that does not match
+  // its bytes, and content addressing would quietly stop being true.
+  const vault = new Vault({ invites: ["t-3"], buckets: BUCKETS });
+  const { url, server } = await serve(vault);
+  try {
+    const res = await fetch(`${url}${ENCRYPTED_ENDPOINT}/enc:toobig`, {
+      method: "PUT",
+      headers: { "x-hydra-invite": "t-3" },
+      body: new Uint8Array(MAX_BODY + 1),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(vault.observe().rows.length, 0, "an oversized body was stored anyway");
+  } finally {
+    server.close();
+  }
+});
+
+test("the HTTP surface adds no headers of its own beyond the content type", async () => {
+  // Every response header is something the operator hands a client for free, and a `Server:`
+  // or a request id is a fingerprint the client did not ask to carry.
+  const vault = new Vault({ buckets: BUCKETS });
+  const { url, server } = await serve(vault);
+  try {
+    const res = await fetch(`${url}${PUBLIC_ENDPOINT}/pub:nothing`, { method: "POST", body: "[]" });
+    const names = [...res.headers.keys()].filter((h) => !["content-type", "content-length", "date", "connection", "keep-alive", "transfer-encoding"].includes(h));
+    assert.deepEqual(names, [], `the server set extra headers: ${names.join(", ")}`);
+  } finally {
+    server.close();
+  }
 });

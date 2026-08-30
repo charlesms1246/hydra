@@ -14,6 +14,11 @@
  * The standing rule this serves: privacy claims are computed, never asserted. Nothing here is
  * a promise about what the operator *would* do — it is a list of what the software puts in
  * front of them.
+ *
+ * Which is why the `transport.*` rows are here even though `http.ts` writes no access log. The
+ * kernel knows the peer address regardless, and one changed line turns it into a record. "We
+ * choose not to log it" is a promise about behaviour; the table states properties, so it lists
+ * what an operator *can* see rather than what this build happens to keep.
  */
 
 /** One thing the operator can observe, and why it is unavoidable. */
@@ -69,6 +74,21 @@ export const OBSERVABLE: readonly Observation[] = [
     id: "invite.redeemed",
     what: "that some invite was redeemed, and when",
     why: "single-use enforcement needs the token consumed; the token itself is destroyed and never linked to what follows",
+  },
+  {
+    id: "transport.peer",
+    what: "the source address of every request, once the vault is served over HTTP",
+    why: "the kernel knows the peer address whether or not the server reads it; only an onion or a proxy removes it, and neither is this server's to provide",
+  },
+  {
+    id: "transport.headers",
+    what: "request headers, including whatever a client's HTTP stack adds unasked",
+    why: "they arrive with the request; the server sets none of its own in reply, but it cannot unsee the ones it is sent",
+  },
+  {
+    id: "transport.timing",
+    what: "when each request arrived and how long the body took to transfer",
+    why: "a socket has timing; a large upload on a slow link is visibly a large upload on a slow link",
   },
   {
     id: "store.totals",

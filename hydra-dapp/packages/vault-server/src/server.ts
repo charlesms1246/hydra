@@ -69,6 +69,21 @@ type Stored = {
   readonly bytes: Uint8Array;
 };
 
+/**
+ * A request, as the transport sees it.
+ *
+ * Recorded only when a server is started with `observeTransport`, which is **off by default**.
+ * The rows are on the disclosure table regardless: the kernel knows the peer address whether
+ * or not this code reads it, and the difference between seeing and recording is one option.
+ * A table that listed only what this build keeps would be describing a configuration rather
+ * than a capability.
+ */
+export type TransportRecord = {
+  readonly at: number;
+  readonly peer: string;
+  readonly headers: readonly string[];
+};
+
 /** A read, as the operator sees it. */
 export type ReadRecord = {
   readonly at: number;
@@ -89,6 +104,7 @@ export class Vault {
   readonly #objects = new Map<string, Stored>();
   readonly #invites: Set<string>;
   readonly #reads: ReadRecord[] = [];
+  readonly #transport: TransportRecord[] = [];
   #invitesRedeemed = 0;
   readonly #now: () => number;
   readonly #buckets: readonly number[];
@@ -97,6 +113,14 @@ export class Vault {
     this.#invites = new Set(options.invites ?? []);
     this.#now = options.now ?? (() => Date.now());
     this.#buckets = options.buckets ?? [1024, 4096, 16384, 65536, 262144];
+  }
+
+  /**
+   * Record what a transport saw. Called only by `http.ts`, and only when the operator asked
+   * for it — see {@link TransportRecord}.
+   */
+  observeRequest(record: TransportRecord): void {
+    this.#transport.push(record);
   }
 
   handle(request: Request): Response {
@@ -185,6 +209,7 @@ export class Vault {
    * hand-listed.
    */
   observe(): { rows: Record<string, unknown>[]; reads: ReadRecord[]; invitesRedeemed: number;
+               transport: TransportRecord[];
                totals: Record<string, { objects: number; bytes: number }> } {
     this.#expire();
     const rows = [...this.#objects.values()].map((o) => ({
@@ -200,7 +225,10 @@ export class Vault {
       t.objects++;
       t.bytes += o.bytes.length;
     }
-    return { rows, reads: [...this.#reads], invitesRedeemed: this.#invitesRedeemed, totals };
+    return {
+      rows, reads: [...this.#reads], invitesRedeemed: this.#invitesRedeemed,
+      transport: [...this.#transport], totals,
+    };
   }
 
   /** The observation ids this instance can actually produce. Compared against the table. */
@@ -210,6 +238,11 @@ export class Vault {
     for (const row of o.rows) for (const k of Object.keys(row)) seen.add(k);
     if (o.reads.length) { seen.add("read.ids"); seen.add("read.hit"); }
     if (o.invitesRedeemed) seen.add("invite.redeemed");
+    if (o.transport.length) {
+      seen.add("transport.peer");
+      seen.add("transport.headers");
+      seen.add("transport.timing");
+    }
     if (Object.keys(o.totals).length) seen.add("store.totals");
     return [...seen].sort();
   }
