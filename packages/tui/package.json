@@ -11,6 +11,7 @@
   },
   "scripts": {
     "test": "node test/render.mjs",
-    "drive": "node test/drive.mjs"
+    "drive": "node test/drive.mjs",
+    "sandbox": "node sandbox/run.mjs"
   }
 }
