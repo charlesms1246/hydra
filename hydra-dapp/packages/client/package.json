@@ -1,0 +1,8 @@
+{
+  "name": "@hydra-platform/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The composition layer: seal, point, commit, publish, schedule.",
+  "engines": { "node": ">=24" }
+}

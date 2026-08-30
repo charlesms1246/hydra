@@ -61,9 +61,22 @@ export type Pointer<D extends ChannelDomain = ChannelDomain> =
  */
 export const ID_BYTES = 31;
 
-/** Content addressing: the id of a blob is a hash of the bytes the vault will store. */
+/**
+ * Content addressing: the id of a blob is a hash of the bytes the vault will store.
+ *
+ * This is THE id — the value the vault stores under and the value a pointer masks. It was
+ * briefly two values, a plain digest here and a domain-tagged one in `vault-client`, and the
+ * result was a pointer that resolved to an id nothing had ever been stored under. Nothing in
+ * either package failed; only composing them showed it. `vault-client/src/blobs.ts` now hex-
+ * encodes this rather than deriving its own.
+ *
+ * Domain-tagged so the same bytes give a different id in the public class, which stops an
+ * operator holding a public blob from testing whether an encrypted one is the same document.
+ */
 export function blobIdFrom(ciphertext: Uint8Array): Uint8Array {
-  return new Uint8Array(createHash("sha256").update(ciphertext).digest()).slice(0, ID_BYTES);
+  return new Uint8Array(
+    createHash("sha256").update("hydra/blob/encrypted/v1").update(" ").update(ciphertext).digest(),
+  ).slice(0, ID_BYTES);
 }
 
 /**
