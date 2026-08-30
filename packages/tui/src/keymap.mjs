@@ -47,9 +47,10 @@ export function scopesFor(s) {
     wallets: ["wallets", "list"],
     tools: ["tools", "list"],
     run: ["run", "list"],
+    build: ["build", "list"],
     log: ["log", "list"],
     about: ["about"],
-    activity: ["list"],
+    activity: ["activity", "list"],
     overview: ["overview"],
   }[s.page] ?? [];
   return navFirst ? ["nav", ...page, "global"] : [...page, "nav", "global"];
@@ -105,12 +106,38 @@ export const BINDINGS = [
     mutates: true, run: (s, a) => a.askMoreAccounts() },
 
   // ---- tools -------------------------------------------------------------
+  { scope: "tools", keys: ["tab"], label: "move between the categories and the detail",
+    run: (s, a) => a.toggleFocus() },
   { scope: "tools", keys: ["i"], label: "run this row's fix (shows the command first)",
     mutates: true, run: (s, a) => a.askFix() },
 
+  // ---- build -------------------------------------------------------------
+  { scope: "build", keys: ["tab"], label: "move between the operations and the output",
+    run: (s, a) => a.toggleFocus() },
+  { scope: "build", keys: ["enter"], label: "run the selected operation (shows the command first)",
+    mutates: true, run: (s, a) => a.askOperation() },
+
+  // ---- sectioned pages ---------------------------------------------------
+  // One meaning of `tab` across every two-section page: move between the sections.
+  // It is the same "next thing" it means on Disclosure and About.
+  { scope: "activity", keys: ["tab"], label: "move between the query and the list",
+    run: (s, a) => a.toggleFocus() },
+  { scope: "activity", keys: ["enter"], label: "edit the selected field",
+    when: (s) => s.focus === "form", run: (s, a) => a.editField() },
+  { scope: "activity", keys: ["enter"], label: "open the selected transaction's receipt",
+    when: (s) => s.focus === "list", run: (s, a) => a.descend() },
+
   // ---- run ---------------------------------------------------------------
+  { scope: "run", keys: ["tab"], label: "move between the builder and the flow list",
+    run: (s, a) => a.toggleFocus() },
+  { scope: "run", keys: ["enter"], label: "edit the selected field",
+    when: (s) => s.focus === "form", run: (s, a) => a.editField() },
   { scope: "run", keys: ["enter"], label: "preview what this flow discloses, then y runs it",
-    mutates: true, run: (s, a) => a.askFlow() },
+    when: (s) => s.focus === "list", mutates: true, run: (s, a) => a.askFlow() },
+  { scope: "run", keys: ["i"], label: "save the built flow", mutates: true,
+    run: (s, a) => a.saveFlow() },
+  { scope: "run", keys: ["-"], label: "forget the selected saved flow", mutates: true,
+    when: (s) => s.focus === "list", run: (s, a) => a.forgetFlow() },
 
   // ---- about -------------------------------------------------------------
   { scope: "about", keys: ["tab"], label: "next guide section", run: (s, a) => a.cycleSection(1) },
@@ -183,7 +210,7 @@ const SCOPE_TITLE = {
   nav: "the nav bar", list: "moving in a list", disclosure: "disclosure",
   empty: "disclosure (nothing loaded)", wallets: "wallets", tools: "tools",
   run: "run", confirm: "confirm", quit: "quitting", global: "anywhere",
-  about: "about", log: "log", overview: "overview",
+  about: "about", log: "log", overview: "overview", activity: "activity", build: "build",
 };
 
 /** The `Keys` page, grouped by scope, in table order. */
@@ -197,18 +224,43 @@ export function helpGroups() {
   return groups;
 }
 
-/** No (scope, key) pair may be claimed twice. Asserted by the test suite. */
+/**
+ * No (scope, key) pair may be claimed twice UNCONDITIONALLY. Asserted by the tests.
+ *
+ * Two bindings may share a key when their `when:` predicates separate them — that is
+ * how `enter` means "edit this field" in a form section and "open this row" in a list
+ * section without a second scope. `dispatch` takes the first whose `when` passes, so
+ * the only real collision is two bindings that are both always live.
+ */
 export function duplicateBindings() {
   const seen = new Map();
   const dupes = [];
   for (const b of BINDINGS) {
     for (const k of b.keys) {
       const id = `${b.scope}:${k}`;
-      if (seen.has(id)) dupes.push(id);
-      seen.set(id, b);
+      const prev = seen.get(id);
+      if (prev && !prev.when && !b.when) dupes.push(id);
+      if (!prev || !b.when) seen.set(id, b);
     }
   }
   return dupes;
+}
+
+/**
+ * Keys claimed more than once in a scope where at least one binding is conditional.
+ *
+ * Not a fault — it is the intended mechanism — but a caller that wants to show the
+ * keymap needs to know which rows are alternatives rather than separate keys.
+ */
+export function conditionalPairs() {
+  const byId = new Map();
+  for (const b of BINDINGS) {
+    for (const k of b.keys) {
+      const id = `${b.scope}:${k}`;
+      byId.set(id, (byId.get(id) ?? 0) + 1);
+    }
+  }
+  return [...byId.entries()].filter(([, n]) => n > 1).map(([id]) => id);
 }
 
 /** Every binding must be pressable without a modifier. Asserted by the test suite. */

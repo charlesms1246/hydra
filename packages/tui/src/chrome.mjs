@@ -24,6 +24,7 @@ export const PAGES = [
   { id: "disclosure", key: "f", label: "Disclosure", short: "Dis" },
   { id: "run", key: "x", label: "Run", short: "Run" },
   { id: "tools", key: "t", label: "Tools", short: "Tls" },
+  { id: "build", key: "j", label: "Build", short: "Bld" },
   { id: "log", key: "l", label: "Log", short: "Log" },
   { id: "about", key: "g", label: "About", short: "Abt" },
 ];

@@ -15,7 +15,7 @@
 import { Box, Text } from "ink";
 import { html } from "./ui.mjs";
 import { C, glyph, tone } from "./theme.mjs";
-import { scaled } from "./logo.mjs";
+import { WORDMARK } from "./logo.mjs";
 
 const trunc = (s, w) =>
   String(s ?? "").length <= w ? String(s ?? "") : String(s ?? "").slice(0, Math.max(0, w - 1)) + "…";
@@ -83,9 +83,10 @@ export function plan(cols, rows, counts = {}) {
     Math.max(6, rows - bandA - 5)
   );
   let room = rows - bandA - bandB;
-  // The mark takes at most a third of the screen and only when the blocks have
-  // already been given everything they asked for.
-  const logo = room >= 9 ? Math.min(Math.floor(rows / 3), room - 4) : 0;
+  // The wordmark is type, not a raster: it is 37x5 or it is nothing. It shows only
+  // when the blocks have already been given everything they asked for, and only when
+  // the terminal is wide enough to hold it without clipping a letter.
+  const logo = room >= 9 && cols >= WORDMARK[0].length ? WORDMARK.length : 0;
   room -= logo;
   const strip = rows < 18 ? 0 : room >= 8 ? 7 : room >= 3 ? 3 : 0;
   return { wide, logo, strip, bandA, bandB };
@@ -202,7 +203,7 @@ export const Overview = ({ cols, rows, svc, wal, blocks, doctor, ledger, control
           <//>`)
       : [html`<${Text} color=${C.muted}>${"  nothing yet — x runs a flow"}<//>`];
 
-  const mark = logo > 0 ? scaled(cols, logo) : [];
+  const mark = logo > 0 ? WORDMARK : [];
   const markPad = Math.max(0, Math.floor((cols - Math.max(0, ...mark.map((l) => l.length))) / 2));
 
   const band = (widths, blocks_) =>

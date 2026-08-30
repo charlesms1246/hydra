@@ -91,11 +91,11 @@ function runsFor(line, y, byRow, fill, seal) {
  * @param steps    [{ label, done }] — what is actually being waited on
  */
 export const Splash = ({ cols, rows, progress, seal, steps, note }) => {
-  // Two rows for the caption block, one for the step line, one of headroom — and a
-  // ceiling. Given the whole terminal the mark will happily take it, which on a
-  // 57-row screen is a wall of logo rather than a splash.
-  const artRows = Math.max(6, Math.min(26, rows - 5));
-  const art = useMemo(() => scaled(cols - 2, artRows), [cols, artRows]);
+  // Everything the caption block does not need: two rows for the bar and its line,
+  // one of headroom. No ceiling — the mark is the launch screen, so on a tall
+  // terminal it should be a tall mark, not a small one adrift in the middle.
+  const artRows = Math.max(6, rows - 4);
+  const art = useMemo(() => scaled(cols, artRows), [cols, artRows]);
   // The raster is already sized to keep the mark round, so the leftover rows go
   // above it — a mark pinned to the top of a tall terminal reads as a mistake.
   const geom = useMemo(() => rings(art), [art]);

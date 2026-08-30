@@ -15,10 +15,14 @@
  */
 
 import { render } from "ink";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Writable, PassThrough } from "node:stream";
 import { readFileSync } from "node:fs";
 import { html } from "../src/ui.mjs";
-import { Wallets, Activity, Tools, LogPane, Transact, Rig, Confirm, PANES, visibleItems } from "../src/panels.mjs";
+import { LogPane, Confirm } from "../src/panels.mjs";
+import { visibleRows } from "../src/toolspage.mjs";
 import { Matrix, Legend, WhyDrawer, NotesDrawer, AnonDrawer, EmptyState, Ledger, ConfigStrip, CONFIG_FIXED, leakConfig, sample, pickArt } from "../src/disclosure.mjs";
 import { fit, wrap, windowOf, indicatorFor } from "../src/layout.mjs";
 import { C, DISCLOSURE } from "../src/theme.mjs";
@@ -30,7 +34,8 @@ import { comboBindings } from "../src/keymap.mjs";
 import { whatDoesThisLeak } from "../../leak/src/leak.mjs";
 import { AUDITOR_NOTE } from "../../cli/src/notes.mjs";
 import { COMMANDS } from "../../cli/src/agentcmds.mjs";
-import { status } from "../../core/src/services.mjs";
+import { status, agentStatus } from "../../core/src/services.mjs";
+import { toBaseUnits } from "../../core/src/wallets.mjs";
 import { SELECTOR_NUM_OF_CHANNELS } from "../../core/src/chain.mjs";
 import { wallets } from "../../core/src/wallets.mjs";
 import { latestBlocks } from "../../core/src/chain.mjs";
@@ -160,39 +165,11 @@ const g80 = fit(80, 24);
 // panels, at list level, with real / null / error data
 // ---------------------------------------------------------------------------
 
-await draw("Wallets", html`<${Wallets} w=${fakeWallets} selected=${0} />`);
-await draw("Wallets (no stack)", html`<${Wallets} w=${{ available: false, reason: "no running stack" }} selected=${0} />`);
-await draw("Wallets (loading)", html`<${Wallets} w=${undefined} selected=${0} />`);
-await draw("Activity", html`<${Activity} b=${fakeBlocks} />`);
-await draw("Activity (real)", html`<${Activity} b=${b} />`);
-await draw("Activity (rpc error)", html`<${Activity} b=${{ available: false, reason: "connect ECONNREFUSED" }} />`);
-await draw("Tools", html`<${Tools} d=${d} selected=${0} />`);
-await draw("Tools (fixable row selected)", html`<${Tools} d=${brokenDoc} selected=${1} />`);
-await draw("Tools (check() threw)", html`<${Tools} d=${{ rows: [], error: "scarb not on PATH" }} />`);
 await draw("LogPane", html`<${LogPane} lines=${[{ text: "$ scarb build", sev: "info" }, { text: "warning: unused", sev: "warn" }]} title="fix: pool" width=${96} height=${8} />`);
 await draw("LogPane (empty)", html`<${LogPane} lines=${[]} title="" width=${96} height=${8} />`);
-await draw("Transact (run menu)", html`<${Transact} actions=${TX_ACTIONS} selected=${2} width=${96} height=${9} />`);
 await draw("Confirm (doctor fix)", html`<${Confirm} c=${{ prompt: "run this?", cmd: "scarb build", cwd: "/tmp", lines: ["it keeps running"] }} width=${96} />`);
 await draw("About", html`<${About} width=${96} height=${26} section=${0} />`);
 await draw("About · keys", html`<${About} width=${96} height=${26} section=${3} />`);
-
-// ---------------------------------------------------------------------------
-// the rig, descended
-// ---------------------------------------------------------------------------
-
-await draw("Rig activity · level 1 (block, tx list)",
-  html`<${Rig} pane=${PANES.activity} data=${fakeBlocks} nav=${{ level: 1, sel: [0, 1] }} width=${96} height=${20} />`);
-await draw("Rig activity · level 2 (txStatus receipt)",
-  html`<${Rig} pane=${PANES.activity} data=${fakeBlocks} nav=${{ level: 2, sel: [0, 1] }} width=${96} height=${20}
-    receipt=${{ available: true, found: true, hash: "0x0b42aa", finality: "ACCEPTED_ON_L2", execution: "SUCCEEDED", blockNumber: 1271, actualFee: { amount: "0x1a", unit: "FRI" }, events: 12, revertReason: null }} />`);
-await draw("Rig activity · level 2 (receipt still loading)",
-  html`<${Rig} pane=${PANES.activity} data=${fakeBlocks} nav=${{ level: 2, sel: [0, 0] }} width=${96} height=${20} receipt=${null} />`);
-await draw("Rig wallets · level 1 (raw balances)",
-  html`<${Rig} pane=${PANES.wallets} data=${fakeWallets} nav=${{ level: 1, sel: [0, 0] }} width=${96} height=${20} />`);
-await draw("Rig tools · level 1 (whole multi-line hint)",
-  html`<${Rig} pane=${PANES.tools} data=${brokenDoc} nav=${{ level: 1, sel: [2, 0] }} width=${96} height=${20} />`);
-await draw("Rig tools · filtered",
-  html`<${Rig} pane=${PANES.tools} data=${brokenDoc} nav=${{ level: 0, sel: [0, 0] }} width=${96} height=${20} filter=${{ text: "artifact", typing: false }} />`);
 
 // ---------------------------------------------------------------------------
 // the home screen
@@ -337,6 +314,8 @@ check_("every binding is reachable from a live scope, and documented", () => {
     { ...base, page: "disclosure", report: null },
     { ...base, page: "disclosure", report: {} },
     { ...base, page: "tools", report: {} },
+    { ...base, page: "build", report: {} },
+    { ...base, page: "activity", report: {} },
     { ...base, page: "wallets", report: {} },
     { ...base, page: "activity", report: {} },
     { ...base, page: "run", report: {} },
@@ -421,13 +400,13 @@ check_("while / is open every printable key is data, not a command", () => {
 
 check_("with / open, keys act on the filtered list, not the underlying one", () => {
   const f = { text: "upstream", typing: false };
-  const shown = visibleItems(PANES.tools, brokenDoc, f);
+  const shown = visibleRows(brokenDoc.rows, f);
   if (shown.length !== 1 || shown[0].name !== "upstream checkout") {
     throw new Error(`filter gave ${shown.map((r) => r.name).join(",")}`);
   }
   // Row 0 of the filtered list is row 2 of the real one. `i` reading the real
   // list here would offer to run a fix for a row that is not on screen.
-  if (visibleItems(PANES.tools, brokenDoc, null)[0].name === shown[0].name) {
+  if (visibleRows(brokenDoc.rows, null)[0].name === shown[0].name) {
     throw new Error("the fixture cannot detect the off-by-index bug");
   }
   return "1 of 3 rows, and it is the selected one";
@@ -579,8 +558,8 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
 
   check_("every nav destination is reachable by its own letter", () => {
     const want = {
-      wallets: "manage", activity: "rig · activity", tools: "rig · tools",
-      run: "x · run a flow", log: "log ·", about: "guide ", overview: "the auditor",
+      wallets: "manage", activity: "query", tools: "tools",
+      run: "build a flow", log: "log ·", about: "guide ", overview: "the auditor",
     };
     for (const [k, needle] of Object.entries(want)) {
       if (!seen[k]?.includes(needle)) throw new Error(`${k}: "${needle}" not on screen`);
@@ -673,6 +652,35 @@ const known = "[KNOWN GAP]";
 // which asserted a fact the action alone cannot support. The pool exposes the channel
 // count as a public view, so it is computable; when it cannot be read the field must
 // stay absent, which packages/leak reports as UNKNOWN.
+// The label said "100 STRK" and the wire carried 100 base units — 1e-16 STRK.
+check_("every flow amount crosses the wire in the units its label claims", () => {
+  for (const a of TX_ACTIONS) {
+    if (!a.leak?.amount) continue;
+    const src = String(a.run ?? "");
+    const want = toBaseUnits(a.leak.amount);
+    if (!src.includes("toBaseUnits")) {
+      throw new Error(`${a.id} passes a raw amount; its label says ${a.leak.amount} whole tokens`);
+    }
+    if (!a.label.includes(String(a.leak.amount))) {
+      throw new Error(`${a.id}'s label and its leak amount disagree`);
+    }
+    if (BigInt(want) !== BigInt(a.leak.amount) * 10n ** 18n) throw new Error("toBaseUnits is not 18dp");
+  }
+  return TX_ACTIONS.filter((a) => a.leak?.amount).map((a) => `${a.id} ${a.leak.amount}→${toBaseUnits(a.leak.amount)}`).join(" ");
+});
+
+// agentStatus() counted a hardcoded list of four THIRD-PARTY skill names, so a
+// machine with all of HYDRA's own installed still reported 0/4.
+check_("skill status counts HYDRA's own skills, not only the pinned bundle", () => {
+  const sk = agentStatus().skills;
+  if (!sk.own || !sk.thirdParty) throw new Error("no breakdown between the two skill sets");
+  if (!sk.own.available.length) throw new Error("packages/skills was not read at all");
+  for (const name of sk.own.available) {
+    if (!sk.expected.includes(name)) throw new Error(`${name} is on disk but not expected`);
+  }
+  return `${sk.own.available.length} own · ${sk.thirdParty.pinned.length} pinned · ${sk.installed.length}/${sk.expected.length} installed`;
+});
+
 check_("the transfer flow never asserts opensChannel", () => {
   const transfer = TX_ACTIONS.find((a) => a.id === "transfer");
   if (!transfer) throw new Error("no transfer flow");
@@ -697,6 +705,72 @@ check_("the pool's channel-count selector is the one the chain answers to", () =
   const want = "0x3dd96f9f4c6d6e8a31f13b4f6bddb32618aaea7439310de036bc5c244a43c3d";
   if (SELECTOR_NUM_OF_CHANNELS !== want) throw new Error(`selector drifted: ${SELECTOR_NUM_OF_CHANNELS}`);
   return "get_num_of_channels";
+});
+
+// The four sectioned pages, and the facts they are built around.
+check_("snforge output parses, including the traps that made exit codes unusable", async () => {
+  const { parseSnforge, verdictOf } = await import("../../core/src/toolchain.mjs");
+  const multi = [
+    "Collected 341 test(s) from privacy package",
+    "[PASS] privacy::a (l1_gas: ~181032, l1_data_gas: ~5952, l2_gas: ~43388660)",
+    "Tests: 338 passed, 0 failed, 3 ignored, 0 filtered out",
+    "Collected 43 test(s) from shadow package",
+    "Tests: 43 passed, 0 failed, 0 ignored, 0 filtered out",
+    "Tests summary: 391 passed, 0 failed, 3 ignored, 0 filtered out",
+  ].join("\n");
+  const m = parseSnforge(multi);
+  // The trap: a multi-package run prints one `Tests:` per package AND a final
+  // summary. Reading only `Tests:` reports the LAST package as the whole run.
+  if (m.totals.passed !== 391) throw new Error(`multi-package total is ${m.totals.passed}, not 391`);
+  if (m.packages.length !== 2) throw new Error("packages were not separated");
+  const gas = m.tests[0]?.gas;
+  if (!gas || gas.l2 !== 43388660) throw new Error("gas was not parsed");
+
+  // snforge exits 0 when a filter matches nothing, so the code alone cannot tell
+  // "all passed" from "nothing ran".
+  const none = parseSnforge("Tests: 0 passed, 0 failed, 0 ignored, 4 filtered out");
+  const v = verdictOf(none, 0);
+  if (v.ok) throw new Error("a run that verified nothing reported ok");
+  if (!/4 filtered/.test(v.text)) throw new Error("the reason was not carried");
+  return `391 across 2 packages · exit 0 with 0 run → "${v.text}"`;
+});
+
+check_("a saved flow stores data, never anything executable", async () => {
+  const { validate, RUNNABLE } = await import("../../core/src/flows.mjs");
+  const bad = validate({ name: "x", type: "nope" });
+  if (bad.ok) throw new Error("an unknown action type was accepted");
+  const w = validate({ name: "w", type: "withdraw", amount: "5" });
+  // withdraw and invoke are real ACTION_TYPES the leak module models, and the
+  // control API has no endpoint for either. That is recorded, not hidden.
+  if (!w.ok) throw new Error("withdraw was rejected; it is a real action type");
+  if (w.flow.runnable) throw new Error("withdraw was marked runnable, and it is not");
+  const t = validate({ name: "t", type: "transfer", from: "alice", to: "bob", amount: "50" });
+  if (!t.flow.runnable) throw new Error("transfer was marked unrunnable");
+  for (const v of Object.values(t.flow)) {
+    if (typeof v === "function") throw new Error("a flow carried a function");
+  }
+  if (validate({ name: "n", type: "transfer", amount: "1; rm -rf /" }).ok) {
+    throw new Error("a non-numeric amount was accepted");
+  }
+  return `${RUNNABLE.length} runnable of 5 types · withdraw preview-only`;
+});
+
+check_("history survives a truncated final line", async () => {
+  const { history } = await import("../../core/src/history.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "hist-"));
+  const prev = process.env.HYDRA_HOME;
+  process.env.HYDRA_HOME = dir;
+  // Written by hand rather than through record(), because the case being tested is
+  // a process killed mid-append — which record() cannot produce on demand.
+  writeFileSync(join(dir, "history.jsonl"),
+    '{"at":"2026-01-01T00:00:00Z","kind":"build","name":"a","ok":true,"ms":1}\n' +
+    '{"at":"2026-01-01T00:00:01Z","kind":"flow","name":"b","ok":false,"ms":2}\n' +
+    '{"at":"2026-01-01T00:00:02Z","kind":"bui');
+  const h = await history({});
+  process.env.HYDRA_HOME = prev;
+  if (h.entries.length !== 2) throw new Error(`${h.entries.length} entries; the truncated line was not dropped`);
+  if (h.entries[0].name !== "b") throw new Error("entries are not newest-first");
+  return "2 whole lines kept, the torn one dropped";
 });
 
 check_("no binding needs a modifier key", () => {

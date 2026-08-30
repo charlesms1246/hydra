@@ -112,8 +112,18 @@ function crossings(y) {
   return xs.sort((a, b) => a - b);
 }
 
-/** Terminal cells are about twice as tall as they are wide. */
-const CELL_ASPECT = 2;
+/**
+ * How much taller a terminal cell is than it is wide.
+ *
+ * 2 is the usual answer and the fallback, but it is only usual — a terminal with a
+ * roomier line height runs nearer 2.3, and getting this number wrong is exactly what
+ * draws the outer ring as an egg. `measureCellAspect()` asks the terminal for the
+ * real one before the first frame; `HYDRA_CELL_ASPECT` overrides both, for the
+ * terminals that answer nothing.
+ */
+let CELL_ASPECT = Number(process.env.HYDRA_CELL_ASPECT) > 0
+  ? Number(process.env.HYDRA_CELL_ASPECT)
+  : 2;
 
 /**
  * How many cells the mark wants inside a `cols` x `rows` box, keeping its shape.
@@ -130,22 +140,67 @@ export function fitBox(cols, rows) {
 }
 
 /**
- * Coverage ramp.
+ * One glyph, for every cell that is inside the outline.
  *
- * The interior of this mark is solid, so anything above 55% coverage is drawn as a
- * full block. Letting the interior dither between ▓ and █ on sub-cell sampling
- * noise is what made the old render look like a halftone print rather than a logo;
- * the partial glyphs are for the outline, which is the only place they belong.
+ * A dash and nothing else. Block glyphs (`█ ▓ ▒ ░`) render at a different weight in
+ * half the fonts in use, and letters spelling HYDRA turned the fill into a wall of
+ * words you read instead of a shape you see. `-` is the same stroke in every
+ * monospace face, and it disappears into the silhouette, which is the job.
+ *
+ * With one glyph per cell there is no coverage ramp left to shade with, so the
+ * threshold does the whole job: a cell is drawn once a quarter of it is inside the
+ * outline. A quarter, not a half — the outer ring and the head strokes are thin
+ * enough that half breaks them into dots.
  */
-const RAMP = " ░▒▓";
-const SOLID = "█";
+const GLYPH = "-";
+const INK = 0.25;
 
 const cache = new Map();
 
 /**
+ * Ask the terminal how tall its cells actually are, and re-fit the mark to the answer.
+ *
+ * `CSI 16 t` is answered with `CSI 6 ; height ; width t`, in pixels. xterm, kitty,
+ * WezTerm, foot and Ghostty reply; the terminals that do not simply ignore it, which
+ * is why this resolves on a timer instead of waiting for an answer that is not coming.
+ * Called once, before Ink owns stdin — the reply would otherwise arrive as keystrokes.
+ *
+ * Returns the aspect in use either way, so a caller can log what it got.
+ */
+export async function measureCellAspect(stdin = process.stdin, stdout = process.stdout, ms = 150) {
+  if (Number(process.env.HYDRA_CELL_ASPECT) > 0) return CELL_ASPECT;   // the human wins
+  if (!stdin.isTTY || !stdout.isTTY || !stdin.setRawMode) return CELL_ASPECT;
+  const wasRaw = stdin.isRaw;
+  return new Promise((resolve) => {
+    let buf = "";
+    const finish = () => {
+      clearTimeout(timer);
+      stdin.off("data", onData);
+      if (!wasRaw) { stdin.setRawMode(false); stdin.pause(); }
+      resolve(CELL_ASPECT);
+    };
+    const onData = (d) => {
+      buf += d.toString("latin1");
+      const m = /\x1b\[6;(\d+);(\d+)t/.exec(buf);
+      if (!m) return;
+      const a = Number(m[1]) / Number(m[2]);
+      // Clamp rather than trust: a terminal that answers 0 or something absurd would
+      // otherwise scale the mark to one cell, or to the whole scrollback.
+      if (a >= 1.2 && a <= 3.5) { CELL_ASPECT = a; cache.clear(); }
+      finish();
+    };
+    const timer = setTimeout(finish, ms);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.on("data", onData);
+    stdout.write("\x1b[16t");
+  });
+}
+
+/**
  * The mark, as an array of strings exactly `h` tall and at most `w` wide.
  *
- * Each cell is supersampled 2x3 (x by y) and mapped through a coverage ramp, which
+ * Each cell is supersampled 4x4 and drawn once it is `INK` covered, which
  * is what makes the outline read as a curve rather than as stair-steps at small
  * sizes. Memoised on the box, because a resize re-renders every frame and this is
  * the only genuinely expensive thing the TUI draws.
@@ -183,11 +238,7 @@ export function scaled(cols, rows) {
     let line = "";
     for (let c = 0; c < w; c++) {
       const f = cov[r][c] / total;
-      line += f <= 0.06
-        ? " "
-        : f >= 0.55
-          ? SOLID
-          : RAMP[Math.max(1, Math.min(RAMP.length - 1, Math.round(f * RAMP.length)))];
+      line += f >= INK ? GLYPH : " ";
     }
     out.push(line.replace(/\s+$/, ""));
   }
@@ -219,3 +270,19 @@ export function rings(lines) {
   }
   return { cells, rows, cols };
 }
+
+/**
+ * The name, as letterforms rather than as a picture of a creature.
+ *
+ * The overview gives the mark a band of five or six rows and the full width of the
+ * terminal, which is the one shape the raster cannot use: at that height the hydra is
+ * a 12-row silhouette squeezed to 5 and every head merges into the ring. A wordmark
+ * has no detail to lose. Fixed 37x5 — it is type, so it does not scale.
+ */
+export const WORDMARK = [
+  " _   _ __   __ ____   ____      _    ",
+  "| | | |\\ \\ / /|  _ \\ |  _ \\    / \\   ",
+  "| |_| | \\ V / | | | || |_) |  / _ \\  ",
+  "|  _  |  | |  | |_| ||  _ <  / ___ \\ ",
+  "|_| |_|  |_|  |____/ |_| \\_\\/_/   \\_\\",
+];

@@ -26,14 +26,24 @@ import { BINDINGS, dispatch } from "./keymap.mjs";
 import { PAGES, pageIndex, NavBar, StatusBar, QuitPrompt } from "./chrome.mjs";
 import { About, SECTION_COUNT } from "./about.mjs";
 import { WalletsPage } from "./wallets.mjs";
+import { ActivityPage, ACTIVITY_FIELDS, rowsFor as activityRows } from "./activity.mjs";
+import { RunPage, RUN_FIELDS } from "./runflow.mjs";
+import { ToolsPage, TOOL_CATEGORIES, visibleRows } from "./toolspage.mjs";
+import { BuildPage } from "./buildpage.mjs";
+import { advance, TYPE } from "./forms.mjs";
+import { saveFlow as persistFlow, forgetFlow as dropFlow, leakActionFor } from "../../core/src/flows.mjs";
+import { OPERATIONS, runOperation, deployState } from "../../core/src/toolchain.mjs";
+import { record } from "../../core/src/history.mjs";
+import { upstreamPath } from "../../cli/src/doctor.mjs";
 import { Overview } from "./overview.mjs";
 import { Splash, timings } from "./splash.mjs";
+import { measureCellAspect } from "./logo.mjs";
 import { useSources } from "./sources.mjs";
-import { PANES, Rig, LogPane, Confirm, Transact, visibleItems } from "./panels.mjs";
+import { LogPane, Confirm } from "./panels.mjs";
 import {
   leakConfig, ConfigStrip, Ledger, Matrix, Legend, WhyDrawer, NotesDrawer, AnonDrawer, EmptyState,
 } from "./disclosure.mjs";
-import { faucet, addToken, exportWallets } from "../../core/src/wallets.mjs";
+import { faucet, addToken, exportWallets, toBaseUnits } from "../../core/src/wallets.mjs";
 import { txStatus, opensChannelTo } from "../../core/src/chain.mjs";
 import { startStack, stopStack } from "../../core/src/stack.mjs";
 import { describeFix, runFix } from "../../core/src/install.mjs";
@@ -54,13 +64,15 @@ const EXAMPLE = join(REPO, "packages", "leak", "examples", "private-transfer.jso
  * rather than a generic example.
  */
 export const TX_ACTIONS = [
+  // Amounts are whole tokens on the label and base units on the wire. They used to
+  // be the same string, so "100 STRK" deposited 100 base units — 1e-16 STRK.
   { id: "shield", label: "shield    100 STRK  alice",
-    run: () => TX.shield({ who: "alice", amount: "100", token: "STRK" }),
+    run: () => TX.shield({ who: "alice", amount: toBaseUnits("100"), token: "STRK" }),
     leak: { type: "deposit", token: "STRK", amount: "100" } },
   { id: "register", label: "register  bob",
     run: () => TX.register("bob"), leak: { type: "register" } },
   { id: "transfer", label: "transfer  50 STRK  alice → bob",
-    run: () => TX.transfer({ from: "alice", to: "bob", amount: "50", token: "STRK" }),
+    run: () => TX.transfer({ from: "alice", to: "bob", amount: toBaseUnits("50"), token: "STRK" }),
     // `opensChannel` is deliberately absent. It used to be hardcoded `false` — the
     // reassuring branch — which asserted a fact this program cannot know from the
     // action alone, and turned 5 UNKNOWN cells into 1. It is resolved from chain
@@ -102,6 +114,19 @@ function App() {
   const [quitting, setQuitting] = useState(false);
   const [section, setSection] = useState(0);
   const [prompt, setPromptState] = useState(null);
+  // Which of a sectioned page's two halves has the cursor. One value, reset on page
+  // change, because no page has more than two sections.
+  const [focus, setFocus] = useState("list");
+  const [formSel, setFormSel] = useState(0);
+  const [forms, setForms] = useState({
+    activity: { depth: "8", hash: "", match: "", txonly: false },
+    run: { name: "", type: "transfer", from: "alice", to: "bob", token: "STRK", amount: "50" },
+  });
+  const [catSel, setCatSel] = useState(0);
+  const [buildSel, setBuildSel] = useState(0);
+  const [buildResults, setBuildResults] = useState({});
+  const [buildResult, setBuildResult] = useState(null);
+  const [buildLines, setBuildLines] = useState([]);
   const [, setTick] = useState(0);
   const bornAt = useRef(Date.now());
   const [navs, setNavs] = useState({});
@@ -126,6 +151,14 @@ function App() {
   const pollRef = useRef(null);
 
   const { data, staleness, refresh } = useSources(page);
+
+  // Entering a page puts the cursor where the work is: the list on pages that show
+  // one, the categories on Tools. Without this, `tab` state leaked across pages and
+  // a form could hold focus on a page that has no form.
+  useEffect(() => {
+    setFocus(page === "tools" ? "top" : page === "activity" || page === "run" ? "form" : "list");
+    setFormSel(0);
+  }, [page]);
   const svc = data.status;
   const up = Boolean(svc?.devnet?.up);
 
@@ -156,8 +189,8 @@ function App() {
   const entry = ledger[cursor.run] ?? null;
   const report = entry?.report ?? null;
   const nav = navs[page] ?? { level: 0, sel: [0, 0] };
+  // RIG_IDS is the set of pages whose data source is named differently from the page.
   const paneId = RIG_IDS.includes(page) ? page : null;
-  const pane = paneId ? PANES[paneId] : null;
 
   const cursorSet = useCallback((patch) => setCursorState((c) => ({ ...c, ...patch })), []);
   const setNav = useCallback((patch) => {
@@ -166,24 +199,38 @@ function App() {
 
   // ---- the list under the cursor, whichever it is ------------------------
   const listCtx = useMemo(() => {
-    if (page === "run") return { len: TX_ACTIONS.length, get: () => runSel, set: setRunSel, height: 6 };
-    // `?` is a list like any other. It has to be: 45 bindings do not fit on one
-    // screen at any size this TUI supports, and an unscrollable `?` documents
-    // fewer than half of them.
-    // No entry for `keys`: it lays out in columns to fit and never scrolls, so
+    // On a sectioned page the focused half owns the cursor.
+    if (page === "activity") {
+      return focus === "form"
+        ? { len: ACTIVITY_FIELDS.length, get: () => formSel, set: setFormSel, height: ACTIVITY_FIELDS.length }
+        : { len: activityRows(data.blocks?.blocks, forms.activity).length,
+            get: () => nav.sel[0] ?? 0, set: (v) => setNav({ sel: [v, 0] }), height: geom.rigRows - 4 };
+    }
+    if (page === "run") {
+      const total = TX_ACTIONS.length + (data.flows?.flows?.length ?? 0);
+      return focus === "form"
+        ? { len: RUN_FIELDS.length, get: () => formSel, set: setFormSel, height: RUN_FIELDS.length }
+        : { len: total, get: () => runSel, set: setRunSel, height: 8 };
+    }
+    if (page === "build") {
+      return { len: OPERATIONS.length, get: () => buildSel, set: setBuildSel, height: OPERATIONS.length };
+    }
+    if (page === "tools" && focus === "top") {
+      return { len: TOOL_CATEGORIES.length, get: () => catSel, set: setCatSel, height: TOOL_CATEGORIES.length };
+    }
+    // No entry for `about`: it lays out in columns to fit and never scrolls, so
     // there is no selection to move.
-    if (page === "log") return { len: log.length, get: () => (logSel < 0 ? log.length - 1 : logSel), set: setLogSel, height: geom.rigRows - 2 };
-    if (pane) {
-      const items = visibleItems(pane, data[srcOf(paneId)], filter);
-      if (nav.level === 1 && pane.subItems) {
-        return { len: (pane.subItems(items[nav.sel[0]] ?? {}) ?? []).length,
-          get: () => nav.sel[1] ?? 0, set: (v) => setNav({ sel: [nav.sel[0] ?? 0, v] }), height: geom.rigRows - 2 };
-      }
-      return { len: items.length, get: () => nav.sel[0] ?? 0,
-        set: (v) => setNav({ sel: [v, 0] }), height: geom.rigRows - 2 };
+    if (page === "log") {
+      return { len: log.length, get: () => (logSel < 0 ? log.length - 1 : logSel),
+        set: setLogSel, height: geom.rigRows - 2 };
+    }
+    if (page === "wallets") {
+      return { len: (data.wallets?.wallets ?? []).length, get: () => nav.sel[0] ?? 0,
+        set: (v) => setNav({ sel: [v, 0] }), height: geom.rigRows - 4 };
     }
     return { len: 0, get: () => 0, set: () => {}, height: 1 };
-  }, [page, pane, paneId, data, nav, filter, runSel, logSel, log.length, geom.rigRows, setNav]);
+  }, [page, paneId, data, nav, filter, runSel, logSel, log.length, geom.rigRows, setNav,
+      focus, formSel, forms, catSel, buildSel]);
 
   // ---- the things that touch the world -----------------------------------
   const bringUp = useCallback((env = {}) => {
@@ -259,6 +306,10 @@ function App() {
     const r = await action.run();
     addLine(r.ok ? `ok in ${r.ms ?? "?"}ms  tx ${r.txHash ?? "(none)"}` : `failed: ${r.error}`,
       r.ok ? "info" : "bad");
+    // Recorded here because this is the point that already knows the outcome. Nothing
+    // kept any of this before: the log is cleared on every flow and the ledger is in
+    // memory, so "recent failures" was unanswerable.
+    record({ kind: "flow", name: action.label, ok: r.ok, ms: r.ms, detail: r.error }).catch(() => {});
 
     const la = leakAction ?? action.leak;
     const rep = la ? whatDoesThisLeak({ config: leakConfig(svc), actions: [la] }) : null;
@@ -307,23 +358,83 @@ function App() {
       setNavCursor(pageIndex(id));
     },
     navMove: (d) => setNavCursor((i) => Math.max(0, Math.min(PAGES.length - 1, i + d))),
+    toggleFocus: () => setFocus((f) =>
+      page === "tools" ? (f === "top" ? "list" : "top")
+        : page === "build" ? (f === "list" ? "out" : "list")
+          : f === "form" ? "list" : "form"),
+    /**
+     * Enter on a form row. Enum and bool fields advance in place and never enter a
+     * mode you have to escape from; only text fields take the keyboard.
+     */
+    editField: () => {
+      const fields = page === "activity" ? ACTIVITY_FIELDS : RUN_FIELDS;
+      const f = fields[formSel];
+      if (!f) return undefined;
+      const next = advance(f, forms[page]);
+      if (next !== TYPE) {
+        return setForms((all) => ({ ...all, [page]: { ...all[page], [f.id]: next } }));
+      }
+      return setPromptState({
+        label: `${f.label}:`,
+        value: String(forms[page]?.[f.id] ?? ""),
+        onSubmit: (v) => {
+          setForms((all) => ({ ...all, [page]: { ...all[page], [f.id]: v } }));
+          if (page === "activity" && f.id === "depth") refresh("blocks");
+        },
+      });
+    },
+    saveFlow: () => {
+      const v = forms.run;
+      note(`saving ${v.name || "(unnamed)"}…`);
+      persistFlow(v).then((r) => {
+        note(r.ok ? `saved ${r.flow.name}${r.flow.runnable ? "" : " — preview only, no control endpoint"}`
+                  : `not saved: ${r.error}`, r.ok ? "ok" : "bad");
+        refresh("flows");
+      });
+    },
+    forgetFlow: () => {
+      const saved = data.flows?.flows ?? [];
+      const f = saved[runSel - TX_ACTIONS.length];
+      if (!f) return note("that one is built in — it cannot be forgotten", "warn");
+      return dropFlow(f.id).then((r) => {
+        note(r.ok ? `forgot ${f.name}` : r.error, r.ok ? "ok" : "bad");
+        refresh("flows");
+      });
+    },
+    askOperation: () => {
+      const op = OPERATIONS[buildSel];
+      if (!op) return undefined;
+      return setConfirm({
+        kind: "operation", op,
+        prompt: `run ${op.label}?`,
+        cmd: op.cmd,
+        cwd: upstreamPath(),
+        lines: [
+          `about ${op.seconds >= 60 ? Math.round(op.seconds / 60) + " minutes" : op.seconds + " seconds"} on this machine, measured`,
+          op.mutates ? `writes ${op.mutates}` : "writes nothing outside target/",
+          "once started it cannot be cancelled from here — it keeps running in the background",
+        ],
+      });
+    },
     cycleSection: (d) => setSection((i) => (i + d + SECTION_COUNT) % SECTION_COUNT),
     openCursor: () => {
       setFilter(null);
       setPage(PAGES[navCursor]?.id ?? "overview");
     },
-    /** enter descends: list → item → sub-item. Nothing else changes depth. */
+    /**
+     * Enter on a list row opens its detail. Only Activity has one — a transaction
+     * receipt, fetched on demand rather than polled, because `txStatus` is a round
+     * trip per row and the list can be hundreds long.
+     */
     descend: () => {
-      if (!pane) return;
-      const max = pane.detail2 ? 2 : 1;
-      const next = Math.min(max, nav.level + 1);
-      if (next === 2) {
-        const item = visibleItems(pane, data[srcOf(paneId)], filter)[nav.sel[0] ?? 0];
-        const hash = (pane.subItems?.(item) ?? [])[nav.sel[1] ?? 0];
-        setReceipt(null);
-        if (hash) txStatus(hash).then(setReceipt).catch(() => setReceipt({ found: false, error: "txStatus failed" }));
-      }
-      setNav({ level: next });
+      if (page !== "activity") return undefined;
+      const row = activityRows(data.blocks?.blocks, forms.activity)[nav.sel[0] ?? 0];
+      if (!row?.hash) return note("that block carried no transactions", "warn");
+      setReceipt(null);
+      setNav({ level: 1 });
+      return txStatus(row.hash)
+        .then(setReceipt)
+        .catch(() => setReceipt({ available: true, found: false, error: "txStatus failed" }));
     },
     /** esc, in one fixed order. Never quits — q is the documented quit. */
     escape: () => {
@@ -389,7 +500,9 @@ function App() {
         .then(() => refresh("wallets"));
     },
     askFix: () => {
-      const row = visibleItems(PANES.tools, data.doctor, filter)[nav.sel[0] ?? 0];
+      // The FILTERED list, the same one on screen. Reading the unfiltered rows here
+      // would offer to run a fix for a row the filter has hidden.
+      const row = visibleRows(data.doctor?.rows, filter)[nav.sel[0] ?? 0];
       if (!row) return note("no row selected", "warn");
       if (row.status.trim() === "ok") return note("nothing to fix on that row", "info");
       const d = describeFix(row);
@@ -463,6 +576,25 @@ function App() {
       const c = confirm;
       setConfirm(null);
       if (c.kind === "fix") return doFix(c.row);
+      if (c.kind === "operation") {
+        const op = c.op;
+        setBuildResult(null);
+        setBuildLines([]);
+        setBusy({ label: op.label, since: Date.now(), seconds: op.seconds });
+        setLogTitle(op.label);
+        setLog([]);
+        return runOperation(op, c.cwd, (l) => {
+          addLine(l);
+          setBuildLines((prev) => [...prev, l].slice(-200));
+        }).then((r) => {
+          setBusy(null);
+          setBuildResult(r);
+          setBuildResults((prev) => ({ ...prev, [op.id]: r }));
+          note(`${op.label} — ${r.verdict?.text ?? (r.ok ? "ok" : "failed")}`, r.ok ? "ok" : "bad");
+          return record({ kind: op.group, name: op.label, ok: r.ok, ms: r.ms,
+            detail: r.verdict?.text });
+        });
+      }
       if (c.kind === "accounts") {
         note("restarting with one more account…");
         return bringDown().then(() => bringUp({ HYDRA_ACCOUNTS: String(c.count) }));
@@ -491,11 +623,11 @@ function App() {
         note(`could not read ${EXAMPLE}: ${e.message}`, "bad");
       }
     },
-  }), [exit, note, cursorSet, ledger.length, listCtx, pane, paneId, nav, data, filter, cursor.expanded,
+  }), [exit, note, cursorSet, ledger.length, listCtx, paneId, nav, data, filter, cursor.expanded,
        page, navCursor, section, prompt, refresh, resolveLeak, bringUp, bringDown, confirm, doFix, doFlow, runSel, svc, txAvailable, setNav]);
 
   const keyState = {
-    cursor, report, page, navCursor, quitting, confirm, filter, prompt, busy, up,
+    cursor, report, page, navCursor, quitting, confirm, filter, prompt, busy, up, focus,
     partyCount: report?.parties?.length ?? 6,
     fieldCount: report?.fields?.length ?? 5,
     actionCount: report?.disclosures?.length ?? 1,
@@ -578,6 +710,17 @@ function App() {
       <//>`;
   }
 
+  // The doctor already probes every artifact; reusing its rows here means the Build
+  // page cannot disagree with the Tools page about what is built.
+  const artifactState = {};
+  for (const r of data.doctor?.rows ?? []) {
+    const m = /^artifact: (.+)$/.exec(r.name);
+    if (!m) continue;
+    const id = { pool: "pool", discoveryService: "discovery-service",
+      poolTestContracts: "pool-tests", testToken: "e2e-contracts" }[m[1]];
+    if (id) artifactState[id] = r.status.trim() === "ok";
+  }
+
   // One row of headroom below everything: Ink clears the whole terminal the
   // moment a frame reaches stdout.rows (ink/build/ink.js:121).
   const draw = rows - 1;
@@ -608,29 +751,36 @@ function App() {
     content = html`
       <${LogPane} lines=${log} title=${logTitle} width=${W} height=${bodyRows}
         selected=${logSel < 0 ? log.length - 1 : logSel} filter=${filter} />`;
+  } else if (page === "activity") {
+    const gated = data.blocks === undefined && !up
+      ? { available: false, reason: "no running stack — u starts one" }
+      : data.blocks;
+    content = html`
+      <${ActivityPage} width=${W} height=${bodyRows} data=${gated} values=${forms.activity}
+        focus=${focus} selected=${nav.sel[0] ?? 0} formSel=${formSel}
+        typing=${Boolean(prompt)} receipt=${receipt} level=${nav.level ?? 0} />`;
   } else if (page === "run") {
     content = html`
-      <${Box} flexDirection="column" height=${bodyRows} overflow="hidden">
-        <${Transact} actions=${TX_ACTIONS} selected=${runSel} width=${W}
-          height=${Math.min(9, bodyRows)} />
-        ${txAvailable ? null : html`
-          <${Text} color=${C.warn}>${"  no running stack — u starts one; the preview still works"}<//>`}
-      <//>`;
+      <${RunPage} width=${W} height=${bodyRows} builtIn=${TX_ACTIONS}
+        flows=${data.flows?.flows ?? []} values=${forms.run} focus=${focus}
+        selected=${runSel} formSel=${formSel} typing=${Boolean(prompt)}
+        txAvailable=${txAvailable} />`;
+  } else if (page === "tools") {
+    content = html`
+      <${ToolsPage} width=${W} height=${bodyRows} doctor=${data.doctor} svc=${svc}
+        hist=${data.history} focus=${focus} selected=${nav.sel[0] ?? 0} catSel=${catSel}
+        filter=${filter} />`;
+  } else if (page === "build") {
+    content = html`
+      <${BuildPage} width=${W} height=${bodyRows} selected=${buildSel} focus=${focus}
+        results=${buildResults} artifacts=${artifactState} busy=${busy?.seconds ? busy : null}
+        result=${buildResult} lines=${buildLines}
+        deploy=${deployState(upstreamPath(), svc?.stack?.startedAt)} />`;
   } else if (page === "wallets") {
     content = html`
       <${WalletsPage} width=${W} height=${bodyRows}
         data=${data.wallets === undefined && !up ? { available: false, reason: "no running stack — u starts one" } : data.wallets}
         selected=${nav.sel[0] ?? 0} prompt=${prompt} tokens=${svc?.tokens} />`;
-  } else if (pane) {
-    // A gated source never runs, so its data stays undefined and the pane would
-    // sit on "loading…" forever with a dead devnet. Hand it the reason instead:
-    // an error state has to say what to do next.
-    const gated = data[srcOf(paneId)] === undefined && !up && (paneId === "wallets" || paneId === "activity")
-      ? { available: false, reason: "no running stack" }
-      : data[srcOf(paneId)];
-    content = html`
-      <${Rig} pane=${pane} data=${gated} nav=${nav} width=${W}
-        height=${bodyRows} filter=${filter} receipt=${receipt} />`;
   } else if (!report) {
     content = html`
       <${Box} flexDirection="column" height=${bodyRows} overflow="hidden">
@@ -709,6 +859,10 @@ export async function start() {
     console.log("\n  (not a tty — no TUI. `hydra help` lists the --json commands.)\n");
     return;
   }
+  // What shape a cell is, asked of the terminal rather than assumed, so the mark is
+  // round here and round on a terminal with a different line height. Ink has not
+  // taken stdin yet — after it does, the terminal's reply arrives as keystrokes.
+  await measureCellAspect();
   // Clear the terminal, including its scrollback, before the first frame. Ink
   // draws in place and never owns the rows above it, so without this the mark
   // comes up under whatever the shell was already showing.

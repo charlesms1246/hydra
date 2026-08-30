@@ -18,6 +18,8 @@ import { status } from "../../core/src/services.mjs";
 import { wallets } from "../../core/src/wallets.mjs";
 import { latestBlocks } from "../../core/src/chain.mjs";
 import { check } from "../../cli/src/doctor.mjs";
+import { listFlows } from "../../core/src/flows.mjs";
+import { history } from "../../core/src/history.mjs";
 
 const { useState, useRef, useEffect, useCallback } = React;
 
@@ -40,13 +42,24 @@ const SOURCES = {
     gate: (ctx) => (ctx.page === "wallets" || ctx.page === "overview") && ctx.up,
     fn: () => wallets().catch(() => null),
   },
+  flows: {
+    // Local file read; cheap, and only while the page that shows them is open.
+    cadenceMs: null,
+    gate: (ctx) => ctx.page === "run",
+    fn: () => listFlows().catch(() => ({ available: false, flows: [] })),
+  },
+  history: {
+    cadenceMs: 4000,
+    gate: (ctx) => ctx.page === "tools",
+    fn: () => history({ limit: 200 }).catch(() => ({ available: false, entries: [] })),
+  },
   doctor: {
     // Never on a timer. check() is five synchronous execFileSync probes plus a
     // git rev-parse; it blocks the Ink event loop, so it runs on first entry to
     // the tools rig and on `r`, and nowhere else. There is no spinner because a
     // blocked event loop cannot animate one — the visible pause is the signal.
     cadenceMs: null,
-    gate: (ctx) => ctx.page === "tools" || ctx.page === "overview",
+    gate: (ctx) => ctx.page === "tools" || ctx.page === "overview" || ctx.page === "build",
     fn: async () => {
       try { return { rows: check() }; } catch (e) { return { rows: [], error: e.message }; }
     },

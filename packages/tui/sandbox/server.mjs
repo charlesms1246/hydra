@@ -72,8 +72,11 @@ const CONTROL = {
   async shield(w, { who = "alice", amount = "100", token = "STRK" }) {
     if (!w.registered.has(who)) w.registered.add(who);
     const tokenAddr = w.tokens[token] ?? w.tokens.STRK;
+    // Base units, matching the real control API. This used to multiply by 10^18 on
+    // the way in, which is the same units confusion the TUI had, pointed the other
+    // way — so the sandbox agreed with the label and disagreed with the chain.
     w.notes[who] = [...(w.notes[who] ?? []), { token: tokenAddr, symbol: token, amount: String(amount) }];
-    w.balances[w.accounts.find((a) => a.name === who).address][tokenAddr] -= BigInt(amount) * 10n ** 18n;
+    w.balances[w.accounts.find((a) => a.name === who).address][tokenAddr] -= BigInt(amount);
     const txHash = w.hash();
     w.mineBlock(txHash);
     w.note(`shield ${amount} ${token} for ${who}`);

@@ -152,7 +152,8 @@ function keyLines(width) {
   const out = [["h", "Every key, and none of them needs a modifier"]];
   const keyW = Math.max(...BINDINGS.map((b) => b.keys.join(" / ").length)) + 2;
   for (const g of helpGroups()) {
-    out.push(["", ""]);
+    // No blank line before each header. At 51 bindings the separators alone were 13
+    // rows — half a column — and the headers are already accented and bold.
     out.push(["h", g.title]);
     for (const r of g.rows) {
       out.push(["k2", r.keys.padEnd(keyW) + r.label.slice(0, Math.max(0, width - keyW - 2))]);
@@ -181,7 +182,7 @@ const SectionBar = ({ width, selected }) => {
 
 export const About = ({ width, height, section = 0 }) => {
   const sec = SECTIONS[section] ?? SECTIONS[0];
-  const bodyW = sec.id === "keys" ? Math.max(26, Math.floor(width / Math.max(1, Math.floor(width / 38)))) : width;
+  const bodyW = sec.id === "keys" ? Math.max(24, Math.floor(width / Math.max(1, Math.floor(width / 36)))) : width;
   const lines = sec.id === "keys" ? keyLines(bodyW) : PROSE[sec.id] ?? [];
   const bodyRows = Math.max(1, height - 2);
 
@@ -190,7 +191,9 @@ export const About = ({ width, height, section = 0 }) => {
   // itself — which is the failure the old help overlay had.
   // 44 was tuned for 36 bindings; the table has grown, so the keys section needs
   // a narrower column before it starts dropping rows.
-  const maxCols = Math.max(1, Math.floor(width / 38));
+  // 38 was tuned for 40 bindings; the table keeps growing, so the keys section
+  // needs a narrower column before it starts dropping rows.
+  const maxCols = Math.max(1, Math.floor(width / 36));
   const nCols = Math.max(1, Math.min(maxCols, Math.ceil(lines.length / bodyRows)));
   const colW = Math.floor(width / nCols);
   const perCol = nCols === 1 ? bodyRows : Math.ceil(lines.length / nCols);

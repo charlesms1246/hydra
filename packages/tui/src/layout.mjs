@@ -234,3 +234,41 @@ export const Frame = ({ width, height, title, right, focused, children }) => {
       <//>
     <//>`;
 };
+
+/**
+ * A titled rectangle of exact size — the dashboard idiom, shared.
+ *
+ * `height` includes both border rows. Children are padded to fill and clipped to
+ * fit, and the top edge reports how many rows were dropped: a silently truncated
+ * list reads as a complete one, which is the whole reason nothing here scrolls.
+ *
+ * This existed in three copies (overview, wallets, and again per page) before the
+ * sectioned pages needed a fourth.
+ */
+export const Block = ({ w, h, title, right, rows, tone = C.border, focused = false }) => {
+  const inner = Math.max(0, h - 2);
+  const shown = rows.slice(0, inner);
+  const blanks = Array.from({ length: Math.max(0, inner - shown.length) }, (_, i) => i);
+  const dropped = rows.length - shown.length;
+  const colour = focused ? C.borderFocus : tone;
+  const l = ` ${title} `;
+  const r = dropped > 0 ? ` +${dropped} more ` : right ? ` ${right} ` : "";
+  const fill = Math.max(0, w - 2 - l.length - r.length);
+  return html`
+    <${Box} flexDirection="column" width=${w} height=${h} overflow="hidden">
+      <${Text} color=${colour}>${"┌" + l + "─".repeat(fill) + r + "┐"}<//>
+      <${Box} flexDirection="column" width=${w} borderStyle="round" borderTop=${false}
+        borderColor=${colour} overflow="hidden">
+        ${shown.map((row, i) => html`<${Box} key=${"r" + i} width=${w - 2} height=${1}>${row}<//>`)}
+        ${blanks.map((i) => html`<${Text} key=${"p" + i}>${" "}<//>`)}
+      <//>
+    <//>`;
+};
+
+/** Truncate to width, with an ellipsis when it bites. */
+export const trunc = (s, w) =>
+  String(s ?? "").length <= w ? String(s ?? "") : String(s ?? "").slice(0, Math.max(0, w - 1)) + "…";
+/** Truncate, then pad — the shape every table column in this UI uses. */
+export const pad = (s, w) => trunc(s, w).padEnd(w);
+/** 0x1234abcd…9f2e — long enough to recognise, short enough for a column. */
+export const addr = (a) => (a ? `${String(a).slice(0, 10)}…${String(a).slice(-6)}` : "—");
