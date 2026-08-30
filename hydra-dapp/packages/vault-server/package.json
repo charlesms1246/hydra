@@ -1,0 +1,8 @@
+{
+  "name": "@hydra-platform/vault-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 3 — the vault. The operator-view disclosure table lives here.",
+  "engines": { "node": ">=24" }
+}
