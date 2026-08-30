@@ -26,3 +26,4 @@ packages/mcp/
 # because it is reinstallable in one command and is not our work. To vendor it
 # instead (self-contained clones), delete this line and `git add .agents/`.
 .agents/
+.upstream/
