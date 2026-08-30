@@ -36,11 +36,25 @@ export function leakConfig(s) {
   return { discovery: "indexer-self-hosted", proving: s?.prover?.mode ?? "mock" };
 }
 
-/** The declared action shapes `hydra leak` reports on. */
+/**
+ * The declared action shapes `hydra leak` reports on.
+ *
+ * `transfer` carries NO `opensChannel`, and that omission is the point. It used to
+ * say `false` — the reassuring branch — so `hydra leak transfer` answered
+ * NOT_DISCLOSED_BY_THIS_TX with the reason "the caller states the channel already
+ * exists", about a caller who had stated nothing. On a fresh stack it was simply
+ * wrong: `get_num_of_channels(bob)` is 0 before the first transfer, so that transfer
+ * DOES open a channel and DOES write bob's plaintext address.
+ *
+ * Whether a channel is open is a chain fact, not an action shape. `hydra leak` takes
+ * no stack and cannot read it, so the honest answer is UNKNOWN — which is what
+ * packages/leak returns for an absent field, and which the header comment above and
+ * packages/core/src/flows.mjs:118-124 both already required.
+ */
 const LEAK_ACTIONS = {
   register: { type: "register" },
   deposit: { type: "deposit", token: "STRK", amount: "100" },
-  transfer: { type: "transfer", token: "STRK", amount: "50", counterparty: "bob", opensChannel: false },
+  transfer: { type: "transfer", token: "STRK", amount: "50", counterparty: "bob" },
   withdraw: { type: "withdraw", token: "STRK", amount: "50" },
   invoke: { type: "invoke", via: "shadow-account", dapp: "ekubo" },
 };

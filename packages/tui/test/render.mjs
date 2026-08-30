@@ -43,6 +43,7 @@ import { check } from "../../cli/src/doctor.mjs";
 import { Form } from "../src/forms.mjs";
 import { ActivityPage, ACTIVITY_FIELDS, detailPairs } from "../src/activity.mjs";
 import { RUN_FIELDS, runFields } from "../src/runflow.mjs";
+import { UNKNOWN as UNKNOWN_WORD } from "../../leak/src/facts.mjs";
 import { advance, PASTE, TYPE, fieldValue } from "../src/forms.mjs";
 import { whyNotRunnable, validate } from "../../core/src/flows.mjs";
 import { mcpTools } from "../../core/src/services.mjs";
@@ -635,7 +636,14 @@ check_("the home screen has a `hydra leak --json` twin, on the same config", () 
     throw new Error(`pane config ${JSON.stringify(mine)} != command config ${JSON.stringify(leakCmd.config)}`);
   }
   // Same 30 cells, from the same call, so the two surfaces cannot disagree.
-  const mineReport = whatDoesThisLeak({ config: mine, actions: [{ type: "transfer", token: "STRK", amount: "50", counterparty: "bob", opensChannel: false }] });
+  //
+  // The action comes from the COMMAND's own report rather than being retyped here.
+  // It used to be a literal carrying `opensChannel: false`, so this check restated
+  // the CLI's bug instead of comparing against it, and stayed green while the two
+  // surfaces genuinely disagreed about the one field that decides whether a transfer
+  // discloses its recipient.
+  const declared = leakCmd.disclosures[0].action;
+  const mineReport = whatDoesThisLeak({ config: mine, actions: [declared] });
   for (const [id] of mineReport.parties) {
     for (const f of mineReport.fields) {
       const a = mineReport.disclosures[0].byParty[id][f].disclosure;
@@ -1072,6 +1080,34 @@ check_("addresses are printed in full, padded the way an explorer prints them", 
     return `${m[2]} → ${m[1]} accounts`;
   });
 }
+
+check_("no declared action shape asserts a chain fact it cannot read", () => {
+  // `hydra leak transfer` used to ship `opensChannel: false` — the reassuring branch —
+  // so the agent-facing surface answered NOT_DISCLOSED_BY_THIS_TX with the reason "the
+  // caller states the channel already exists", about a caller who had stated nothing.
+  // On a fresh stack that is wrong: get_num_of_channels(bob) is 0 before the first
+  // transfer, so it DOES open a channel and DOES write bob's plaintext address.
+  const src = readFileSync(new URL("../../cli/src/agentcmds.mjs", import.meta.url), "utf8");
+  const table = src.slice(src.indexOf("const LEAK_ACTIONS"), src.indexOf("export const COMMANDS"));
+  if (/opensChannel\s*:/.test(table)) throw new Error("a declared action shape asserts opensChannel");
+
+  // And the consequence, measured rather than asserted: the omission has to reach the
+  // report as UNKNOWN, not be defaulted somewhere downstream.
+  const conf = leakConfig({ prover: { mode: "mock" } });
+  const asserted = whatDoesThisLeak({ config: conf,
+    actions: [{ type: "transfer", token: "STRK", amount: "50", counterparty: "bob", opensChannel: false }] });
+  const honest = whatDoesThisLeak({ config: conf,
+    actions: [{ type: "transfer", token: "STRK", amount: "50", counterparty: "bob" }] });
+  const cells = (r) => r.parties.filter(([id]) =>
+    r.fields.some((f) => r.disclosures[0].byParty[id][f].disclosure === UNKNOWN_WORD)).length;
+  if (honest.unknownCount <= asserted.unknownCount) {
+    throw new Error(`omitting it did not cost an answer: ${honest.unknownCount} vs ${asserted.unknownCount}`);
+  }
+  if (honest.disclosures[0].byParty.public.counterparty.disclosure !== UNKNOWN_WORD) {
+    throw new Error("an undeclared channel state is not reported as UNKNOWN");
+  }
+  return `undeclared → ${honest.unknownCount} unknowns · asserted false → ${asserted.unknownCount}`;
+});
 
 check_("from and to are pickers over the stack's own accounts", () => {
   const accounts = [
