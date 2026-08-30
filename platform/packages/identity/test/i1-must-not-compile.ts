@@ -4,7 +4,7 @@
  *
  * `i1-key-domains.test.ts` runs `tsc --noEmit` over this file and fails if the errors
  * stop appearing — that is the "the cross-domain derivation test fails the build when
- * deliberately broken" condition in HYDRA_HANDOFF.md Phase 1.
+ * deliberately broken" condition in claude-docs/HYDRA_HANDOFF.md Phase 1.
  *
  * `@ts-nocheck` is deliberately NOT set, and this file is deliberately inside the
  * tsconfig's `include`. The errors ARE the assertion.
