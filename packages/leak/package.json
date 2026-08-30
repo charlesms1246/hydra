@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "what_does_this_leak(tx) — computes the disclosure set of a planned STRK20 transaction under a given configuration",
-  "bin": { "hydra-leak": "./src/cli.mjs" },
+  "bin": { "hydra-leak": "src/cli.mjs" },
   "scripts": { "test": "node test/run.mjs" },
   "engines": { "node": ">=24" }
 }
