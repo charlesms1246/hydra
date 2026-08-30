@@ -18,12 +18,14 @@ import { render } from "ink";
 import { Writable, PassThrough } from "node:stream";
 import { readFileSync } from "node:fs";
 import { html } from "../src/ui.mjs";
-import { Services, Wallets, Activity, Tools, LogPane, Transact, Rig, Confirm, Help, PANES, visibleItems } from "../src/panels.mjs";
+import { Wallets, Activity, Tools, LogPane, Transact, Rig, Confirm, PANES, visibleItems } from "../src/panels.mjs";
 import { Matrix, Legend, WhyDrawer, NotesDrawer, AnonDrawer, EmptyState, Ledger, ConfigStrip, CONFIG_FIXED, leakConfig, sample, pickArt } from "../src/disclosure.mjs";
 import { fit, wrap, windowOf, indicatorFor } from "../src/layout.mjs";
 import { C, DISCLOSURE } from "../src/theme.mjs";
 import { BINDINGS, duplicateBindings, helpGroups, scopesFor, dispatch } from "../src/keymap.mjs";
 import { App, TX_ACTIONS, RIG_IDS } from "../src/app.mjs";
+import { PAGES, NavBar, StatusBar, QuitPrompt, KeysPage } from "../src/chrome.mjs";
+import { comboBindings } from "../src/keymap.mjs";
 import { whatDoesThisLeak } from "../../leak/src/leak.mjs";
 import { AUDITOR_NOTE } from "../../cli/src/notes.mjs";
 import { COMMANDS } from "../../cli/src/agentcmds.mjs";
@@ -156,9 +158,6 @@ const g80 = fit(80, 24);
 // panels, at list level, with real / null / error data
 // ---------------------------------------------------------------------------
 
-await draw("Services", html`<${Services} s=${s} />`);
-await draw("Services (no data)", html`<${Services} s=${undefined} />`);
-await draw("Services (status() failed)", html`<${Services} s=${null} />`);
 await draw("Wallets", html`<${Wallets} w=${fakeWallets} selected=${0} />`);
 await draw("Wallets (no stack)", html`<${Wallets} w=${{ available: false, reason: "no running stack" }} selected=${0} />`);
 await draw("Wallets (loading)", html`<${Wallets} w=${undefined} selected=${0} />`);
@@ -172,7 +171,7 @@ await draw("LogPane", html`<${LogPane} lines=${[{ text: "$ scarb build", sev: "i
 await draw("LogPane (empty)", html`<${LogPane} lines=${[]} title="" width=${96} height=${8} />`);
 await draw("Transact (run menu)", html`<${Transact} actions=${TX_ACTIONS} selected=${2} width=${96} height=${9} />`);
 await draw("Confirm (doctor fix)", html`<${Confirm} c=${{ prompt: "run this?", cmd: "scarb build", cwd: "/tmp", lines: ["it keeps running"] }} width=${96} />`);
-await draw("Help", html`<${Help} groups=${helpGroups()} width=${96} height=${26} />`);
+await draw("Keys", html`<${KeysPage} groups=${helpGroups()} width=${96} height=${26} />`);
 
 // ---------------------------------------------------------------------------
 // the rig, descended
@@ -329,16 +328,21 @@ check_("no binding claims a (scope, key) pair twice", () => {
 });
 
 check_("every binding is reachable from a live scope, and documented", () => {
+  const base = { confirm: null, filter: null, quitting: false, navCursor: 0 };
   const states = [
-    { report: null, overlay: null, confirm: null, filter: null },
-    { report: {}, overlay: null, confirm: null, filter: null },
-    { report: {}, overlay: "rig:tools", confirm: null, filter: null },
-    { report: {}, overlay: "rig:wallets", confirm: null, filter: null },
-    { report: {}, overlay: "rig:activity", confirm: null, filter: null },
-    { report: {}, overlay: "run", confirm: null, filter: null },
-    { report: {}, overlay: "log", confirm: null, filter: null },
-    { report: {}, overlay: "help", confirm: null, filter: null },
-    { report: {}, overlay: null, confirm: {}, filter: null },
+    { ...base, page: "overview", report: null },
+    { ...base, page: "disclosure", report: null },
+    { ...base, page: "disclosure", report: {} },
+    { ...base, page: "tools", report: {} },
+    { ...base, page: "wallets", report: {} },
+    { ...base, page: "activity", report: {} },
+    { ...base, page: "run", report: {} },
+    { ...base, page: "log", report: {} },
+    { ...base, page: "keys", report: {} },
+    { ...base, page: "overview", report: {}, confirm: {} },
+    { ...base, page: "overview", report: {}, quitting: true },
+    // The nav owns Enter only while the cursor is parked off the current page.
+    { ...base, page: "overview", report: {}, navCursor: 3 },
   ];
   const live = new Set(states.flatMap((st) => scopesFor(st)));
   for (const b of BINDINGS) {
@@ -355,7 +359,8 @@ check_("every binding is reachable from a live scope, and documented", () => {
 // exited mid-fix anyway. These four assert the replacement.
 const keyState = (over = {}) => ({
   cursor: { run: 0, action: 0, party: 2, field: 1, drawer: "why", expanded: false, scroll: 0 },
-  report: transferReport, overlay: null, confirm: null, filter: null, busy: null, up: false,
+  report: transferReport, page: "disclosure", navCursor: 3, quitting: false,
+  confirm: null, filter: null, busy: null, up: false,
   partyCount: 6, fieldCount: 5, actionCount: 1, ...over,
 });
 const KEY = { upArrow: false, downArrow: false, leftArrow: false, rightArrow: false, return: false,
@@ -370,31 +375,41 @@ function fire(st, input, key = {}) {
 
 check_("navigation stays live while busy; a mutating key says why it did not", () => {
   const busy = keyState({ busy: { label: "starting the stack" } });
-  if (fire(busy, "j")[0]?.[0] !== "cursor") throw new Error("j was swallowed while busy");
-  if (fire(busy, "L")[0]?.[0] !== "toggleOverlay") throw new Error("L was swallowed while busy");
+  if (fire(busy, "s")[0]?.[0] !== "cursor") throw new Error("s was swallowed while busy");
+  if (fire(busy, "l")[0]?.[0] !== "goto") throw new Error("l was swallowed while busy");
+  if (fire(busy, "d")[0]?.[0] !== "navMove") throw new Error("the nav was swallowed while busy");
   const gated = fire(busy, "u");
   if (gated[0]?.[0] !== "note") throw new Error("u ran a mutation while busy");
   if (!/working/.test(gated[0][1][0])) throw new Error("suppressed key said nothing");
-  return "j and L live, u refused with a reason";
+  return "s, l and the nav stay live; u refused with a reason";
 });
 
-check_("q while busy prompts instead of quitting or being swallowed", () => {
-  if (fire(keyState({ busy: { label: "fixing" } }), "q")[0]?.[0] !== "askQuit") throw new Error("no prompt");
-  if (fire(keyState(), "q")[0]?.[0] !== "exit") throw new Error("q does not quit when idle");
-  return "busy → askQuit, idle → exit";
+check_("q always asks, and the prompt is where the background choice lives", () => {
+  // q never exits directly now. A stack this TUI started outlives the process
+  // unless it is signalled, so "quit" is a question with two right answers.
+  for (const st of [keyState({ busy: { label: "fixing" } }), keyState()]) {
+    if (fire(st, "q")[0]?.[0] !== "askQuit") throw new Error("q did not open the prompt");
+  }
+  const quitting = keyState({ quitting: true });
+  const want = { b: "quitLeaveRunning", s: "quitAndStop", q: "quitLeaveRunning" };
+  for (const [k, fn] of Object.entries(want)) {
+    if (fire(quitting, k)[0]?.[0] !== fn) throw new Error(`${k} did not call ${fn}`);
+  }
+  if (fire(quitting, "", { escape: true })[0]?.[0] !== "cancelQuit") throw new Error("esc did not stay");
+  return "q → askQuit; b leaves it running, s stops it, esc stays";
 });
 
 check_("esc never quits, and resolves in one fixed order", () => {
-  const calls = fire(keyState({ overlay: "rig:tools" }), "", { escape: true });
+  const calls = fire(keyState({ page: "tools" }), "", { escape: true });
   if (calls[0]?.[0] !== "escape") throw new Error("esc is not routed to the ordered handler");
-  for (const st of [keyState(), keyState({ overlay: "log" }), keyState({ report: null })]) {
+  for (const st of [keyState(), keyState({ page: "log" }), keyState({ report: null })]) {
     if (fire(st, "", { escape: true }).some(([n]) => n === "exit")) throw new Error("esc quit");
   }
   return "esc → escape(), never exit()";
 });
 
 check_("while / is open every printable key is data, not a command", () => {
-  const typing = keyState({ overlay: "rig:tools", filter: { text: "art", typing: true } });
+  const typing = keyState({ page: "tools", filter: { text: "art", typing: true } });
   const c = fire(typing, "q");
   if (c[0]?.[0] !== "setFilter" || c[0][1][0].text !== "artq") throw new Error("q was treated as quit");
   if (fire(typing, "", { escape: true })[0]?.[1][0] !== null) throw new Error("esc does not clear the filter");
@@ -447,11 +462,18 @@ check_("the art downsamples to the two gated sizes and to nothing below them", (
 // the whole app, at the two sizes that matter, driven by keystrokes
 // ---------------------------------------------------------------------------
 
+// The splash holds for MIN_SPLASH_MS and seals for SEAL_MS before any page
+// exists. Every App assertion below is about a page, so the suite turns the hold
+// off rather than paying two seconds per mount — the seal still runs, so the
+// loading → ready transition is exercised, not branched around.
+process.env.HYDRA_SPLASH_MS = "0";
+process.env.HYDRA_SEAL_MS = "1";
+
 async function mount(cols, rows) {
   const stdout = new Sink(cols, rows);
   const stdin = fakeStdin();
   const app = render(html`<${App} />`, { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false });
-  await new Promise((r) => setTimeout(r, 120));
+  await new Promise((r) => setTimeout(r, 260));   // past the (disabled) splash
   return {
     app, stdout,
     press: async (k) => { stdin.write(k); await new Promise((r) => setTimeout(r, 90)); },
@@ -479,6 +501,7 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
 // own wrapping is what overflowed the plan below 78 columns.
 {
   const h = await mount(80, 24);
+  await h.press("f");                    // Disclosure — the dashboard is the home page now
   await h.press("e");                    // load packages/leak/examples/private-transfer.json
   const seen = [];
   for (let cols = 70; cols <= 78; cols++) {
@@ -527,20 +550,23 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
 }
 {
   const h = await mount(100, 30);
+  // The overview pulls `doctor`, whose check() is five synchronous execFileSync
+  // probes plus a git rev-parse. With the splash disabled that block lands on the
+  // first frames rather than behind the loading screen, so let it finish first.
+  await new Promise((r) => setTimeout(r, 700));
   const seen = {};
-  for (const [key, name] of [["s", "services"], ["w", "wallets"], ["a", "activity"], ["t", "tools"],
-                             ["x", "run"], ["L", "log"], ["?", "help"]]) {
+  for (const [key, name] of [["b", "wallets"], ["c", "activity"], ["t", "tools"],
+                             ["x", "run"], ["l", "log"], ["k", "keys"], ["o", "overview"]]) {
     await h.press(key);
     seen[name] = h.last();
-    await h.press(key);          // the same key closes
   }
-  // t → j (select a row) → i (ask to fix). The prompt must name the exact command.
+  // t → s (select a row) → i (ask to fix). The prompt must name the exact command.
   await h.press("t");
   await new Promise((r) => setTimeout(r, 400));   // check() is synchronous; give it a beat
   const tools = h.last();
   let confirmed = "";
   for (let i = 0; i < 12; i++) {
-    await h.press("j");
+    await h.press("s");
     await h.press("i");
     const f = h.last();
     if (f.includes("run this? it executes a real command")) { confirmed = f; break; }
@@ -548,10 +574,10 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
   }
   h.app.unmount();
 
-  check_("s w a t x L ? each reach their overlay", () => {
+  check_("every nav destination is reachable by its own letter", () => {
     const want = {
-      services: "rig · services", wallets: "rig · wallets", activity: "rig · activity",
-      tools: "rig · tools", run: "x · run a flow", log: "log ·", help: "? keys",
+      wallets: "rig · wallets", activity: "rig · activity", tools: "rig · tools",
+      run: "x · run a flow", log: "log ·", keys: "the nav bar", overview: "the auditor",
     };
     for (const [k, needle] of Object.entries(want)) {
       if (!seen[k]?.includes(needle)) throw new Error(`${k}: "${needle}" not on screen`);
@@ -578,25 +604,24 @@ for (const [cols, rows] of [[100, 30], [80, 24]]) {
 // about what a reader can actually reach at a common terminal size. Asserting
 // against helpGroups() instead is how 23 of 39 bindings stayed off screen at
 // 80x24 while this file reported the keymap fully documented.
-for (const [cols, rows] of [[80, 24], [100, 30]]) {
+for (const [cols, rows] of [[80, 24], [100, 30], [190, 57]]) {
   const h = await mount(cols, rows);
-  await h.press("?");
+  // Same synchronous doctor probe as above: let it land before asserting a frame.
+  await new Promise((r) => setTimeout(r, 700));
+  await h.press("k");
   const frames = [h.last()];
-  for (let i = 0; i < 8; i++) { await h.press("\x1b[6~"); frames.push(h.last()); }   // pgdn
-  await h.press("G");
-  frames.push(h.last());
   h.app.unmount();
-  check_(`every binding is reachable on screen in \`?\` at ${cols}x${rows}`, () => {
-    const labels = BINDINGS.map((b) => b.label);
-    if (new Set(labels).size !== labels.length) throw new Error("two bindings share a label; this check cannot tell them apart");
+  check_(`every binding is on ONE screen of Keys at ${cols}x${rows}`, () => {
+    // Assert the KEY column, not the label. Labels are truncated to fit the
+    // column at narrow widths — that is the honest cost of not scrolling — but a
+    // binding whose key is missing is genuinely undiscoverable.
     const seen = frames.join("\n");
-    const width = cols >= 80 ? cols - 2 : cols;
-    const missing = BINDINGS.filter((b) => !seen.includes(b.label.slice(0, Math.max(1, width - 28))));
+    const missing = BINDINGS.filter((b) => !seen.includes(b.keys.join(" / ")));
     if (missing.length) {
       throw new Error(`${missing.length} of ${BINDINGS.length} never on screen: ${missing.slice(0, 3).map((b) => b.keys.join("/")).join(", ")}`);
     }
-    if (seen.includes("a taller terminal shows them")) throw new Error("`?` still defers to a bigger terminal");
-    return `${BINDINGS.length} bindings, all reachable with pgdn/G`;
+    if (seen.includes("more — a taller or wider terminal")) throw new Error("Keys still defers to a bigger terminal");
+    return `${BINDINGS.length} bindings, no scrolling`;
   });
 }
 
@@ -605,7 +630,7 @@ for (const [cols, rows] of [[80, 24], [100, 30]]) {
 // ---------------------------------------------------------------------------
 
 check_("every rig pane has a `hydra <cmd> --json` twin", () => {
-  const map = { services: "status", wallets: "wallets", activity: "blocks", tools: "doctor" };
+  const map = { wallets: "wallets", activity: "blocks", tools: "doctor" };
   for (const id of RIG_IDS) if (!COMMANDS[map[id]]) throw new Error(`${id} has no COMMANDS twin`);
   return RIG_IDS.map((id) => `${id}→${map[id]}`).join(" ");
 });
@@ -635,6 +660,155 @@ check_("the home screen has a `hydra leak --json` twin, on the same config", () 
 
 let failed = 0;
 const known = "[KNOWN GAP]";
+// ---------------------------------------------------------------------------
+// the redesign's own guarantees
+// ---------------------------------------------------------------------------
+
+check_("no binding needs a modifier key", () => {
+  const combos = comboBindings();
+  if (combos.length) throw new Error(`needs Shift: ${combos.join(", ")}`);
+  return `${BINDINGS.length} bindings, all single unshifted keys`;
+});
+
+check_("w a s d are movement only — never a destination", () => {
+  const MOVE = new Set(["w", "a", "s", "d"]);
+  const clash = PAGES.filter((p) => MOVE.has(p.key));
+  if (clash.length) throw new Error(`page letters collide with movement: ${clash.map((p) => p.key).join(", ")}`);
+  const letters = PAGES.map((p) => p.key);
+  if (new Set(letters).size !== letters.length) throw new Error("two pages share a letter");
+  return `${PAGES.length} pages: ${letters.join(" ")}`;
+});
+
+await (async () => {
+  const frame = async (node, cols = 120, rows = 6) => {
+    const stdout = new Sink(cols, rows);
+    const app = render(node, { stdout, debug: true, patchConsole: false });
+    await new Promise((r) => setTimeout(r, 120));
+    const raw = stdout.frames.at(-1) ?? "";
+    app.unmount();
+    return raw;
+  };
+
+  // Asserted on the element tree, not on ANSI: Ink's colour is chalk's, and chalk
+  // turns itself off when the stream is not a tty — which every frame in this
+  // file is. A rendered-output check here passes for the wrong reason.
+  const walk = (node, out = []) => {
+    if (!node || typeof node !== "object") return out;
+    if (Array.isArray(node)) { node.forEach((n) => walk(n, out)); return out; }
+    if (node.props) {
+      out.push(node.props);
+      walk(node.props.children, out);
+    }
+    return out;
+  };
+  const navTree = walk(NavBar({ width: 118, active: "wallets", cursor: 3 }));
+  const navText = strip(await frame(html`<${NavBar} width=${118} active="wallets" cursor=${3} />`));
+
+  check_("the nav paints the current page and brackets the cursor", () => {
+    const painted = navTree.filter((p) => p.backgroundColor);
+    if (painted.length !== 1) throw new Error(`${painted.length} cells carry a background, expected exactly 1`);
+    if (!String(painted[0].children ?? "").includes("Wallets")) {
+      throw new Error(`the painted cell is "${painted[0].children}", not the active page`);
+    }
+    if (!navText.includes("[Disclosure (f)]")) throw new Error("the cursor is not bracketed");
+    for (const p of PAGES) {
+      if (!navText.includes(`(${p.key})`)) throw new Error(`${p.label} does not show its key`);
+    }
+    return "active filled, cursor bracketed, every key shown";
+  });
+
+  const quit = strip(await frame(html`<${QuitPrompt} width=${118} running=${true} managed=${true} />`, 120, 8));
+  check_("the quit prompt offers background as a first-class choice", () => {
+    for (const needle of ["leave them running", "stop the stack", "stay"]) {
+      if (!quit.includes(needle)) throw new Error(`"${needle}" not offered`);
+    }
+    return "b leaves it running · s stops it · esc stays";
+  });
+})();
+
+// The splash. Asserted on the pure colour decision and the ring geometry rather
+// than on rendered output: the component uses hooks, and Ink's colour is chalk's,
+// which turns itself off when the stream is not a tty.
+{
+  const { colourAt } = await import("../src/splash.mjs");
+  const { scaled, rings } = await import("../src/logo.mjs");
+
+  check_("the mark fills cyan from the centre out, then seals red from the rim in", () => {
+    // Loading: inside the fill radius is lit, outside is not.
+    if (colourAt(0.1, 0.5, null) !== "cyan") throw new Error("the centre is not lit at 50%");
+    if (colourAt(0.9, 0.5, null) !== "white") throw new Error("the rim is lit at 50% — the fill is not radial");
+    if (colourAt(0.9, 1, null) !== "cyan") throw new Error("the rim never lights at 100%");
+    // Sealing: the rim turns first, and the threshold walks inward to 0.
+    if (colourAt(0.9, 1, 0.8) !== "red") throw new Error("the rim does not seal");
+    if (colourAt(0.1, 1, 0.8) !== "cyan") throw new Error("the centre sealed before the rim");
+    if (colourAt(0.1, 1, 0) !== "red") throw new Error("the seal never reaches the centre");
+    return "centre → rim in cyan, rim → centre in red";
+  });
+
+  check_("the mark scales to the terminal and keeps its aspect", () => {
+    const art = scaled(100, 26);
+    if (art.length > 26) throw new Error(`${art.length} rows for a 26-row budget`);
+    if (Math.max(...art.map((l) => l.length)) > 100) throw new Error("wider than the budget");
+    const { cells } = rings(art);
+    if (cells.length < 200) throw new Error(`only ${cells.length} glyphs — the mark did not survive scaling`);
+    const rs = cells.map((c) => c.r);
+    if (Math.min(...rs) > 0.2) throw new Error("no cell near the centre");
+    if (Math.max(...rs) < 0.6) throw new Error("no cell near the rim — the radius is not normalised");
+    return `${art.length} rows, ${cells.length} glyphs, r ${Math.min(...rs).toFixed(2)}–${Math.max(...rs).toFixed(2)}`;
+  });
+}
+
+// The status bar belongs on every page but the overview, which shows the same
+// facts in full and would otherwise say everything twice.
+{
+  const h = await mount(120, 32);
+  await new Promise((r) => setTimeout(r, 700));
+  const seen = {};
+  for (const [key, id] of [["o", "overview"], ["b", "wallets"], ["t", "tools"], ["k", "keys"]]) {
+    await h.press(key);
+    seen[id] = h.last();
+  }
+  h.app.unmount();
+  check_("the status bar is on every page except the overview", () => {
+    const isBar = (f) => /devnet .*·.*indexer .*·.*prover/.test(f.split("\n")[0] ?? "");
+    if (isBar(seen.overview)) throw new Error("the overview repeats the status bar");
+    for (const id of ["wallets", "tools", "keys"]) {
+      if (!isBar(seen[id])) throw new Error(`${id} has no status bar`);
+    }
+    if (!seen.overview.includes("the auditor")) throw new Error("the overview lost the auditor strip");
+    return "overview omits it; wallets, tools and keys carry it";
+  });
+  check_("the overview dashboard shows every block the brief asks for", () => {
+    for (const needle of ["stack", "chain", "tooling", "wallets", "the auditor"]) {
+      if (!seen.overview.includes(needle)) throw new Error(`no "${needle}" block`);
+    }
+    return "stack · chain · tooling · wallets · activity · auditor";
+  });
+}
+
+// Full-bleed, at the sizes a person actually uses. The old layout capped the
+// matrix near 98 columns, so a 190-column terminal was two thirds empty.
+{
+  const seen = [];
+  for (const [cols, rows] of [[120, 32], [190, 57], [100, 30]]) {
+    const h = await mount(cols, rows);
+    await new Promise((r) => setTimeout(r, 700));
+    await h.press("f");
+    await h.press("e");
+    const f = h.last().replace(/\n$/, "").split("\n");
+    h.app.unmount();
+    seen.push({ cols, rows, w: Math.max(...f.map((l) => l.length)), r: f.length });
+  }
+  check_("every screen fills the terminal it is given", () => {
+    for (const x of seen) {
+      if (x.w < x.cols - 2) throw new Error(`${x.cols}x${x.rows}: drew only ${x.w} of ${x.cols} columns`);
+      if (x.r < x.rows - 2) throw new Error(`${x.cols}x${x.rows}: drew only ${x.r} of ${x.rows} rows`);
+      if (x.w > x.cols || x.r >= x.rows) throw new Error(`${x.cols}x${x.rows}: overflowed at ${x.w}x${x.r}`);
+    }
+    return seen.map((x) => `${x.cols}x${x.rows}→${x.w}c/${x.r}r`).join(" ");
+  });
+}
+
 let skipped = 0;
 for (const r of results) {
   const gap = r.name.includes(known);
