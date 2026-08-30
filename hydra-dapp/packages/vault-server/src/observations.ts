@@ -135,7 +135,7 @@ export const NOT_OBSERVABLE: readonly Observation[] = [
   {
     id: "read.target",
     what: "which specific blob a reader actually wanted",
-    why: "clients fetch their whole channel set, so the wanted id is one of many in the batch",
+    why: "clients fetch their whole channel set padded to a floor, and the encrypted endpoint refuses anything narrower, so the wanted id is one of at least eight in every batch",
   },
   {
     id: "uploader.identity",

@@ -20,6 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { OBSERVABLE_IDS } from "./observations.ts";
+import { MIN_READ_BATCH } from "../../client/src/read.ts";
 
 export const ENCRYPTED_ENDPOINT = "/v1/enc";
 export const PUBLIC_ENDPOINT = "/v1/pub";
@@ -244,6 +245,20 @@ export class Vault {
 
   #fetch(r: FetchRequest): Response {
     const prefix = r.endpoint === ENCRYPTED_ENDPOINT ? "enc:" : "pub:";
+    // The encrypted endpoint refuses a narrow read, because `observations.ts` claims the
+    // operator cannot tell which blob a reader wanted and that claim is only true of a batch.
+    // Enforced here rather than left to clients: a disclosure property that depends on every
+    // caller behaving is a property that holds until the first caller does not.
+    //
+    // The public endpoint is exempt by design — there the blob id IS the capability and a
+    // world-readable object fetched by id is the entire point of the class.
+    if (r.endpoint === ENCRYPTED_ENDPOINT && r.ids.length < MIN_READ_BATCH) {
+      return {
+        ok: false,
+        error: `encrypted reads must ask for at least ${MIN_READ_BATCH} ids; asking for `
+          + `${r.ids.length} would say which one you wanted`,
+      };
+    }
     const found = new Map<string, Uint8Array>();
     const hits: boolean[] = [];
     for (const id of r.ids) {

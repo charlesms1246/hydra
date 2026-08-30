@@ -14,7 +14,9 @@ import { send, receive, cover, openChannel, explain, PROOF_VALIDITY_BLOCKS }
   from "../../client/src/session.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { MIN_JITTER_BLOCKS, jitterWindowMs } from "../../channel/src/schedule.ts";
-import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
+import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT } from "../../vault-server/src/server.ts";
+import { MIN_READ_BATCH, readSet, select } from "../../client/src/read.ts";
+import type { SeenPointer } from "../../client/src/read.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
 
@@ -78,7 +80,10 @@ test("a different channel cannot resolve the pointer", () => {
   const other = openChannel(vaultRoot, "alice→carol");
   const wrong = receive(other, out.pointer, 0);
   assert.notEqual(wrong, out.blobId);
-  const got = vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: [wrong] });
+  const got = vault.handle({
+    op: "fetch", endpoint: ENCRYPTED_ENDPOINT,
+    ids: [wrong, ...Array.from({ length: 7 }, (_, i) => `enc:pad${i}`)],
+  });
   assert.ok(got.ok && (got as { found: ReadonlyMap<string, unknown> }).found.size === 0);
 });
 
@@ -125,4 +130,83 @@ test("the proof window is the number the live pool reports", () => {
   assert.equal(PROOF_VALIDITY_BLOCKS, 450);
   assert.ok(PROOF_VALIDITY_BLOCKS > MIN_JITTER_BLOCKS,
     "a proof must outlive the jitter window, or every message expires before it uploads");
+});
+
+// ---------------------------------------------------------------------------
+// Reading without saying which message you wanted
+// ---------------------------------------------------------------------------
+
+test("the vault refuses a read narrow enough to name its target", () => {
+  // The row `read.target` claims the operator cannot tell which blob a reader wanted, and that
+  // is only true of a batch. Enforced at the server, not left to clients: a disclosure property
+  // that depends on every caller behaving holds until the first caller does not.
+  const vault = new Vault({ buckets: BUCKETS });
+  for (const n of [1, 2, MIN_READ_BATCH - 1]) {
+    const res = vault.handle({
+      op: "fetch", endpoint: ENCRYPTED_ENDPOINT,
+      ids: Array.from({ length: n }, (_, i) => `enc:${i}`),
+    });
+    assert.equal(res.ok, false, `a read of ${n} ids was served`);
+    assert.match(String((res as { error: string }).error), /which one you wanted/);
+  }
+  const wide = vault.handle({
+    op: "fetch", endpoint: ENCRYPTED_ENDPOINT,
+    ids: Array.from({ length: MIN_READ_BATCH }, (_, i) => `enc:${i}`),
+  });
+  assert.equal(wide.ok, true);
+});
+
+test("the public endpoint is exempt, because there the id IS the capability", () => {
+  // Not an oversight. A world-readable object fetched by its id is the entire point of the
+  // public class, and batching it would protect nothing.
+  const vault = new Vault({ buckets: BUCKETS });
+  assert.equal(vault.handle({ op: "fetch", endpoint: PUBLIC_ENDPOINT, ids: ["pub:one"] }).ok, true);
+});
+
+test("a client's read set reaches the floor by padding, not by waiting", () => {
+  // A client with one message must still be able to read it. Decoys are random ids shaped
+  // exactly like real ones, and a miss is indistinguishable from a message not yet sent.
+  const one: SeenPointer[] = [{ seq: 0, pointer: send(config, new Uint8Array(1), 0, 0, lcg(2)).pointer }];
+  const ids = readSet(channel, one);
+  assert.ok(ids.length >= MIN_READ_BATCH, `a one-message channel produced a batch of ${ids.length}`);
+  for (const id of ids) assert.match(id, /^enc:[0-9a-f]{62}$/, `${id} is not shaped like a real id`);
+  assert.equal(new Set(ids).size, ids.length, "a decoy collided with a real id");
+});
+
+test("the batch does not encode which message is being read", () => {
+  // Two reads for different targets must be indistinguishable. If the batch varied with what
+  // the reader wanted, the difference between two batches would leak the same thing the batch
+  // was supposed to hide.
+  const seen: SeenPointer[] = [0, 1, 2].map((seq) => ({
+    seq, pointer: send(config, new TextEncoder().encode(`m${seq}`), seq, seq * BLOCK, lcg(seq + 1)).pointer,
+  }));
+  const fixed = (n: number) => new Uint8Array(31).fill(n % 256);
+  assert.deepEqual(readSet(channel, seen, fixed), readSet(channel, seen, fixed),
+    "the same channel state produced two different read sets");
+  // And it is sorted, so it does not encode the order the client learned the pointers either.
+  const ids = readSet(channel, seen, fixed);
+  assert.deepEqual([...ids].sort(), ids);
+});
+
+test("selection happens after the fetch, on the client", () => {
+  // The separation that matters. A function that fetched and selected in one step would be one
+  // refactor away from fetching only the selected id — and that refactor would pass every test
+  // that does not exist to stop it.
+  const vault = new Vault({ invites: ["r1", "r2", "r3"], buckets: BUCKETS });
+  const seen: SeenPointer[] = [];
+  for (let seq = 0; seq < 3; seq++) {
+    const out = send(config, new TextEncoder().encode(`secret ${seq}`), seq, seq * BLOCK, lcg(seq + 7));
+    vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: out.blobId, body: out.body, invite: `r${seq + 1}` });
+    seen.push({ seq, pointer: out.pointer });
+  }
+  const res = vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: readSet(channel, seen) });
+  assert.ok(res.ok);
+  const batch = (res as { found: ReadonlyMap<string, Uint8Array> }).found;
+  assert.equal(batch.size, 3, "the decoys should miss and the real ids should hit");
+  // Every message is reachable from the one batch, so a reader fetches once and reads any of them.
+  for (const s of seen) assert.ok(select(batch, channel, s), `message ${s.seq} was not in the batch`);
+  // The server saw one read of eight ids and cannot say which of the three was wanted.
+  const [read] = vault.observe().reads;
+  assert.ok(read.ids.length >= MIN_READ_BATCH);
+  assert.equal(read.hits.filter(Boolean).length, 3);
 });

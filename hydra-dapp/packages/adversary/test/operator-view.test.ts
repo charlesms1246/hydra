@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT, DEFAULT_TTL_MS } from "../../vault-server/src/server.ts";
 import { serve, MAX_BODY } from "../../vault-server/src/http.ts";
 import { RateLimiter } from "../../vault-server/src/ratelimit.ts";
+import { MIN_READ_BATCH, readSet, select } from "../../client/src/read.ts";
 import { mkdtemp, rm, stat, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,6 +36,11 @@ const vaultRoot = derive(VAULT_DOMAIN, seed);
 const intent = { confirmedPublicAt: "2026-08-30T00:00:00Z", reason: "operator-view session" };
 
 const bytes = (blob: Parameters<typeof wireBytes>[0]) => wireBytes(blob) as unknown as Uint8Array;
+
+/** Widen a read to the minimum the encrypted endpoint will serve. */
+const pad = (ids: string[]): string[] =>
+  [...ids, ...Array.from({ length: Math.max(0, MIN_READ_BATCH - ids.length) },
+    (_, i) => `enc:${"0".repeat(60)}${i.toString(16).padStart(2, "0")}`)];
 
 /**
  * Narrowing helpers. Casting the response instead would defeat the I5 build gate, which
@@ -81,7 +87,7 @@ function session() {
   }).ok, true);
 
   // A batched read over the client's whole channel set, plus an id that was never stored.
-  vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: [...uploaded, "enc:deadbeef"] });
+  vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: pad([...uploaded, "enc:deadbeef"]) });
 
   // Walk past the TTL: the two unpinned objects go, the pinned one stays.
   clock += DEFAULT_TTL_MS + 1;
@@ -168,10 +174,14 @@ test("the capture confirms each NOT_OBSERVABLE claim", () => {
   assert.ok(!view.includes("invite-a"), "a redeemed invite token was retained");
   assert.equal(vault.observe().invitesRedeemed, 3);
 
-  // Read target: the batch is visible, so the wanted id is one of four rather than one of one.
+  // Read target: the batch is visible, so the wanted id is one of many rather than one of one.
+  // Asserted as a floor rather than an exact count — the claim is "at least this wide", and an
+  // exact number would have to be edited every time the session sends another message.
   const reads = vault.observe().reads;
   assert.equal(reads.length, 1);
-  assert.equal(reads[0].ids.length, uploaded.length + 1);
+  assert.ok(reads[0].ids.length >= MIN_READ_BATCH,
+    `a read asked for ${reads[0].ids.length} ids; ${MIN_READ_BATCH} is the floor that makes the claim true`);
+  assert.ok(reads[0].ids.length > uploaded.length, "the batch was not padded beyond what exists");
 
   // Every NOT_OBSERVABLE row is one of the cases above; this keeps the two lists in step.
   assert.deepEqual(
@@ -258,7 +268,7 @@ test("reads are unauthenticated and scoped to their endpoint", () => {
   // only cosmetically separate.
   const { vault, post } = session();
   assert.ok(found(vault.handle({ op: "fetch", endpoint: PUBLIC_ENDPOINT, ids: [post.id] })).has(post.id));
-  assert.equal(found(vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: [post.id] })).size, 0);
+  assert.equal(found(vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: pad([post.id]) })).size, 0);
 });
 
 test("TTL expires by default and pinning survives; takedown is public-only", () => {
@@ -305,7 +315,7 @@ test("served over HTTP, the vault still stores and returns what it should", asyn
 
     const got = await fetch(`${url}${ENCRYPTED_ENDPOINT}`, {
       method: "POST",
-      body: JSON.stringify([blob.id, "enc:missing"]),
+      body: JSON.stringify(pad([blob.id, "enc:missing"])),
     });
     const { found } = await got.json() as { found: Record<string, string> };
     assert.deepEqual(Object.keys(found), [blob.id], "the batch returned the wrong set");
@@ -400,7 +410,7 @@ test("objects survive a restart", async () => {
 
     // A second Vault over the same directory is what a restart looks like.
     const second = new Vault({ invites: [], buckets: BUCKETS, dir });
-    assert.deepEqual(found(second.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: [blob.id] })).get(blob.id),
+    assert.deepEqual(found(second.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: pad([blob.id]) })).get(blob.id),
       bytes(blob), "the object did not survive a restart");
     // Invites do NOT survive, deliberately: a redeemed token is destroyed, and an unredeemed
     // one is the operator's to reissue rather than the store's to remember.
