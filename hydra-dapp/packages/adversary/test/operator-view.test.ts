@@ -19,6 +19,10 @@ import assert from "node:assert/strict";
 
 import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT, DEFAULT_TTL_MS } from "../../vault-server/src/server.ts";
 import { serve, MAX_BODY } from "../../vault-server/src/http.ts";
+import { mkdtemp, rm, stat, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { OBSERVABLE, OBSERVABLE_IDS, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
 import { padTo, unpad, bucketFor, BUCKETS, SEAL_OVERHEAD } from "../../vault-client/src/buckets.ts";
@@ -108,6 +112,20 @@ test("everything the table claims is observable actually is", async () => {
     server.close();
   }
   const observed = new Set(vault.observedKeys());
+
+  // A full session also means a vault configured the way one would actually be run. The `fs.*`
+  // rows are only producible on disk, and adding them without this is what made this check
+  // fail — twice now, for the transport rows and again for these.
+  const dir = await mkdtemp(join(tmpdir(), "hydra-vault-"));
+  try {
+    const onDisk = new Vault({ invites: ["d1"], buckets: BUCKETS, dir });
+    const blob = sealForChannel(channelSecret(vaultRoot, "on-disk"), new TextEncoder().encode("x"));
+    onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "d1", pin: true });
+    for (const k of onDisk.observedKeys()) observed.add(k);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+
   const unproduced = OBSERVABLE_IDS.filter((id) => !observed.has(id));
   assert.deepEqual(unproduced, [],
     `documented but not observable in a full session — the table over-claims:\n${unproduced.join("\n")}`);
@@ -357,5 +375,99 @@ test("the HTTP surface adds no headers of its own beyond the content type", asyn
     assert.deepEqual(names, [], `the server set extra headers: ${names.join(", ")}`);
   } finally {
     server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Persisted to disk, where the filesystem discloses things the server did not
+// ---------------------------------------------------------------------------
+
+test("objects survive a restart", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "hydra-vault-"));
+  try {
+    const chan = channelSecret(vaultRoot, "persisted");
+    const blob = sealForChannel(chan, new TextEncoder().encode("outlives the process"));
+    const first = new Vault({ invites: ["p1"], buckets: BUCKETS, dir });
+    assert.equal(first.handle({
+      op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "p1", pin: true,
+    }).ok, true);
+
+    // A second Vault over the same directory is what a restart looks like.
+    const second = new Vault({ invites: [], buckets: BUCKETS, dir });
+    assert.deepEqual(found(second.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: [blob.id] })).get(blob.id),
+      bytes(blob), "the object did not survive a restart");
+    // Invites do NOT survive, deliberately: a redeemed token is destroyed, and an unredeemed
+    // one is the operator's to reissue rather than the store's to remember.
+    assert.equal(second.handle({
+      op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "p1",
+    }).ok, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a persistent vault discloses more than an in-memory one, and says so", async () => {
+  // The reason `fs.*` is on the table. Persistence is not a neutral implementation detail:
+  // the kernel keeps timestamps this code never wrote, and unlink is not erasure.
+  const dir = await mkdtemp(join(tmpdir(), "hydra-vault-"));
+  try {
+    const chan = channelSecret(vaultRoot, "persisted");
+    const blob = sealForChannel(chan, new TextEncoder().encode("on disk"));
+    const vault = new Vault({ invites: ["p1"], buckets: BUCKETS, dir });
+    vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "p1", pin: true });
+
+    assert.equal(vault.persistent, true);
+    for (const id of ["fs.timestamps", "fs.deletedResidue"]) {
+      assert.ok(vault.observedKeys().includes(id), `${id} is on the table but not produced on disk`);
+    }
+    // And the claim is literally true: the filesystem holds an mtime nobody asked it to.
+    const info = await stat(join(dir, `${blob.id}.blob`));
+    assert.ok(info.mtimeMs > 0, "the filesystem kept no timestamp — recheck the fs.timestamps row");
+
+    // An in-memory vault produces neither row, so the table is not over-claiming for it.
+    const memory = new Vault({ buckets: BUCKETS });
+    assert.equal(memory.persistent, false);
+    assert.ok(!memory.observedKeys().some((k) => k.startsWith("fs.")));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the bytes on disk are exactly the bytes the client sent", async () => {
+  // No framing, no envelope, nothing this code could later be trusted not to derive from.
+  const dir = await mkdtemp(join(tmpdir(), "hydra-vault-"));
+  try {
+    const chan = channelSecret(vaultRoot, "persisted");
+    const blob = sealForChannel(chan, new TextEncoder().encode("byte for byte"));
+    const vault = new Vault({ invites: ["p1"], buckets: BUCKETS, dir });
+    vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "p1", pin: true });
+    assert.deepEqual(new Uint8Array(await readFile(join(dir, `${blob.id}.blob`))), bytes(blob));
+    // The sidecar holds only what the table names.
+    const meta = JSON.parse(await readFile(join(dir, `${blob.id}.json`), "utf8")) as Record<string, unknown>;
+    for (const key of Object.keys(meta)) {
+      assert.ok(["class", "id", "bucket", "storedAt", "expiresAt"].includes(key),
+        `the sidecar holds ${key}, which is not on the disclosure table`);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("expiry removes the file, not just the entry", async () => {
+  // Removing from the map and leaving the bytes on disk would make the TTL a lie about the
+  // one thing it is supposed to guarantee.
+  const dir = await mkdtemp(join(tmpdir(), "hydra-vault-"));
+  try {
+    let clock = 1_700_000_000_000;
+    const chan = channelSecret(vaultRoot, "persisted");
+    const blob = sealForChannel(chan, new TextEncoder().encode("expires"));
+    const vault = new Vault({ invites: ["p1"], buckets: BUCKETS, dir, now: () => clock });
+    vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "p1" });
+    clock += DEFAULT_TTL_MS + 1;
+    vault.observe();
+    assert.equal(existsSync(join(dir, `${blob.id}.blob`)), false, "an expired object stayed on disk");
+    assert.equal(existsSync(join(dir, `${blob.id}.json`)), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });

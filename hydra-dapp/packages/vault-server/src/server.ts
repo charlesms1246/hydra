@@ -17,6 +17,8 @@
  * observable.
  */
 
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { OBSERVABLE_IDS } from "./observations.ts";
 
 export const ENCRYPTED_ENDPOINT = "/v1/enc";
@@ -98,6 +100,15 @@ export type VaultOptions = {
   readonly now?: () => number;
   /** Sizes an upload may be, after client-side padding. */
   readonly buckets?: readonly number[];
+  /**
+   * Where to keep objects so they survive a restart.
+   *
+   * Persistence is not free in disclosure terms and the table says so: a filesystem keeps its
+   * own timestamps whatever this code writes, `unlink` does not erase, and anything that backs
+   * the host up copies the lot. Those are `fs.*` rows in `observations.ts`, and they exist
+   * because they are true of any on-disk vault — not because this implementation chose them.
+   */
+  readonly dir?: string;
 };
 
 export class Vault {
@@ -108,11 +119,62 @@ export class Vault {
   #invitesRedeemed = 0;
   readonly #now: () => number;
   readonly #buckets: readonly number[];
+  readonly #dir: string | null;
 
   constructor(options: VaultOptions = {}) {
     this.#invites = new Set(options.invites ?? []);
     this.#now = options.now ?? (() => Date.now());
     this.#buckets = options.buckets ?? [1024, 4096, 16384, 65536, 262144];
+    this.#dir = options.dir ?? null;
+    if (this.#dir) {
+      mkdirSync(this.#dir, { recursive: true });
+      this.#load();
+    }
+  }
+
+  /**
+   * Read what a previous run left behind.
+   *
+   * Objects are two files: the bytes, and a sidecar with the metadata. Keeping them separate
+   * means the bytes on disk are exactly the bytes a client sent — no framing this code would
+   * then have to be trusted not to derive anything from.
+   */
+  #load(): void {
+    for (const name of readdirSync(this.#dir!)) {
+      if (!name.endsWith(".json")) continue;
+      const id = name.slice(0, -5);
+      try {
+        const meta = JSON.parse(readFileSync(join(this.#dir!, name), "utf8")) as Omit<Stored, "bytes">;
+        const bytes = new Uint8Array(readFileSync(join(this.#dir!, `${id}.blob`)));
+        this.#objects.set(meta.id, { ...meta, bytes });
+      } catch {
+        // A half-written pair from a crash. Dropping it is right: a blob whose metadata is
+        // gone cannot be expired, and metadata whose blob is gone would serve nothing.
+        this.#unlink(id);
+      }
+    }
+  }
+
+  #persist(o: Stored): void {
+    if (!this.#dir) return;
+    const { bytes, ...meta } = o;
+    writeFileSync(join(this.#dir, `${o.id}.blob`), bytes);
+    writeFileSync(join(this.#dir, `${o.id}.json`), JSON.stringify(meta));
+  }
+
+  #unlink(id: string): void {
+    if (!this.#dir) return;
+    for (const ext of [".blob", ".json"]) {
+      const path = join(this.#dir, `${id}${ext}`);
+      // `rmSync` unlinks; it does not erase. The bytes stay recoverable from the raw device
+      // until something overwrites them, which is the `fs.deletedResidue` row.
+      if (existsSync(path)) rmSync(path);
+    }
+  }
+
+  /** True when this vault survives a restart. Reported, because it changes what leaks. */
+  get persistent(): boolean {
+    return this.#dir !== null;
   }
 
   /**
@@ -157,14 +219,16 @@ export class Vault {
     }
     const storedAt = this.#now();
     const expiresAt = r.pin ? null : storedAt + DEFAULT_TTL_MS;
-    this.#objects.set(r.id, {
+    const stored: Stored = {
       class: encrypted ? "encrypted" : "public",
       id: r.id,
       bucket: r.body.length,
       storedAt,
       expiresAt,
       bytes: Uint8Array.from(r.body),
-    });
+    };
+    this.#objects.set(r.id, stored);
+    this.#persist(stored);
     return { ok: true, op: "upload", id: r.id, expiresAt };
   }
 
@@ -190,13 +254,17 @@ export class Vault {
     const o = this.#objects.get(r.id);
     if (!o || o.class !== "public") return { ok: true, op: "remove", removed: false };
     this.#objects.delete(r.id);
+    this.#unlink(r.id);
     return { ok: true, op: "remove", removed: true };
   }
 
   #expire(): void {
     const now = this.#now();
     for (const [id, o] of this.#objects) {
-      if (o.expiresAt !== null && o.expiresAt <= now) this.#objects.delete(id);
+      if (o.expiresAt !== null && o.expiresAt <= now) {
+        this.#objects.delete(id);
+        this.#unlink(id);
+      }
     }
   }
 
@@ -244,6 +312,10 @@ export class Vault {
       seen.add("transport.timing");
     }
     if (Object.keys(o.totals).length) seen.add("store.totals");
+    if (this.#dir && o.rows.length) {
+      seen.add("fs.timestamps");
+      seen.add("fs.deletedResidue");
+    }
     return [...seen].sort();
   }
 

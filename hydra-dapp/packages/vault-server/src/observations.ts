@@ -91,6 +91,16 @@ export const OBSERVABLE: readonly Observation[] = [
     why: "a socket has timing; a large upload on a slow link is visibly a large upload on a slow link",
   },
   {
+    id: "fs.timestamps",
+    what: "the filesystem's own mtime and atime on every stored object, once the vault persists to disk",
+    why: "the kernel writes them whatever this code stores; atime in particular records reads that the server itself never logged, so a persistent vault discloses more than an in-memory one",
+  },
+  {
+    id: "fs.deletedResidue",
+    what: "the bytes of expired and removed objects, until something overwrites them",
+    why: "unlink is not erasure. A TTL that has passed removes the object from service, not from the device, and any snapshot or backup of the host keeps it for as long as the backup exists",
+  },
+  {
     id: "store.totals",
     what: "the number of objects and total bytes held, per class",
     why: "it is a filesystem; anyone with the disk can count",
