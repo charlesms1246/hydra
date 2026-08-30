@@ -11,9 +11,10 @@ starknet = "2.18.0"
 [dev-dependencies]
 snforge_std = "0.63.0"
 
-# No `[[target.starknet-contract]]` yet: there is no `#[starknet::contract]` here, only
-# a pure function, and declaring the target emitted `external contracts not found`.
-# It goes back when Phase 5 has a contract to deploy.
+# `channel` is a real contract now, so the target is back. It was removed while this package
+# held only a pure function, because declaring it then emitted `external contracts not found`.
+[[target.starknet-contract]]
+sierra = true
 
 [scripts]
 test = "snforge test"
