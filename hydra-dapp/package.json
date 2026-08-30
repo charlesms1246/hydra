@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test packages/identity/test/*.test.ts $(ls packages/adversary/test/*.test.ts | grep -v live-chain)",
+    "test": "node --test packages/identity/test/*.test.ts $(ls packages/adversary/test/*.test.ts | grep -v '/live-')",
     "test:live": "node --test packages/adversary/test/live-*.test.ts"
   }
 }
