@@ -6,6 +6,11 @@
  * first ~15 seconds of an `snforge` run emit nothing at all on stdout — that is the
  * test-target compile, which goes to stderr. Without an elapsed counter the page
  * looks hung for a quarter of a minute.
+ *
+ * The operation list is discovered from the checkout's manifests rather than typed
+ * here, so it grows with upstream and has to be windowed like any other list. A
+ * package with no measured duration says so — an estimate nobody took is worse
+ * than no estimate.
  */
 
 import { Box, Text } from "ink";
@@ -13,16 +18,15 @@ import { html } from "./ui.mjs";
 import { C, glyph, tone } from "./theme.mjs";
 import { Block, pad, trunc } from "./layout.mjs";
 import { windowRows } from "./forms.mjs";
-import { OPERATIONS } from "../../core/src/toolchain.mjs";
 
-const secs = (n) => (n >= 60 ? `~${Math.round(n / 60)}m` : `~${n}s`);
+const secs = (n) => (n === null || n === undefined ? "unmeasured" : n >= 60 ? `~${Math.round(n / 60)}m` : `~${n}s`);
 
 /** Operation rows, with whatever the last run said about each. */
-function opRows({ width, results, artifacts, selected, focus }) {
-  return OPERATIONS.map((op, i) => {
+function opRows({ ops, width, results, artifacts, selected, focus }) {
+  return ops.map((op, i) => {
     const on = focus === "list" && i === selected;
     const r = results?.[op.id];
-    const built = op.artifact ? artifacts?.[op.id] : undefined;
+    const built = op.artifact ? artifacts?.[op.artifact] : undefined;
     const state = r
       ? r.ok ? C.ok : C.bad
       : built === false ? C.warn : C.muted;
@@ -102,18 +106,21 @@ function bottomRows({ width, busy, result, lines, deploy }) {
 }
 
 export const BuildPage = ({
-  width, height, selected, focus, results, artifacts, busy, result, lines, deploy,
+  ops, width, height, selected, focus, results, artifacts, busy, result, lines, deploy,
 }) => {
-  const topH = OPERATIONS.length + 2;
+  // The list gets what it needs up to half the page, and the output frame keeps the
+  // rest. Sized off `ops.length` alone, fifteen discovered operations left no room
+  // for the result they produce.
+  const topH = Math.min(ops.length + 2, Math.max(6, Math.floor(height * 0.55)));
   const botH = Math.max(5, height - topH);
   const inner = topH - 2;
-  const rows = opRows({ width, results, artifacts, selected, focus });
+  const rows = opRows({ ops, width, results, artifacts, selected, focus });
   const win = windowRows(rows, selected, inner);
 
   return html`
     <${Box} flexDirection="column" width=${width} height=${height} overflow="hidden">
       <${Block} w=${width} h=${topH} title="operations" focused=${focus === "list"}
-        right=${win.note || "enter runs the selected one"} rows=${win.rows} />
+        right=${win.note || `${ops.length} discovered · enter runs one`} rows=${win.rows} />
       <${Block} w=${width} h=${botH}
         title=${busy ? "running" : result ? "result" : "deploy"} focused=${focus === "out"}
         right=${busy ? "l watches the full log" : ""}

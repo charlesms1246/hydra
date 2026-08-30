@@ -124,8 +124,8 @@ export const BINDINGS = [
     run: (s, a) => a.toggleFocus() },
   { scope: "activity", keys: ["enter"], label: "edit the selected field",
     when: (s) => s.focus === "form", run: (s, a) => a.editField() },
-  { scope: "activity", keys: ["enter"], label: "open the selected transaction's receipt",
-    when: (s) => s.focus === "list", run: (s, a) => a.descend() },
+  { scope: "activity", keys: ["enter"], label: "read the selected transaction again",
+    when: (s) => s.focus === "list", run: (s, a) => a.reloadReceipt() },
 
   // ---- run ---------------------------------------------------------------
   { scope: "run", keys: ["tab"], label: "move between the builder and the flow list",

@@ -1,6 +1,6 @@
 /**
- * The furniture every page shares: the page table, the bottom nav, the top status
- * bar, and the quit prompt.
+ * The furniture every page shares: the page table, the nav bar, the status line
+ * above it, and the quit prompt.
  *
  * PAGES is the single source for all three of: what the nav draws, what key jumps
  * where, and what `keys` documents. The old footer was a generated string of
@@ -32,45 +32,52 @@ export const PAGES = [
 export const pageIndex = (id) => Math.max(0, PAGES.findIndex((p) => p.id === id));
 
 /**
- * The bottom navigation.
+ * A navigation bar.
  *
- * Three states, and they have to stay distinguishable: the page you are ON (solid
+ * One component, two bars: the main page nav and the About page's guide sections.
+ * They were separate — an underline for one, a filled cell for the other — and the
+ * second one taught you a selection idiom that appeared nowhere else in the UI.
+ *
+ * Three states, and they have to stay distinguishable: the item you are ON (solid
  * background), the one the cursor is OVER (accent, bracketed), and the rest
- * (outlined). At narrow widths the labels drop to three letters before anything
+ * (outlined). At narrow widths the labels drop to their short form before anything
  * is dropped entirely — losing a destination is worse than abbreviating it.
+ *
+ * @param items  [{id, label, short, key?}] — `key` is the letter that jumps there
+ * @param cursor index of the hovering cursor, or -1 where there is no separate one
  */
-export const NavBar = ({ width, active, cursor }) => {
-  // Three tiers, and the last one still shows every destination. Overflowing the
-  // row is not an option: Ink squeezes it and the separators disappear, which is
-  // how a nav bar becomes an unreadable run of words.
-  const cost = (f) => PAGES.reduce((n, p) => n + f(p).length + 3, 0) - 1;
-  const label = cost((p) => `${p.label} (${p.key})`) <= width
-    ? (p) => `${p.label} (${p.key})`
-    : cost((p) => `${p.short} (${p.key})`) <= width
-      ? (p) => `${p.short} (${p.key})`
-      : (p) => p.key;
-  const cells = PAGES.map((p, i) => {
+export const Bar = ({ width, items, active, cursor = -1 }) => {
+  // Overflowing the row is not an option: Ink squeezes it and the separators
+  // disappear, which is how a nav bar becomes an unreadable run of words.
+  const cost = (f) => items.reduce((n, p) => n + f(p).length + 3, 0) - 1;
+  const full = (p) => (p.key ? `${p.label} (${p.key})` : p.label);
+  const short = (p) => (p.key ? `${p.short ?? p.label} (${p.key})` : p.short ?? p.label);
+  const label = cost(full) <= width ? full : cost(short) <= width ? short : (p) => p.key ?? short(p);
+  const cells = items.map((p, i) => {
     const text = ` ${label(p)} `;
-    const isActive = p.id === active;
-    const isCursor = i === cursor;
-    if (isActive) {
+    if (p.id === active) {
       return html`<${Text} key=${p.id} backgroundColor=${C.accent} color="black" bold>${text}<//>`;
     }
-    if (isCursor) {
+    if (i === cursor) {
       return html`<${Text} key=${p.id} color=${C.accent}>${"[" + text.slice(1, -1) + "]"}<//>`;
     }
     return html`<${Text} key=${p.id} color=${C.muted}>${text}<//>`;
   });
-  const sep = html`<${Text} color=${C.border}>${"│"}<//>`;
+  const sep = html`<${Text} color=${C.border}>${"\u2502"}<//>`;
   return html`
     <${Box} width=${width}>
       ${cells.flatMap((c, i) => (i ? [html`<${Box} key=${"s" + i}>${sep}<//>`, c] : [c]))}
     <//>`;
 };
 
+/** The main page nav. */
+export const NavBar = ({ width, active, cursor }) =>
+  html`<${Bar} width=${width} items=${PAGES} active=${active} cursor=${cursor} />`;
+
 /**
- * The top status bar — every page but the overview, which shows the same facts
- * in full and would otherwise say everything twice.
+ * The status bar — the top line of the screen, above the nav, on every page but
+ * the overview, which shows the same facts in full and would otherwise say
+ * everything twice.
  *
  * Liveness only. No disclosure vocabulary appears here: a status bar is glanced
  * at, and a glanceable privacy claim is exactly the kind this project refuses to

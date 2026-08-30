@@ -27,14 +27,15 @@ import { PAGES, pageIndex, NavBar, StatusBar, QuitPrompt } from "./chrome.mjs";
 import { About, SECTION_COUNT } from "./about.mjs";
 import { WalletsPage } from "./wallets.mjs";
 import { ActivityPage, ACTIVITY_FIELDS, rowsFor as activityRows } from "./activity.mjs";
-import { RunPage, RUN_FIELDS } from "./runflow.mjs";
+import { RunPage, runFields } from "./runflow.mjs";
 import { ToolsPage, TOOL_CATEGORIES, visibleRows } from "./toolspage.mjs";
 import { BuildPage } from "./buildpage.mjs";
-import { advance, TYPE } from "./forms.mjs";
+import { advance, isAddress, TYPE } from "./forms.mjs";
 import { saveFlow as persistFlow, forgetFlow as dropFlow, leakActionFor } from "../../core/src/flows.mjs";
-import { OPERATIONS, runOperation, deployState } from "../../core/src/toolchain.mjs";
+import { discoverOperations, runOperation, deployState } from "../../core/src/toolchain.mjs";
 import { record } from "../../core/src/history.mjs";
 import { upstreamPath } from "../../cli/src/doctor.mjs";
+import { ARTIFACTS } from "../../cli/src/pins.mjs";
 import { Overview } from "./overview.mjs";
 import { Splash, timings } from "./splash.mjs";
 import { measureCellAspect } from "./logo.mjs";
@@ -79,9 +80,36 @@ export const TX_ACTIONS = [
     // by `resolveLeak` below, and stays undefined (so: UNKNOWN) when that fails.
     recipient: "bob",
     leak: { type: "transfer", token: "STRK", amount: "50", counterparty: "bob" } },
-  { id: "notes", label: "notes     re-discover for alice and bob", run: null,
+  // `notesOnly`, not `run: null`. A saved flow can also have no `run` — when it is a
+  // type with no endpoint, or names a party this stack holds no key for — and those
+  // two must not take the same branch as this one.
+  { id: "notes", label: "notes     re-discover for alice and bob", run: null, notesOnly: true,
     note: "the only discoverNotes() call there is" },
 ];
+
+/**
+ * Submit a saved flow. The three runnable types map onto the three control
+ * endpoints; anything else never reaches here, because `flows.mjs whyNotRunnable`
+ * has already marked it preview-only and `run` is null.
+ */
+function submitFlow(f) {
+  const amount = toBaseUnits(f.amount ?? "0");
+  if (f.type === "register") return TX.register(f.from ?? "bob");
+  if (f.type === "deposit") return TX.shield({ who: f.from ?? "alice", amount, token: f.token });
+  return TX.transfer({ from: f.from, to: f.to, amount, token: f.token });
+}
+
+/** A saved flow in the shape the confirm/run/report path already speaks. */
+function flowAsAction(f) {
+  return {
+    id: f.id,
+    label: `${f.name}  ·  ${f.type}${f.amount ? ` ${f.amount} ${f.token}` : ""}`,
+    recipient: f.to,
+    leak: leakActionFor(f),
+    reason: f.reason,
+    run: f.runnable ? () => submitFlow(f) : null,
+  };
+}
 
 const LOG_MAX = 200;
 const DRAWERS = ["why", "notes", "anon"];
@@ -152,6 +180,11 @@ function App() {
 
   const { data, staleness, refresh } = useSources(page);
 
+  // Read once from the checkout's manifests. Not on a timer: a workspace member
+  // does not appear while the TUI is open, and readdirSync on every frame would
+  // put three synchronous stats in the render path.
+  const ops = useMemo(() => discoverOperations(upstreamPath()), []);
+
   // Entering a page puts the cursor where the work is: the list on pages that show
   // one, the categories on Tools. Without this, `tab` state leaked across pages and
   // a form could hold focus on a page that has no form.
@@ -161,6 +194,14 @@ function App() {
   }, [page]);
   const svc = data.status;
   const up = Boolean(svc?.devnet?.up);
+
+  // The Run builder's `from` and `to` are pickers over the stack's own accounts, so
+  // the field list is derived rather than typed. `hydra up` with more accounts puts
+  // them in the picker; no stack puts none, and the hint says so.
+  const runFieldDefs = useMemo(() => {
+    const syms = Object.keys(svc?.tokens ?? {});
+    return runFields(svc?.accounts ?? [], syms.length ? syms : ["STRK", "ETH"]);
+  }, [svc?.accounts, svc?.tokens]);
 
   const addLine = useCallback((text, sev = "info") => {
     setLog((prev) => [...prev, { text, sev }].slice(-LOG_MAX));
@@ -209,11 +250,11 @@ function App() {
     if (page === "run") {
       const total = TX_ACTIONS.length + (data.flows?.flows?.length ?? 0);
       return focus === "form"
-        ? { len: RUN_FIELDS.length, get: () => formSel, set: setFormSel, height: RUN_FIELDS.length }
+        ? { len: runFieldDefs.length, get: () => formSel, set: setFormSel, height: runFieldDefs.length }
         : { len: total, get: () => runSel, set: setRunSel, height: 8 };
     }
     if (page === "build") {
-      return { len: OPERATIONS.length, get: () => buildSel, set: setBuildSel, height: OPERATIONS.length };
+      return { len: ops.length, get: () => buildSel, set: setBuildSel, height: 8 };
     }
     if (page === "tools" && focus === "top") {
       return { len: TOOL_CATEGORIES.length, get: () => catSel, set: setCatSel, height: TOOL_CATEGORIES.length };
@@ -230,7 +271,26 @@ function App() {
     }
     return { len: 0, get: () => 0, set: () => {}, height: 1 };
   }, [page, paneId, data, nav, filter, runSel, logSel, log.length, geom.rigRows, setNav,
-      focus, formSel, forms, catSel, buildSel]);
+      focus, formSel, forms, catSel, buildSel, ops, runFieldDefs]);
+
+  // The Activity detail block sits ABOVE the list and describes whatever the cursor
+  // is on, so the receipt has to follow the selection rather than wait for a key.
+  // Debounced, because holding `s` down would otherwise issue one pair of RPC calls
+  // per keypress, and guarded, because a slow reply must not overwrite a newer one.
+  const activeHash = page === "activity"
+    ? activityRows(data.blocks?.blocks, forms.activity)[nav.sel[0] ?? 0]?.hash ?? null
+    : null;
+  useEffect(() => {
+    setReceipt(null);
+    if (!activeHash) return undefined;
+    let live = true;
+    const id = setTimeout(() => {
+      txStatus(activeHash)
+        .then((r) => live && setReceipt(r))
+        .catch(() => live && setReceipt({ available: true, found: false, error: "txStatus failed" }));
+    }, 200);
+    return () => { live = false; clearTimeout(id); };
+  }, [activeHash]);
 
   // ---- the things that touch the world -----------------------------------
   const bringUp = useCallback((env = {}) => {
@@ -286,13 +346,24 @@ function App() {
   const resolveLeak = useCallback(async (action) => {
     if (!action?.leak) return null;
     if (!action.recipient) return action.leak;
-    const who = (svc?.accounts ?? []).find((a) => a.name === action.recipient);
-    const opens = await opensChannelTo(who?.address).catch(() => undefined);
+    // A recipient is either one of this stack's account names or a pasted address.
+    // The pool's view takes an address either way, which is the whole reason pasting
+    // one is worth offering: "does a transfer to THIS party open a channel?" is
+    // answerable about a counterparty nobody here holds a key for.
+    const named = (svc?.accounts ?? []).find((a) => a.name === action.recipient);
+    const address = named?.address ?? (isAddress(action.recipient) ? action.recipient : null);
+    const opens = await opensChannelTo(address).catch(() => undefined);
     return opens === undefined ? action.leak : { ...action.leak, opensChannel: opens };
   }, [svc]);
 
   const doFlow = useCallback(async (action, leakAction) => {
-    if (!action.run) {
+    // A flow with no `run` is preview-only — a type with no endpoint, or a party
+    // this stack holds no key for. It is not the notes flow, and running the notes
+    // flow instead of it would submit something nobody asked for.
+    if (!action.run && !action.notesOnly) {
+      return note(action.reason ?? "this one cannot be submitted here — the preview is all there is", "warn");
+    }
+    if (action.notesOnly) {
       setBusy({ label: "re-discovering notes for alice and bob", since: Date.now() });
       const [a, b] = await Promise.all([TX.notes("alice"), TX.notes("bob")]);
       setBusy(null);
@@ -367,19 +438,38 @@ function App() {
      * mode you have to escape from; only text fields take the keyboard.
      */
     editField: () => {
-      const fields = page === "activity" ? ACTIVITY_FIELDS : RUN_FIELDS;
+      const fields = page === "activity" ? ACTIVITY_FIELDS : runFieldDefs;
       const f = fields[formSel];
       if (!f) return undefined;
       const next = advance(f, forms[page]);
       if (next !== TYPE) {
         return setForms((all) => ({ ...all, [page]: { ...all[page], [f.id]: next } }));
       }
+      // A picker that has cycled round to PASTE opens EMPTY. Seeding it with the
+      // account name it was on would mean backspacing over "alice" before typing an
+      // address, which is not what asking for a different value looks like.
+      const seed = f.kind === "enum" ? "" : String(forms[page]?.[f.id] ?? "");
       return setPromptState({
-        label: `${f.label}:`,
-        value: String(forms[page]?.[f.id] ?? ""),
+        // The id, so the form knows WHICH cell to draw the typed text into. Without
+        // it the cell kept showing the saved value and the field read as dead.
+        field: f.id,
+        label: f.kind === "enum" ? `${f.label} — 0x address:` : `${f.label}:`,
+        value: seed,
         onSubmit: (v) => {
-          setForms((all) => ({ ...all, [page]: { ...all[page], [f.id]: v } }));
+          const val = String(v).trim();
+          // A picker's escape hatch takes an ADDRESS or nothing. Storing whatever was
+          // typed would put a value in the field that is neither one of the accounts
+          // nor something the chain can be asked about — and an empty submit is a
+          // change of mind, not an instruction to blank the field.
+          if (f.kind === "enum") {
+            if (!val) return note(`nothing typed — ${f.label} is unchanged`, "info");
+            if (!isAddress(val)) {
+              return note(`${f.label} takes an account from the list or a 0x address`, "warn");
+            }
+          }
+          setForms((all) => ({ ...all, [page]: { ...all[page], [f.id]: val } }));
           if (page === "activity" && f.id === "depth") refresh("blocks");
+          return undefined;
         },
       });
     },
@@ -402,15 +492,20 @@ function App() {
       });
     },
     askOperation: () => {
-      const op = OPERATIONS[buildSel];
+      const op = ops[buildSel];
       if (!op) return undefined;
+      // Per-operation, because e2e/contracts/* are separate Scarb workspaces and
+      // cannot be built from the root the way the members can.
+      const cwd = join(upstreamPath(), op.dir ?? ".");
       return setConfirm({
         kind: "operation", op,
         prompt: `run ${op.label}?`,
         cmd: op.cmd,
-        cwd: upstreamPath(),
+        cwd,
         lines: [
-          `about ${op.seconds >= 60 ? Math.round(op.seconds / 60) + " minutes" : op.seconds + " seconds"} on this machine, measured`,
+          op.seconds === null || op.seconds === undefined
+            ? "never timed on this machine — there is no estimate for this one"
+            : `about ${op.seconds >= 60 ? Math.round(op.seconds / 60) + " minutes" : op.seconds + " seconds"} on this machine, measured`,
           op.mutates ? `writes ${op.mutates}` : "writes nothing outside target/",
           "once started it cannot be cancelled from here — it keeps running in the background",
         ],
@@ -422,16 +517,15 @@ function App() {
       setPage(PAGES[navCursor]?.id ?? "overview");
     },
     /**
-     * Enter on a list row opens its detail. Only Activity has one — a transaction
-     * receipt, fetched on demand rather than polled, because `txStatus` is a round
-     * trip per row and the list can be hundreds long.
+     * Re-read the selected transaction. The detail block above the list already
+     * follows the cursor, so Enter is a retry rather than a drill-down — which is
+     * what it is for when the first read failed.
      */
-    descend: () => {
+    reloadReceipt: () => {
       if (page !== "activity") return undefined;
       const row = activityRows(data.blocks?.blocks, forms.activity)[nav.sel[0] ?? 0];
       if (!row?.hash) return note("that block carried no transactions", "warn");
       setReceipt(null);
-      setNav({ level: 1 });
       return txStatus(row.hash)
         .then(setReceipt)
         .catch(() => setReceipt({ available: true, found: false, error: "txStatus failed" }));
@@ -481,13 +575,21 @@ function App() {
      * the running chain is about to grow one.
      */
     askMoreAccounts: () => {
-      const have = (svc?.accounts ?? []).length || 3;
-      setConfirm({
-        kind: "accounts", count: have,
-        prompt: `restart the stack with ${have} accounts?`,
+      // The recorded set includes admin, which is not a user account. HYDRA_ACCOUNTS
+      // counts USER accounts (up.mjs passes `userAccounts`), so the two differ by one.
+      const users = Math.max(2, (svc?.accounts ?? []).filter((a) => a.name !== "admin").length);
+      const want = users + 1;
+      if (want > 16) return note("devnet is capped at 16 accounts here", "warn");
+      // `count` used to be `have` — the same number it already had — so the one
+      // button for adding an account restarted the stack and changed nothing.
+      return setConfirm({
+        kind: "accounts", count: want,
+        prompt: `restart the stack with ${want} user accounts (it has ${users})?`,
         lines: [
           "devnet fixes its accounts when it starts; there is no call that adds one.",
           "this stops the running stack and starts a new one — the chain is discarded.",
+          "the new account holds funds and can be minted to; pool flows still run as",
+          "alice or bob only (packages/cli/src/control.mjs:41).",
         ],
       });
     },
@@ -516,7 +618,13 @@ function App() {
       });
     },
     askFlow: async () => {
-      const action = TX_ACTIONS[runSel];
+      // Built-ins first, then whatever has been saved — the same order the list
+      // draws. `enter` on a saved flow used to fall off the end of TX_ACTIONS and
+      // do nothing at all, so a flow you built could be saved and never looked at.
+      const saved = data.flows?.flows ?? [];
+      const action = runSel < TX_ACTIONS.length
+        ? TX_ACTIONS[runSel]
+        : (saved[runSel - TX_ACTIONS.length] ? flowAsAction(saved[runSel - TX_ACTIONS.length]) : null);
       if (!action) return undefined;
       // Resolved before the preview is built, so the cells you are shown are the
       // cells the run will report. The read is one starknet_call and needs no
@@ -531,7 +639,9 @@ function App() {
       return setConfirm({
         leakAction,
         kind: "flow", action,
-        prompt: action.run ? `run ${action.label}? it submits a real transaction` : `run ${action.label}?`,
+        prompt: action.run
+          ? `run ${action.label}? it submits a real transaction`
+          : action.notesOnly ? `run ${action.label}?` : `${action.label} — preview only`,
         // mark(), not a local replace(): this screen is shown immediately before a
         // real transaction is submitted, and it used to carry a second vocabulary —
         // raw enum words where the matrix renders `—`, and no legend at all, so an
@@ -540,7 +650,8 @@ function App() {
           ? ["this is what it will disclose, under the config strip above:"]
             .concat(preview.parties.map(([id, label]) =>
               `  ${label.padEnd(27)}${preview.fields.map((f) => mark(preview.disclosures[0].byParty[id][f].disclosure).word.padEnd(12)).join("")}`))
-          : ["this one runs discoverNotes() and submits nothing"]),
+          : ["this one runs discoverNotes() and submits nothing"])
+          .concat(action.reason ? [`it will not be submitted: ${action.reason}`] : []),
         legend: Boolean(preview),
       });
     },
@@ -624,7 +735,7 @@ function App() {
       }
     },
   }), [exit, note, cursorSet, ledger.length, listCtx, paneId, nav, data, filter, cursor.expanded,
-       page, navCursor, section, prompt, refresh, resolveLeak, bringUp, bringDown, confirm, doFix, doFlow, runSel, svc, txAvailable, setNav]);
+       page, navCursor, section, prompt, refresh, resolveLeak, bringUp, bringDown, confirm, doFix, doFlow, runSel, svc, txAvailable, setNav, ops, buildSel]);
 
   const keyState = {
     cursor, report, page, navCursor, quitting, confirm, filter, prompt, busy, up, focus,
@@ -712,13 +823,14 @@ function App() {
 
   // The doctor already probes every artifact; reusing its rows here means the Build
   // page cannot disagree with the Tools page about what is built.
+  // Keyed by the artifact PATH, which is the one thing doctor's rows and the
+  // discovered operations both name. Keying by operation id meant a renamed op
+  // silently stopped reporting whether it had built.
   const artifactState = {};
   for (const r of data.doctor?.rows ?? []) {
     const m = /^artifact: (.+)$/.exec(r.name);
-    if (!m) continue;
-    const id = { pool: "pool", discoveryService: "discovery-service",
-      poolTestContracts: "pool-tests", testToken: "e2e-contracts" }[m[1]];
-    if (id) artifactState[id] = r.status.trim() === "ok";
+    const rel = m && ARTIFACTS[m[1]];
+    if (rel) artifactState[rel] = r.status.trim() === "ok";
   }
 
   // One row of headroom below everything: Ink clears the whole terminal the
@@ -758,12 +870,12 @@ function App() {
     content = html`
       <${ActivityPage} width=${W} height=${bodyRows} data=${gated} values=${forms.activity}
         focus=${focus} selected=${nav.sel[0] ?? 0} formSel=${formSel}
-        typing=${Boolean(prompt)} receipt=${receipt} level=${nav.level ?? 0} />`;
+        prompt=${prompt} receipt=${receipt} />`;
   } else if (page === "run") {
     content = html`
-      <${RunPage} width=${W} height=${bodyRows} builtIn=${TX_ACTIONS}
+      <${RunPage} fields=${runFieldDefs} width=${W} height=${bodyRows} builtIn=${TX_ACTIONS}
         flows=${data.flows?.flows ?? []} values=${forms.run} focus=${focus}
-        selected=${runSel} formSel=${formSel} typing=${Boolean(prompt)}
+        selected=${runSel} formSel=${formSel} prompt=${prompt}
         txAvailable=${txAvailable} />`;
   } else if (page === "tools") {
     content = html`
@@ -772,7 +884,7 @@ function App() {
         filter=${filter} />`;
   } else if (page === "build") {
     content = html`
-      <${BuildPage} width=${W} height=${bodyRows} selected=${buildSel} focus=${focus}
+      <${BuildPage} ops=${ops} width=${W} height=${bodyRows} selected=${buildSel} focus=${focus}
         results=${buildResults} artifacts=${artifactState} busy=${busy?.seconds ? busy : null}
         result=${buildResult} lines=${buildLines}
         deploy=${deployState(upstreamPath(), svc?.stack?.startedAt)} />`;
@@ -832,8 +944,8 @@ function App() {
   return html`
     <${Box} flexDirection="column" paddingX=${geom.padX} width=${cols} height=${draw}
       overflow="hidden">
-      <${NavBar} width=${W} active=${page} cursor=${navCursor} />
       ${showStatusBar ? html`<${StatusBar} width=${W} svc=${svc} />` : null}
+      <${NavBar} width=${W} active=${page} cursor=${navCursor} />
       ${content}
       <${Box} width=${W} height=${1} overflow="hidden">
         <${Text} color=${statusColour}>${(" " + statusText).slice(0, Math.max(0, W - 8))}<//>

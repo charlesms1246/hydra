@@ -7,39 +7,72 @@
  * describe no disclosure at all. The list shows both kinds and says which is which,
  * because a Run page that silently hid the two it cannot run would leave you
  * wondering why the vocabulary has five words in it.
+ *
+ * `from` and `to` are pickers over the stack's own accounts, not free text — a
+ * typed account name is a name the control API either knows or 500s on, and the
+ * list of names it knows is already on screen two pages away. The last option is
+ * `PASTE`, for an address that is not one of them: the pool's channel-count view
+ * takes an address, so "does a transfer to THIS address open a channel?" is a
+ * question worth being able to ask about a counterparty you do not hold keys for.
+ * Such a flow previews and does not run, and the list says which of the two it is.
  */
 
 import { Box, Text } from "ink";
 import { html } from "./ui.mjs";
 import { C } from "./theme.mjs";
 import { Block, pad, trunc } from "./layout.mjs";
-import { Form, windowRows } from "./forms.mjs";
+import { Form, windowRows, PASTE } from "./forms.mjs";
 import { ACTION_TYPES } from "../../leak/src/facts.mjs";
 import { RUNNABLE } from "../../core/src/flows.mjs";
 
-export const RUN_FIELDS = [
-  { id: "name", kind: "text", label: "name", placeholder: "my flow",
-    hint: "what to call it in the list below" },
-  { id: "type", kind: "enum", label: "action", options: ACTION_TYPES,
-    hint: "enter cycles — withdraw and invoke can be previewed but not submitted" },
-  { id: "from", kind: "text", label: "from", placeholder: "alice", hint: "account name" },
-  { id: "to", kind: "text", label: "to", placeholder: "bob",
-    hint: "recipient — the pool discloses this on the first transfer to them" },
-  { id: "token", kind: "enum", label: "token", options: ["STRK", "ETH"], hint: "" },
-  { id: "amount", kind: "text", label: "amount", placeholder: "50",
-    hint: "whole tokens — converted to base units on the wire" },
-];
+/**
+ * The builder's fields, for the accounts this stack actually has.
+ *
+ * A function rather than a constant because `from` and `to` are pickers over live
+ * data: `hydra up --accounts 4` puts four names in the list without an edit here,
+ * and a stack that is down puts none, which is honest — there is nothing to pick.
+ *
+ * @param accounts  status().accounts — `[{name, address, flows}]`
+ * @param tokens    the tracked token symbols, which `n` on the Wallets page grows
+ */
+export function runFields(accounts = [], tokens = ["STRK", "ETH"]) {
+  const names = accounts.map((a) => a.name).filter(Boolean);
+  // Only the accounts this stack holds signing keys for can be a `from`, and the
+  // recorded state says which (`up.mjs` writes `flows`). A stack recorded before
+  // that field existed has it undefined, which reads as "capable" — the behaviour
+  // it already had.
+  const signers = accounts.filter((a) => a.flows !== false).map((a) => a.name).filter(Boolean);
+  return [
+    { id: "name", kind: "text", label: "name", placeholder: "my flow",
+      hint: "what to call it in the list below" },
+    { id: "type", kind: "enum", label: "action", options: ACTION_TYPES,
+      hint: "enter cycles — withdraw and invoke can be previewed but not submitted" },
+    { id: "from", kind: "enum", label: "from", options: [...signers, PASTE],
+      hint: signers.length
+        ? `enter cycles — ${signers.length} account${signers.length === 1 ? "" : "s"} this stack can sign as`
+        : "no stack — u starts one, and its accounts appear here" },
+    { id: "to", kind: "enum", label: "to", options: [...names, PASTE],
+      hint: "recipient — the pool discloses this on the first transfer to them" },
+    { id: "token", kind: "enum", label: "token", options: tokens, hint: "" },
+    { id: "amount", kind: "text", label: "amount", placeholder: "50",
+      hint: "whole tokens — converted to base units on the wire" },
+  ];
+}
+
+/** The shape with no stack behind it — what the page draws before `u`. */
+export const RUN_FIELDS = runFields();
 
 export const RunPage = ({
-  width, height, builtIn, flows, values, focus, selected, formSel, typing, txAvailable,
+  width, height, builtIn, flows, values, focus, selected, formSel, prompt, txAvailable,
+  fields = RUN_FIELDS,
 }) => {
-  const formH = RUN_FIELDS.length + 3;
+  const formH = fields.length + 3;
   const listH = Math.max(5, height - formH);
 
   const formRows = [
     ...Form({
-      fields: RUN_FIELDS, values, selected: formSel,
-      focused: focus === "form", typing, width: width - 2,
+      fields, values, selected: formSel,
+      focused: focus === "form", prompt, width: width - 2,
     }),
     html`<${Text} key="save" color=${C.muted} wrap="truncate">
       ${"  i saves this as a flow · tab moves to the list · enter previews what it discloses"}<//>`,
@@ -54,7 +87,7 @@ export const RunPage = ({
     })),
     ...flows.map((f) => ({
       id: f.id, name: `${f.name}  ·  ${f.type}${f.amount ? ` ${f.amount} ${f.token}` : ""}`,
-      kind: "saved", runnable: f.runnable, describes: true, flow: f,
+      kind: "saved", runnable: f.runnable, describes: true, flow: f, reason: f.reason,
     })),
   ];
 
@@ -67,7 +100,7 @@ export const RunPage = ({
         const why = !it.describes
           ? "submits, discloses nothing to report"
           : !it.runnable
-            ? "no control endpoint — preview only"
+            ? it.reason ?? "no control endpoint — preview only"
             : txAvailable ? "" : "needs a running stack";
         return html`
           <${Text} key=${it.id + idx} wrap="truncate">

@@ -6,15 +6,18 @@
  * The keymap is still here, generated from BINDINGS so it cannot go stale, as one
  * section among several.
  *
- * Sections are a second nav bar. `tab` cycles them: the main nav already owns
- * `a`/`d` and the arrows, and a page-local nav that stole them would make the same
- * key mean two things depending on which page you were on.
+ * Sections are a second nav bar, drawn by the same `Bar` as the main one. It used
+ * to have its own idiom — an underline where the main nav paints a solid cell —
+ * which taught a selection vocabulary that appeared on exactly one page. `tab`
+ * cycles them: the main nav already owns `a`/`d` and the arrows, and a page-local
+ * nav that stole them would make the same key mean two things depending on which
+ * page you were on.
  */
 
 import { Box, Text } from "ink";
 import { html } from "./ui.mjs";
 import { C } from "./theme.mjs";
-import { PAGES } from "./chrome.mjs";
+import { Bar } from "./chrome.mjs";
 import { BINDINGS, helpGroups } from "./keymap.mjs";
 
 /** Every claim here is either about this tool, or cited. Nothing is asserted. */
@@ -135,12 +138,12 @@ const PROSE = {
 };
 
 const SECTIONS = [
-  { id: "what", label: "What it is" },
-  { id: "finding", label: "Why it exists" },
-  { id: "start", label: "Getting started" },
-  { id: "keys", label: "Keys" },
-  { id: "agents", label: "Agents & MCP" },
-  { id: "safety", label: "Safety" },
+  { id: "what", label: "What it is", short: "What" },
+  { id: "finding", label: "Why it exists", short: "Why" },
+  { id: "start", label: "Getting started", short: "Start" },
+  { id: "keys", label: "Keys", short: "Keys" },
+  { id: "agents", label: "Agents & MCP", short: "Agents" },
+  { id: "safety", label: "Safety", short: "Safe" },
 ];
 
 export const SECTION_COUNT = SECTIONS.length;
@@ -162,23 +165,13 @@ function keyLines(width) {
   return out;
 }
 
-/** The section bar. A second nav, so it must not look like the first one. */
-const SectionBar = ({ width, selected }) => {
-  const cells = SECTIONS.map((sec, i) => {
-    const text = ` ${sec.label} `;
-    return i === selected
-      ? html`<${Text} key=${sec.id} color=${C.accent} bold underline>${text}<//>`
-      : html`<${Text} key=${sec.id} color=${C.muted}>${text}<//>`;
-  });
-  return html`
-    <${Box} width=${width}>
-      <${Text} color=${C.muted}>${" guide "}<//>
-      ${cells.flatMap((c, i) =>
-        i ? [html`<${Text} key=${"s" + i} color=${C.border}>${"·"}<//>`, c] : [c])}
-      <${Box} flexGrow=${1} />
-      <${Text} color=${C.muted}>${"tab →  "}<//>
-    <//>`;
-};
+/** The section bar — the main nav's component, so the two cannot drift apart. */
+const SectionBar = ({ width, selected }) => html`
+  <${Box} width=${width}>
+    <${Bar} width=${width - 8} items=${SECTIONS} active=${SECTIONS[selected]?.id} />
+    <${Box} flexGrow=${1} />
+    <${Text} color=${C.muted}>${"tab \u2192 "}<//>
+  <//>`;
 
 export const About = ({ width, height, section = 0 }) => {
   const sec = SECTIONS[section] ?? SECTIONS[0];

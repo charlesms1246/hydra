@@ -10,6 +10,12 @@
  * at spawn (`--accounts N`); there is no call that adds one to a running chain.
  * So "another account" restarts the stack with a higher count and says so, rather
  * than pretending to mint an account into an existing devnet.
+ *
+ * Addresses are shown in full. The table widens its address column to the longest
+ * address it holds whenever the width allows, and the selected account's address
+ * is printed whole in the manage block either way — an abbreviated address is not
+ * something you can paste into a block explorer or a script, which is most of what
+ * a wallet page is for.
  */
 
 import { Box, Text } from "ink";
@@ -20,6 +26,9 @@ const trunc = (s, w) =>
   String(s ?? "").length <= w ? String(s ?? "") : String(s ?? "").slice(0, Math.max(0, w - 1)) + "…";
 const pad = (s, w) => trunc(s, w).padEnd(w);
 const addr = (a) => (a ? `${String(a).slice(0, 10)}…${String(a).slice(-6)}` : "—");
+/** Left-pad a felt to the canonical 0x + 64 hex, which is how explorers print it. */
+export const fullAddr = (a) =>
+  a ? "0x" + String(a).replace(/^0x/, "").padStart(64, "0") : "—";
 
 /** The management actions, in the order they are offered. */
 export const WALLET_ACTIONS = [
@@ -29,7 +38,7 @@ export const WALLET_ACTIONS = [
     note: "validated with a real balanceOf before it is stored" },
   { key: "v", id: "export", label: "export addresses and balances to JSON",
     note: "no private keys — this process never holds them" },
-  { key: "+", id: "account", label: "restart the stack with one more account",
+  { key: "+", id: "account", label: "create another account (restarts the stack)",
     note: "devnet fixes its accounts at spawn; this is the only way to add one" },
 ];
 
@@ -85,15 +94,26 @@ export const WalletsPage = ({ width, height, data, selected, prompt, tokens }) =
         <${Text} color=${C.muted}>${"   enter accepts · esc cancels"}<//>
       <//>`);
   } else {
-    actionRows.push(html`
-      <${Text} key="hint" color=${C.muted} wrap="truncate">
-        ${"  w s move the selection · tracking " + (syms.length ? syms.join(", ") : "nothing yet")}<//>`);
+    const sel = accounts[selected];
+    actionRows.push(sel
+      ? html`
+        <${Text} key="hint" wrap="truncate">
+          <${Text} color=${C.muted}>${"  " + pad(sel.name, 9)}<//>
+          <${Text} color=${C.accent}>${fullAddr(sel.address)}<//>
+        <//>`
+      : html`
+        <${Text} key="hint" color=${C.muted} wrap="truncate">
+          ${"  w s move the selection · tracking " + (syms.length ? syms.join(", ") : "nothing yet")}<//>`);
   }
 
   // Column widths from the data, so a long symbol list does not collide with the
   // address the way a fixed 12-wide address column did on the dashboard.
   const nameW = 9;
-  const addrW = Math.min(22, Math.max(14, Math.floor(width * 0.24)));
+  const longest = Math.max(12, ...accounts.map((a) => fullAddr(a.address).length));
+  // Full address whenever the balances still fit beside it; otherwise the short
+  // form here and the full one in the manage block above.
+  const roomy = nameW + longest + 2 + syms.length * 12 <= width;
+  const addrW = roomy ? longest + 2 : Math.min(22, Math.max(14, Math.floor(width * 0.24)));
   const balW = Math.max(10, Math.floor((width - nameW - addrW - 4) / Math.max(1, syms.length)));
 
   const tableRows = available
@@ -106,7 +126,7 @@ export const WalletsPage = ({ width, height, data, selected, prompt, tokens }) =
             <${Text} color=${i === selected ? C.accent : undefined}>${i === selected ? "▸" : " "}<//>
             <${Text} color=${i === selected ? C.accent : undefined} bold=${i === selected}>
               ${pad(a.name, nameW)}<//>
-            <${Text} color=${C.muted}>${pad(addr(a.address), addrW)}<//>
+            <${Text} color=${C.muted}>${pad(roomy ? fullAddr(a.address) : addr(a.address), addrW)}<//>
             ${syms.map((sy) => html`
               <${Text} key=${sy}>${pad(a.balances?.[sy]?.formatted ?? "—", balW)}<//>`)}
           <//>`),

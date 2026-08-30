@@ -4,6 +4,12 @@
  * One cursor drives both sections — the category selected at the top decides what
  * the bottom lists — so the page costs no new keys beyond the shared `tab`.
  *
+ * The agent surface names its tools. It used to report "mcp server: present" and a
+ * path, because the nine tool names were inline literals inside `createServer()` and
+ * could not be read without starting the server and speaking JSON-RPC to it. They
+ * are `packages/mcp/src/manifest.mjs` now, and the three that change something are
+ * marked, because that is the distinction a reader is actually looking for.
+ *
  * Two things on this page are honest absences rather than missing features.
  * **Uptime is stack-scoped, not per-process**: `state.json` records one `startedAt`
  * for the whole `hydra up`, so it is paired with `pidAlive` rather than presented
@@ -100,8 +106,21 @@ export function rowsFor(cat, { doctor, svc, hist, width, filter }) {
     const mcp = svc?.agents?.mcp;
     const own = sk?.own ?? { available: [], installed: [] };
     const tp = sk?.thirdParty ?? { pinned: [], installed: [] };
+    const tools = mcp?.tools ?? [];
+    const effects = tools.filter((t) => t.effects).length;
     return [
       line("mcp server", mcp?.present ? mcp.path : "missing", mcp?.present ? undefined : C.warn),
+      line("mcp tools", tools.length
+        ? `${tools.length} · ${effects} side-effecting, each behind a confirmation`
+        : "no manifest — packages/mcp is not present here", tools.length ? undefined : C.muted),
+      ...tools.map((t) => html`
+        <${Text} key=${t.name} wrap="truncate">
+          <${Text} color=${t.effects ? C.warn : C.ok}>${"    " + (t.effects ? "!" : "·") + " "}<//>
+          <${Text}>${pad(t.name, 24)}<//>
+          <${Text} color=${C.muted}>${pad(t.group, 13)}<//>
+          <${Text} color=${t.effects ? C.warn : C.muted}>
+            ${trunc(t.confirm ? `needs ${t.confirm}` : `wraps ${t.wraps}`, Math.max(0, w - 43))}<//>
+        <//>`),
       line("hydra skills", `${own.installed.length}/${own.available.length} installed — node packages/skills/install.mjs`),
       line("pinned bundle", `${tp.installed.length}/${tp.pinned.length} installed — npx skills add welttowelt/strk20-skills`),
       line("install dir", sk?.dir ?? "—"),
