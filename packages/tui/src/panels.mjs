@@ -45,8 +45,11 @@ const servicesPane = {
         note: s.devnet.up && s.devnet.blockNumber !== null ? `block ${s.devnet.blockNumber}` : null,
         detail: { url: s.devnet.url, chainId: s.devnet.chainId, block: s.devnet.blockNumber,
           pid: s.devnet.pid, "pid alive": String(s.devnet.pidAlive), reason: s.devnet.reason } },
-      { name: "indexer", up: s.indexer.up, value: s.indexer.up ? s.indexer.url : (s.indexer.reason ?? "down"),
-        note: s.indexer.up ? `lag ${s.indexer.lagSecs ?? "?"}s` : null,
+      { name: "indexer", up: s.indexer.up && s.indexer.healthy, warn: s.indexer.up,
+        value: s.indexer.up ? s.indexer.url : (s.indexer.reason ?? "down"),
+        note: s.indexer.up
+          ? `lag ${s.indexer.lagSecs ?? "?"}s${s.indexer.healthy ? "" : " · idle, not down"}`
+          : null,
         detail: { url: s.indexer.url, status: s.indexer.status, block: s.indexer.blockNumber,
           "lag secs": s.indexer.lagSecs, pid: s.indexer.pid, "pid alive": String(s.indexer.pidAlive) } },
       // The old panel hard-coded up=false warn=true and the literal

@@ -394,7 +394,8 @@ function App() {
   const brand = cols >= 100 ? " hydra ── six heads " : " hydra ─ six heads ";
   const glyphs = [
     [glyph(up), tone(up), " devnet  "],
-    [glyph(svc?.indexer?.up), tone(svc?.indexer?.up), " indexer  "],
+    [glyph(svc?.indexer?.up && svc?.indexer?.healthy, svc?.indexer?.up),
+     tone(svc?.indexer?.up && svc?.indexer?.healthy, svc?.indexer?.up), " indexer  "],
     ["◐", C.warn, ` prover ${svc?.prover?.mode ?? "?"}  `],
   ];
   const glyphW = glyphs.reduce((n, [g, , t]) => n + g.length + t.length, 0);
