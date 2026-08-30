@@ -18,6 +18,8 @@
 
 import { P } from "./commitment.ts";
 import { ID_BYTES } from "./pointer.ts";
+import type { Pointer } from "./pointer.ts";
+import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
 
 /** Two. The whole on-chain footprint of a message. */
 export const NOTE_FELTS = 2;
@@ -52,8 +54,17 @@ export function feltToPointer(felt: bigint): Uint8Array {
  * Returns a fixed-length tuple rather than an array so a caller cannot append to it, and takes
  * no content argument at all — the content is in the vault, and the only thing that reaches
  * the chain is a masked reference to it plus a commitment to what it says.
+ *
+ * The pointer type is where I6 is enforced. It accepts `Pointer<VAULT_DOMAIN>` and nothing
+ * else, so a pointer derived from sandbox material — disposable keys that must never touch the
+ * chain — will not compile here. That is the "on-chain code paths refuse it" half of I6's
+ * acceptance condition, and it costs one type parameter rather than a runtime check somebody
+ * has to remember to call.
  */
-export function noteCalldata(pointer: Uint8Array, commitment: bigint): readonly [bigint, bigint] {
+export function noteCalldata(
+  pointer: Pointer<typeof VAULT_DOMAIN>,
+  commitment: bigint,
+): readonly [bigint, bigint] {
   if (commitment < 0n || commitment >= P) throw new Error("commitment is not a field element");
   return [pointerToFelt(pointer), commitment] as const;
 }

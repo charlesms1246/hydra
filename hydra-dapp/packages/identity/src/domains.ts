@@ -50,8 +50,23 @@ import { hkdfSync, randomBytes } from "node:crypto";
 export const POOL_DOMAIN = "hydra/pool/viewing-key/v1";
 export const VAULT_DOMAIN = "hydra/vault/content-key/v1";
 
-export type Domain = typeof POOL_DOMAIN | typeof VAULT_DOMAIN;
-export const DOMAINS: readonly Domain[] = [POOL_DOMAIN, VAULT_DOMAIN];
+/**
+ * Disposable material for the sandbox — invariant I6.
+ *
+ * The web surfaces include "a sandbox whose keys are disposable and never touch the chain",
+ * and I6's test requires that "sandbox key material carries a distinct type that on-chain code
+ * paths refuse". This is that type. It is a full domain rather than a flag, so a sandbox secret
+ * is not merely marked as disposable — it is cryptographically unrelated to the real one, and
+ * `requireDomain` turns every existing boundary into a sandbox boundary for free.
+ *
+ * The refusal that matters is in `channel/src/note.ts`: what reaches the chain is a pointer,
+ * and a pointer carries the domain it was derived under, so a sandbox pointer will not type-check
+ * as calldata.
+ */
+export const SANDBOX_DOMAIN = "hydra/sandbox/disposable/v1";
+
+export type Domain = typeof POOL_DOMAIN | typeof VAULT_DOMAIN | typeof SANDBOX_DOMAIN;
+export const DOMAINS: readonly Domain[] = [POOL_DOMAIN, VAULT_DOMAIN, SANDBOX_DOMAIN];
 
 declare const entropyBrand: unique symbol;
 declare const seedBrand: unique symbol;

@@ -24,8 +24,31 @@
  */
 
 import { createHash } from "node:crypto";
-import { VAULT_DOMAIN, expose, requireDomain, subKey } from "../../identity/src/domains.ts";
+import { SANDBOX_DOMAIN, VAULT_DOMAIN, expose, requireDomain, subKey } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
+
+/**
+ * Domains a channel may live in — invariant I6.
+ *
+ * The sandbox runs the same channel machinery on disposable keys, so it needs the same
+ * functions. What it must never do is reach the chain, and that refusal lives on the pointer
+ * rather than here: `Pointer<D>` remembers which domain produced it and `note.ts` accepts only
+ * the real one.
+ */
+export type ChannelDomain = typeof VAULT_DOMAIN | typeof SANDBOX_DOMAIN;
+
+declare const pointerBrand: unique symbol;
+
+/**
+ * A pointer, tagged with the domain of the channel that produced it.
+ *
+ * Branded rather than opaque, and the direction is what makes that safe. I1 needed opacity
+ * because it was preventing key material from *escaping* into a `Uint8Array`. Here the job is
+ * the reverse — restricting what may be passed *in* — and a plain `Uint8Array` is not
+ * assignable to a branded one, so the brand is exactly the barrier required.
+ */
+export type Pointer<D extends ChannelDomain = ChannelDomain> =
+  Uint8Array & { readonly [pointerBrand]: D };
 
 /**
  * 31 bytes, not 32.
@@ -50,11 +73,11 @@ export function blobIdFrom(ciphertext: Uint8Array): Uint8Array {
  * reach here from a pool secret — the type rejects it and `requireDomain` rejects it again
  * for call sites that arrived through an `as any`.
  */
-export function channelSecret(
-  vaultRoot: Secret<typeof VAULT_DOMAIN>,
+export function channelSecret<D extends ChannelDomain>(
+  root: Secret<D>,
   channelId: string,
-): Secret<typeof VAULT_DOMAIN> {
-  return subKey(requireDomain(vaultRoot, VAULT_DOMAIN), `channel ${channelId}`);
+): Secret<D> {
+  return subKey(requireDomain(root, root.domain), `channel ${channelId}`) as Secret<D>;
 }
 
 /**
@@ -63,21 +86,21 @@ export function channelSecret(
  * Keyed by sequence number so a resent blob does not publish a repeated pointer: the same
  * content at two positions must look unrelated on chain, or a repeat is visible to anyone.
  */
-function pad(channel: Secret<typeof VAULT_DOMAIN>, seq: number): Uint8Array {
-  return expose(subKey(channel, `pointer ${seq}`), VAULT_DOMAIN).slice(0, ID_BYTES);
+function pad<D extends ChannelDomain>(channel: Secret<D>, seq: number): Uint8Array {
+  return expose(subKey(channel, `pointer ${seq}`), channel.domain).slice(0, ID_BYTES);
 }
 
 const xor = (a: Uint8Array, b: Uint8Array): Uint8Array =>
   Uint8Array.from(a, (byte, i) => byte ^ b[i]);
 
 /** The value published on chain: the blob id, masked. */
-export function pointerFor(
-  channel: Secret<typeof VAULT_DOMAIN>,
+export function pointerFor<D extends ChannelDomain>(
+  channel: Secret<D>,
   blobId: Uint8Array,
   seq: number,
-): Uint8Array {
+): Pointer<D> {
   if (blobId.length !== ID_BYTES) throw new Error(`blob id must be ${ID_BYTES} bytes`);
-  return xor(blobId, pad(channel, seq));
+  return xor(blobId, pad(channel, seq)) as Pointer<D>;
 }
 
 /**
@@ -89,8 +112,8 @@ export function pointerFor(
  * error. Anything relying on this to authenticate a message is relying on the wrong thing;
  * that job belongs to the content commitment bound into the note.
  */
-export function recoverBlobId(
-  channel: Secret<typeof VAULT_DOMAIN>,
+export function recoverBlobId<D extends ChannelDomain>(
+  channel: Secret<D>,
   pointer: Uint8Array,
   seq: number,
 ): Uint8Array {

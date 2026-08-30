@@ -100,6 +100,8 @@ test("a value outside the field is refused rather than wrapped", () => {
   const pointer = pointerFor(chan, blobIdFrom(new Uint8Array(8)), 0);
   assert.throws(() => noteCalldata(pointer, P), /field element/);
   assert.throws(() => noteCalldata(pointer, -1n), /field element/);
-  assert.throws(() => noteCalldata(new Uint8Array(32), 1n), /31 bytes/);
+  // Cast because the type now also carries the channel domain (I6); this line is about the
+  // runtime length guard, which still has to hold for callers that arrived past the type.
+  assert.throws(() => noteCalldata(new Uint8Array(32) as never, 1n), /31 bytes/);
   assert.throws(() => feltToPointer(P - 1n), /31 bytes/);
 });

@@ -139,7 +139,9 @@ test("none of the seven publish routes compiles", () => {
   const fixture = lines.filter((l) => l.includes("i5-must-not-compile"));
   assert.ok(fixture.length >= 7,
     `the fixture produced ${fixture.length} type errors, expected at least 7:\n${out}`);
-  // Nothing ELSE may fail to type-check, or this passes for the wrong reason.
-  const other = lines.filter((l) => !l.includes("i5-must-not-compile"));
-  assert.deepEqual(other, [], `type errors outside the fixture:\n${other.join("\n")}`);
+  // Nothing ELSE may fail to type-check, or this passes for the wrong reason. Every
+  // `*-must-not-compile.ts` is excluded, not just this one: they exist to fail, and a new
+  // invariant's fixture must not break an older invariant's build gate.
+  const other = lines.filter((l) => !/must-not-compile/.test(l));
+  assert.deepEqual(other, [], `type errors outside the fixtures:\n${other.join("\n")}`);
 });
