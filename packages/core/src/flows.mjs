@@ -5,10 +5,10 @@
  * deletes on `hydra down` — a flow you built is yours, and losing it because you
  * stopped a devnet would be absurd.
  *
- * A flow stores enum members and strings only: an action type, account names, a
- * token symbol, a whole-token amount. Never a function and never a command string,
- * because this file is read back and executed against a live chain, and a saved
- * shell fragment is an obvious way to turn a config file into an exploit.
+ * A flow stores enum members and strings only: an action type, account names or
+ * addresses, a token symbol, a whole-token amount. Never a function and never a
+ * command string, because this file is read back and executed against a live chain,
+ * and a saved shell fragment is an obvious way to turn a config file into an exploit.
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -29,6 +29,24 @@ const file = () => join(process.env.HYDRA_HOME ?? HYDRA_HOME, "flows.json");
 /** The action types this stack can actually submit, as opposed to reason about. */
 export const RUNNABLE = ["register", "deposit", "transfer"];
 
+/** A felt address, as opposed to one of the stack's account names. */
+const isAddress = (v) => /^0x[0-9a-fA-F]{1,64}$/.test(String(v ?? "").trim());
+
+/**
+ * Why a flow cannot be submitted, or null when it can.
+ *
+ * Two reasons, and they are different in kind. A type with no control endpoint is a
+ * gap in this stack; a pasted address is a gap in what a local devnet can be asked
+ * to do at all — `control.mjs:41` keys its accounts by NAME, and no amount of API
+ * surface makes a party whose key nobody holds able to sign.
+ */
+export function whyNotRunnable(flow) {
+  if (!RUNNABLE.includes(flow.type)) return "no control endpoint — preview only";
+  if (isAddress(flow.from)) return "from is an address — this stack holds no key for it";
+  if (isAddress(flow.to)) return "to is an address — the control API takes account names";
+  return null;
+}
+
 /**
  * Validate a flow. Returns `{ok, flow}` or `{ok:false, error}`.
  *
@@ -45,19 +63,20 @@ export function validate(input) {
   if (!name) return { ok: false, error: "a flow needs a name" };
   const amount = String(input?.amount ?? "").trim();
   if (amount && !/^\d+(\.\d+)?$/.test(amount)) return { ok: false, error: "amount must be a number" };
-  return {
-    ok: true,
-    flow: {
-      id: input?.id ?? `f${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-      name,
-      type,
-      from: String(input?.from ?? "").trim().slice(0, 40) || null,
-      to: String(input?.to ?? "").trim().slice(0, 40) || null,
-      token: String(input?.token ?? "STRK").trim().slice(0, 10),
-      amount: amount || null,
-      runnable: RUNNABLE.includes(type),
-    },
+  const flow = {
+    id: input?.id ?? `f${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    name,
+    type,
+    // 66 characters, because `from` and `to` may now be a full felt address and not
+    // only a name. The old 40-character clamp would have stored a truncated address,
+    // which is a different address.
+    from: String(input?.from ?? "").trim().slice(0, 66) || null,
+    to: String(input?.to ?? "").trim().slice(0, 66) || null,
+    token: String(input?.token ?? "STRK").trim().slice(0, 10),
+    amount: amount || null,
   };
+  const reason = whyNotRunnable(flow);
+  return { ok: true, flow: { ...flow, runnable: !reason, reason } };
 }
 
 export async function listFlows() {
