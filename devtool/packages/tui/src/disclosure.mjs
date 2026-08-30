@@ -269,11 +269,8 @@ export const AnonDrawer = ({ report, actionIndex, width, bodyRows, focused, scro
 /** Read once at module load. Kept as data; nothing here is a string literal. */
 const ART = (() => {
   try {
-    const raw = readFileSync(join(REPO, "ascii-art.md"), "utf8").split("\n");
-    const a = raw.findIndex((l) => l.startsWith("```"));
-    const b = raw.findIndex((l, i) => i > a && l.startsWith("```"));
-    if (a < 0 || b < 0) return null;
-    const src = raw.slice(a + 1, b);
+    const src = readFileSync(join(HERE, "art.txt"), "utf8").replace(/\n$/, "").split("\n");
+    if (!src.length) return null;
     return { src, h: src.length, w: Math.max(...src.map((l) => l.length)) };
   } catch {
     return null;

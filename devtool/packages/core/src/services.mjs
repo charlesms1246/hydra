@@ -11,6 +11,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = join(here, "..", "..", "..");
+/** `.agents/` is repo-wide, not the devtool's — it stays a level above after the split. */
+const ROOT = join(REPO, "..");
 
 /** Names of whatever is in a `<name>/SKILL.md` layout under `dir`. */
 function skillsIn(dir) {
@@ -45,7 +47,7 @@ function pinnedSkills() {
  */
 export function agentStatus() {
   const mcpServer = join(REPO, "packages", "mcp", "src", "server.mjs");
-  const skillsDir = join(REPO, ".agents", "skills");
+  const skillsDir = join(ROOT, ".agents", "skills");
   const installed = skillsIn(skillsDir);
   const own = skillsIn(join(REPO, "packages", "skills"));
   const pinned = pinnedSkills();

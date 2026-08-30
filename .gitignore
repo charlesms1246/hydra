@@ -8,7 +8,7 @@ target/
 .DS_Store
 
 # experiment outputs are regenerated; the harness is the artifact
-experiments/**/results*.json
+devtool/experiments/**/results*.json
 
 # HELD pending coordinated disclosure to StarkWare (HANDOFF.md §5).
 # These are ignored, not merely untracked, so `git add -A` cannot sweep them
@@ -17,8 +17,8 @@ experiments/**/results*.json
 findings/
 upstream-prs/
 claude-docs/
-packages/skills/
-packages/mcp/
+devtool/packages/skills/
+devtool/packages/mcp/
 
 # Third-party STRK20 agent skills, installed via:
 #   npx skills add welttowelt/strk20-skills
