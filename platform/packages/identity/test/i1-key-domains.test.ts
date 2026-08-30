@@ -1,0 +1,147 @@
+/**
+ * I1 — no derivation path between pool keys and vault keys.
+ *
+ * `HYDRA_HANDOFF.md` I1: the pool encrypts the user's private viewing key to an auditor
+ * key read from contract storage — mandatory, no opt-out, no substitution, write-once,
+ * no rotation (`.upstream/packages/privacy/src/privacy.cairo:329-336`). Anyone holding
+ * that key decrypts every note, derives every channel key and reads the social graph.
+ * So the pool cannot be a confidentiality boundary, and vault content keys must live in
+ * a derivation domain with no path to or from the pool viewing key **in either
+ * direction**.
+ *
+ * WHAT THIS TEST CAN AND CANNOT DO. It cannot prove no derivation path exists — no test
+ * can; that is a claim about all possible functions. What it proves is narrower and
+ * still worth having:
+ *
+ *   1. the two domains are cryptographically separated, so one root seed yields
+ *      unrelated keys — and if `derive` ever stops mixing the domain in, this fails;
+ *   2. the API refuses to carry material across the boundary at RUNTIME;
+ *   3. the API refuses it at COMPILE TIME, which is the "fails the build" half of the
+ *      handoff's acceptance condition;
+ *   4. exactly one function mints a seed and exactly one reads raw bytes, so the
+ *      audit surface is two functions rather than a package.
+ *
+ * The residual risk it does NOT cover is named in `platform/decisions/0001-key-domains.md`:
+ * a shared *upstream* seed. If one wallet signature or passphrase ever feeds both the
+ * SDK's viewing-key derivation and `rootSeed`, every assertion below still passes and
+ * I1 is still broken. That is why nothing here derives a pool key.
+ */
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+import {
+  POOL_DOMAIN, VAULT_DOMAIN, DOMAINS,
+  rootSeed, randomEntropy, entropyFrom, derive, subKey, requireDomain, expose, adoptPoolKey,
+} from "../src/domains.ts";
+import { contentKey, vaultRoot } from "../src/vault-key.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const seed = rootSeed(entropyFrom(new Uint8Array(32).fill(7), "test vector"));
+
+test("the two domains are distinct, and neither is a prefix of the other", () => {
+  assert.notEqual(POOL_DOMAIN, VAULT_DOMAIN);
+  // A prefix collision defeats separation in any construction that concatenates the
+  // tag with a label. Cheap to assert, easy to reintroduce.
+  assert.ok(!POOL_DOMAIN.startsWith(VAULT_DOMAIN));
+  assert.ok(!VAULT_DOMAIN.startsWith(POOL_DOMAIN));
+  assert.equal(new Set(DOMAINS).size, DOMAINS.length);
+});
+
+test("one seed yields unrelated keys in the two domains", () => {
+  const pool = expose(derive(POOL_DOMAIN, seed), POOL_DOMAIN);
+  const vault = expose(derive(VAULT_DOMAIN, seed), VAULT_DOMAIN);
+  assert.equal(pool.length, 32);
+  assert.notDeepEqual(pool, vault);
+  // Not merely different: no shared prefix. A `derive` that appended the domain after
+  // the KDF, or truncated one shared stream, passes the check above and fails this.
+  assert.notEqual(pool[0], vault[0]);
+  // Labels separate within a domain too.
+  const a = expose(derive(VAULT_DOMAIN, seed, "a"), VAULT_DOMAIN);
+  const b = expose(derive(VAULT_DOMAIN, seed, "b"), VAULT_DOMAIN);
+  assert.notDeepEqual(a, b);
+  // Deterministic, or none of the above is reproducible.
+  assert.deepEqual(a, expose(derive(VAULT_DOMAIN, seed, "a"), VAULT_DOMAIN));
+  // And a different seed gives a different key, which is what makes it a seed.
+  assert.notDeepEqual(a, expose(derive(VAULT_DOMAIN, rootSeed(randomEntropy()), "a"), VAULT_DOMAIN));
+});
+
+test("a pool secret cannot be used where a vault secret is required — at runtime", () => {
+  const pool = derive(POOL_DOMAIN, seed);
+  assert.throws(() => requireDomain(pool, VAULT_DOMAIN), /pool\/viewing-key/);
+  assert.throws(() => expose(pool, VAULT_DOMAIN), /pool\/viewing-key/);
+  // What an unsound call site looks like after an `as any`. The runtime tag has to stop
+  // it even though the type already did.
+  assert.throws(() => contentKey(pool as never, "blob-1"), /pool\/viewing-key/);
+});
+
+test("sub-keys stay in their domain and are scoped per blob", () => {
+  const root = vaultRoot(seed);
+  assert.equal(root.domain, VAULT_DOMAIN);
+  const one = contentKey(root, "blob-1");
+  const two = contentKey(root, "blob-2");
+  assert.equal(one.domain, VAULT_DOMAIN);
+  assert.notDeepEqual(expose(one, VAULT_DOMAIN), expose(two, VAULT_DOMAIN));
+  assert.notDeepEqual(expose(one, VAULT_DOMAIN), expose(root, VAULT_DOMAIN));
+  // subKey carries the domain with it — it takes no domain argument, so it cannot cross.
+  assert.equal(subKey(derive(POOL_DOMAIN, seed), "x").domain, POOL_DOMAIN);
+});
+
+test("an adopted pool viewing key is tagged, and is not a seed", () => {
+  // We never DERIVE a pool viewing key. The SDK does, and this tags it the moment it
+  // enters our code so every later use is checked.
+  const adopted = adoptPoolKey(0x1234n);
+  assert.equal(adopted.domain, POOL_DOMAIN);
+  assert.throws(() => requireDomain(adopted, VAULT_DOMAIN), /pool\/viewing-key/);
+  assert.equal(expose(adopted, POOL_DOMAIN).at(-2), 0x12);
+});
+
+test("exactly one function mints a seed, and exactly one reads raw bytes", () => {
+  // /usr/bin/grep, not the shell's: in this environment `grep` is a function wrapping
+  // --ignore-files, and an audit that silently skips files is not an audit.
+  // grep exits 1 on no match, which execFileSync throws for — and zero matches is the
+  // interesting failure here, not an error.
+  const count = (re: string) => {
+    try {
+      return execFileSync("/usr/bin/grep", ["-rhoE", re, join(HERE, "..", "src")], { encoding: "utf8" })
+        .split("\n").filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  };
+  assert.equal(count("^export function rootSeed\\b"), 1, "not exactly one place mints a Seed");
+  assert.equal(count("^export function expose\\b"), 1, "not exactly one place reads raw key bytes");
+  // And no other export may hand out a Uint8Array of key material.
+  assert.equal(count("^export function [a-zA-Z]+[^;]*\\): Uint8Array"), 1,
+    "a second export returns raw key bytes");
+});
+
+test("the cross-domain derivation does not compile", () => {
+  // The handoff's acceptance condition: the test "fails the build when deliberately
+  // broken". This is that check. `i1-must-not-compile.ts` attempts every route from a
+  // pool Secret into the vault domain; tsc must reject all of them.
+  const local = join(HERE, "..", "node_modules", ".bin", "tsc");
+  const shared = join(HERE, "..", "..", "..", "..", "packages", "linter", "node_modules", ".bin", "tsc");
+  const tsc = existsSync(local) ? local : existsSync(shared) ? shared : null;
+  // A missing type-checker is a FAILURE, not a skip. Treating an unrun build check as
+  // green is exactly how a build-time guarantee stops being one.
+  assert.ok(tsc, "no tsc — run `npm i -D typescript` in platform/packages/identity");
+
+  let out = "";
+  try {
+    execFileSync(tsc, ["--noEmit", "-p", join(HERE, "..", "tsconfig.json")], { encoding: "utf8" });
+  } catch (e) {
+    out = String((e as { stdout?: string }).stdout ?? "");
+  }
+  const lines = out.split("\n").filter((l) => /error TS/.test(l));
+  const fixture = lines.filter((l) => l.includes("i1-must-not-compile"));
+  assert.ok(fixture.length >= 6,
+    `the fixture produced ${fixture.length} type errors, expected at least 6:\n${out}`);
+  // Nothing ELSE may fail to type-check, or this test passes for the wrong reason.
+  const other = lines.filter((l) => !l.includes("i1-must-not-compile"));
+  assert.deepEqual(other, [], `type errors outside the fixture:\n${other.join("\n")}`);
+});

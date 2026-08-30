@@ -1,0 +1,22 @@
+[package]
+name = "hydra_authorship"
+version = "0.1.0"
+edition = "2024_07"
+
+# The local toolchain, not the pool's. This is our own deployment and shares no ABI
+# with `.upstream/packages/privacy` — it must never be built into that workspace.
+[dependencies]
+starknet = "2.18.0"
+
+[dev-dependencies]
+snforge_std = "0.63.0"
+
+# No `[[target.starknet-contract]]` yet: there is no `#[starknet::contract]` here, only
+# a pure function, and declaring the target emitted `external contracts not found`.
+# It goes back when Phase 5 has a contract to deploy.
+
+[scripts]
+test = "snforge test"
+
+[tool.scarb]
+allow-prebuilt-plugins = ["snforge_std"]
