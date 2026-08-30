@@ -81,6 +81,8 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
       return { who, txHash: receipt.transaction_hash ?? null };
     },
 
+    // `amount` is in BASE units, as the SDK's deposit()/transfer() take it. Callers
+    // that mean whole tokens convert with core's toBaseUnits first.
     async shield({ who = "alice", amount = "100", token = "STRK" }) {
       const tokenAddr = token === "ETH" ? env.eth : env.strk;
       note(`shield ${amount} ${token} for ${who}`);
