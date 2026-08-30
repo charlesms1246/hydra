@@ -25,6 +25,21 @@ export async function balanceOf(rpcUrl, token, account) {
 // starknet_keccak("balanceOf")
 const SELECTOR_BALANCE_OF = "0x2e4263afad30923c891518314c3c95dbe830a16874e8abc5777a9a20b54c76e";
 
+/**
+ * Whole tokens to base units — the inverse of `formatUnits`.
+ *
+ * The pool's SDK takes `deposit({ amount: BigInt })` in BASE units, and upstream's
+ * e2e passes `100n`, which is 1e-16 STRK. The TUI labelled that same `100` as
+ * "100 STRK", which overstated it by 10^18. Every amount crossing into the control
+ * API goes through here now, so the number on the label and the number on the wire
+ * are the same quantity.
+ */
+export function toBaseUnits(whole, decimals = 18) {
+  const [int, frac = ""] = String(whole).trim().split(".");
+  const f = (frac + "0".repeat(decimals)).slice(0, decimals);
+  return (BigInt(int || "0") * 10n ** BigInt(decimals) + BigInt(f || "0")).toString();
+}
+
 export function formatUnits(raw, decimals = 18, places = 4) {
   if (raw === null) return null;
   const v = BigInt(raw);
