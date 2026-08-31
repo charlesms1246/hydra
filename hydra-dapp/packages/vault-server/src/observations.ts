@@ -204,6 +204,12 @@ export const DERIVABLE: readonly Derivation[] = [
     what: "which conversation belongs to which publishing account — by matching a channel's object count against an account's message count, with no need to link any individual upload to any individual event",
     why: "the vault's side gives a set of blobs per channel (read.channelSet) and the chain's side gives a set of events per account, and matching SETS is a different problem from matching items. Cover does not blunt it: cover is a fixed number of decoys per event, so a channel's object count is the message count times a published constant and divides back out exactly. The 0.2 figure elsewhere on this table is about matching an upload to an event, which this attack never attempts",
   },
+  {
+    id: "handshake.opener",
+    given: "the blockchain, which is public, and a person's published identity key",
+    what: "which account opened a conversation with that person — by taking the chain publish nearest after a write to their mailbox",
+    why: "`inbox.sender` holds against the vault alone: a slot is addressed by its recipient and nothing about the sender decides where it lands. Opening a conversation does two things, though — a write to the mailbox and a first message whose pointer goes on chain — and the chain names whoever published. The observer does not need the vault to say who wrote; the clock joins the two records. Every message UPLOAD is scheduled into a jitter window with decoys around it and this write is not, which is the asymmetry that makes it work",
+  },
 ];
 
 export const DERIVABLE_IDS: readonly string[] = DERIVABLE.map((d) => d.id);

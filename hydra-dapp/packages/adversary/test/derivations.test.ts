@@ -140,6 +140,39 @@ const DERIVATIONS: Record<string, () => Promise<void>> = {
     assert.equal(new Set(chain.values()).size, Object.keys(counts).length);
   },
 
+  "handshake.opener": async () => {
+    // Two records and a clock. The mailbox write says somebody opened a conversation with this
+    // person; the chain says which account published a pointer moments later. Neither names the
+    // opener; together they do.
+    const openers = ["a", "b", "c"];
+    const written = new Map<string, number>();
+    const chain: { author: string; at: number }[] = [];
+    let clock = 0;
+    const transport: Transport = {
+      async put(id) { written.set(id, clock); return true; },
+      async get(ids) {
+        return new Map([...written.keys()].filter((k) => ids.includes(k)).map((k) => [k, new Uint8Array(0)]));
+      },
+    };
+    const bobKeyLocal = bundleFor(bob, 0, 0).identityKey;
+    const truth = new Map<string, string>();
+    for (const [i, who] of openers.entries()) {
+      clock = i * 3_600_000;
+      const before = new Set(written.keys());
+      const sender = derive(VAULT_DOMAIN,
+        rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(110 + i), who))));
+      await postPrekey(transport, bobKeyLocal, initiate(sender, bundleFor(bob, 0, i)).message);
+      truth.set([...written.keys()].find((k) => !before.has(k))!, who);
+      chain.push({ author: who, at: clock + 5_000 });
+    }
+    // The derivation: for each write, the nearest publish after it.
+    for (const [slot, at] of written) {
+      const nearest = chain.filter((e) => e.at >= at).sort((x, y) => x.at - y.at)[0];
+      assert.equal(nearest.author, truth.get(slot),
+        "the nearest publish is no longer the opener; the write must be scheduled now");
+    }
+  },
+
   "inbox.activity": async () => {
     const vault = freshVault();
     const invites = Array.from({ length: 64 }, (_, i) => `inv-${i}`);

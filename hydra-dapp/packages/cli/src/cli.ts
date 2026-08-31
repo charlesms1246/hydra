@@ -139,6 +139,10 @@ switch (command) {
     console.log("the storage server can now see that they are reachable and count what is");
     console.log("waiting for them. that is unavoidable without accounts, and accounts would");
     console.log("disclose more. see claude-docs/decisions/0013-prekey-delivery.md.");
+    console.log("");
+    console.log("AND: this write is not scheduled the way message uploads are. if you `send`");
+    console.log("in the next few minutes, the chain publish nearest this write is yours, and");
+    console.log("anyone with both records reads it off. measured above 90%. see 0018.");
     break;
   }
 
