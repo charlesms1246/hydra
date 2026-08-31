@@ -20,6 +20,7 @@
  *     hydra send NAME "text"                      publishes the pointer, queues the upload
  *     hydra flush                                 uploads what is due
  *     hydra read NAME
+ *     hydra disclose [--cite]                     what everyone involved can see
  *     hydra status
  *
  * `send` and `flush` are separate because the upload has to come later than the chain event —
@@ -32,6 +33,7 @@ import {
   fingerprint, vaultRootOf,
 } from "./commands.ts";
 import { starknet, poolChain } from "./chain.ts";
+import { statement } from "../../claims/src/statement.ts";
 import { load, save, exists, STATE_FILE } from "./state.ts";
 import type { State } from "./state.ts";
 
@@ -202,6 +204,32 @@ switch (command) {
     for (const m of await readChannel(state, chainFor(state), name)) {
       console.log(`${String(m.seq).padStart(3)}  ${m.text}`);
     }
+    break;
+  }
+
+  case "disclose": {
+    // The disclosure statement was generated, tested and rendered nowhere. A statement no user
+    // can read is a statement that exists for the test suite, and the whole point of computing
+    // it rather than writing it is that a person can act on it.
+    //
+    // `--cite` prints the source of every line, because a claim you cannot chase is a claim you
+    // have to take on trust, and this project's position is that you should not have to.
+    const cite = rest.includes("--cite");
+    const s = statement();
+    const show = (title: string, claims: readonly { says: string; from: string }[]) => {
+      console.log(`## ${title}
+`);
+      for (const c of claims) {
+        console.log(`- ${c.says}`);
+        if (cite) console.log(`  ${c.from}`);
+      }
+      console.log("");
+    };
+    show("What the people running this can see", s.whoCanSeeWhat);
+    show("What is protected, and how well", s.whatIsPartial);
+    show("What they cannot see", s.whatWeCannotSee);
+    console.log("Every line above is generated from the code that makes it true.");
+    console.log("Nothing here is a promise about what anyone will do with what they can see.");
     break;
   }
 

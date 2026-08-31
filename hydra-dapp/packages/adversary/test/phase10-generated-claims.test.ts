@@ -13,9 +13,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 import { statement, render, MEASURED } from "../../claims/src/statement.ts";
 import { OBSERVABLE, DERIVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
@@ -135,6 +138,27 @@ test("the statement makes no promise about behaviour, only about capability", ()
   }
   // Which is why the operator is named as a role, not as us.
   assert.ok(render(s).includes("Whoever runs"));
+});
+
+test("a person can actually read it, without a wallet or an account", () => {
+  // The statement was generated, tested, and rendered nowhere. A disclosure a user cannot get
+  // to is a disclosure that exists for the test suite. `hydra disclose` prints it, and this
+  // check runs the real command — with no state directory, because someone deciding whether to
+  // use the thing has not set it up yet.
+  const cli = join(HERE, "..", "..", "cli", "src", "cli.ts");
+  const out = execFileSync(process.execPath, [cli, "disclose"], {
+    encoding: "utf8",
+    env: { ...process.env, HYDRA_HOME: join(HERE, "does-not-exist") },
+  });
+  for (const row of [...OBSERVABLE, ...DERIVABLE]) {
+    assert.ok(out.includes(row.what), `${row.id} is on the table and not in what a user reads`);
+  }
+  for (const g of NOT_OBSERVABLE) {
+    assert.ok(out.includes(g.what), `${g.id} is on the table and not in what a user reads`);
+  }
+  // And it says what it is, so nobody mistakes a computed list for a marketing page.
+  assert.match(out, /generated from the code that makes it true/);
+  assert.match(out, /Nothing here is a promise about what anyone will do/);
 });
 
 test("render is deterministic and lists everything", () => {
