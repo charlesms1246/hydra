@@ -36,6 +36,15 @@ import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../.
 
 const RPC = process.env.HYDRA_RPC;
 const CHANNEL = process.env.HYDRA_CHANNEL;
+/**
+ * Where to start scanning. Zero on a devnet, which is twelve blocks old.
+ *
+ * A public Sepolia node will not scan fourteen million blocks for you — it returns nothing, and
+ * "no events" is indistinguishable from "the contract never emitted", which is exactly the
+ * failure this suite exists to catch. So the deployment reports its block and the caller passes
+ * it, rather than the test pretending the range is free.
+ */
+const FROM_BLOCK = Number(process.env.HYDRA_FROM_BLOCK ?? 0);
 
 /** The same inputs the deployment step published. Deterministic, so the event is findable. */
 const chan = channelSecret(
@@ -67,7 +76,7 @@ before(async () => {
     + "nobody notices has stopped working.");
   const page = await rpc("starknet_getEvents", {
     filter: {
-      from_block: { block_number: 0 },
+      from_block: { block_number: FROM_BLOCK },
       to_block: "latest",
       address: CHANNEL,
       chunk_size: 100,
