@@ -107,9 +107,12 @@ const note = (text: string, cols: number): string[] =>
  * string array the disclosure list reads fine, and drawn at eighty columns every continuation
  * line starts hard against the left border and the list stops looking like a list.
  */
-const bullet = (text: string, cols: number, marker = "- "): string[] =>
-  wrap(text, cols - marker.length)
-    .map((l, i) => (i === 0 ? marker : " ".repeat(marker.length)) + l);
+const bullet = (text: string, cols: number, marker = "- "): string[] => {
+  // `width`, not `.length`: a coloured marker carries escape sequences that occupy no columns,
+  // and indenting by their byte count pushes every continuation line off the right edge.
+  const n = width(marker);
+  return wrap(text, cols - n).map((l, i) => (i === 0 ? marker : " ".repeat(n)) + l);
+};
 
 // ---------------------------------------------------------------------------
 // Pages
@@ -131,8 +134,11 @@ function chats(m: Model, size: Size, height: number): string[] {
 
   const messages = current ? m.transcript[current] ?? [] : [];
   const body = messages.length
-    ? messages.flatMap((msg) =>
-      bullet(msg.text, size.cols - listWidth - 4, `${String(msg.seq).padStart(3)}  `))
+    ? messages.flatMap((msg) => bullet(
+      msg.text, size.cols - listWidth - 4,
+      // Who spoke, on every line's first row. A channel is two one-way keys, and which one
+      // opened a message is the only thing that establishes authorship on this screen.
+      msg.mine ? paint("you  ", "gray") : paint(`${current}  `, "cyan")))
     : note(current
       ? "nothing read yet. `r` fetches every chain event and asks the vault for every "
         + "candidate id at once — that batch IS the read defence, and it is why reading is "

@@ -22,6 +22,7 @@
 
 import type { Key } from "./keys.ts";
 import type { State } from "../../cli/src/state.ts";
+import type { Received } from "../../cli/src/commands.ts";
 
 export type Page = "chats" | "connect" | "identity" | "disclosure" | "status";
 
@@ -76,7 +77,7 @@ export type Event =
   | { readonly t: "tick"; readonly now: number }
   | { readonly t: "resize" }
   | { readonly t: "ok"; readonly text: string; readonly state?: State }
-  | { readonly t: "messages"; readonly channel: string; readonly messages: readonly { readonly seq: number; readonly text: string }[] }
+  | { readonly t: "messages"; readonly channel: string; readonly messages: readonly Received[] }
   | { readonly t: "error"; readonly text: string };
 
 export type LogLine = { readonly at: number; readonly text: string; readonly tone: "info" | "warn" | "bad" };
@@ -89,7 +90,7 @@ export type Model = {
   readonly fields: Readonly<Record<string, string>>;
   readonly channel: number;
   readonly scroll: number;
-  readonly transcript: Readonly<Record<string, readonly { readonly seq: number; readonly text: string }[]>>;
+  readonly transcript: Readonly<Record<string, readonly Received[]>>;
   readonly log: readonly LogLine[];
   readonly busy: string | null;
   readonly confirm: { readonly question: string; readonly label: string; readonly effect: Effect } | null;

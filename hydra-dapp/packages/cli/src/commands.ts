@@ -28,7 +28,8 @@ import { openForChannel, plaintextOf, ENCRYPTED_ENDPOINT } from "../../vault-cli
 import { MAX_BODY } from "../../vault-server/src/http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import {
-  derive, rootSeed, entropyFrom, fromOsRandom, fromStoredSeed, fromChannelWrap, VAULT_DOMAIN,
+  derive, rootSeed, entropyFrom, fromOsRandom, fromStoredSeed, fromChannelWrap, subKey, expose,
+  VAULT_DOMAIN,
 } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 import type { Chain } from "./chain.ts";
@@ -56,6 +57,51 @@ const channelOf = (state: State, name: string): Secret<typeof VAULT_DOMAIN> => {
   if (!c) throw new Error(`no channel called ${JSON.stringify(name)} — \`hydra open\` or \`hydra accept\` first`);
   return derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromChannelWrap(unhex(c.materialHex), c.peer))));
 };
+
+/**
+ * A CHANNEL IS TWO KEYS, ONE PER DIRECTION, and it was one until a reply was tried.
+ *
+ * With a single key both ends derive cover from the same `coverBody(channel, bucket, index)` at
+ * the same sequence numbers, so their decoys are byte-identical. Measured on a two-message
+ * exchange: ten uploads, **six** objects in the vault, eight invites spent to buy four. Worse
+ * than the waste — an id that arrives twice can only be cover, because that is the one object
+ * two people independently mint, so a vault keeping its request log identifies every decoy with
+ * certainty. That is the same 1.000 the unfetched-decoy defect scored, from the opposite end.
+ *
+ * And the sequence spaces collided: both parties counted from zero, so a transcript held two
+ * messages at seq 0 with no way to order them and no way to say who wrote which.
+ *
+ * So the handshake's material yields two sub-keys, and your ROLE decides which you send under.
+ * Everything downstream — the pointer pad, the blob id, the cover bodies, the read set — is
+ * per-direction, and a decoy of yours can no longer equal a decoy of theirs.
+ */
+const DIRECTION = {
+  initiator: "direction initiator-to-responder",
+  responder: "direction responder-to-initiator",
+} as const;
+
+const opposite = (role: ChannelState["role"]) =>
+  (role === "initiator" ? "responder" : "initiator") as ChannelState["role"];
+
+const roleOf = (state: State, name: string): ChannelState["role"] => {
+  const role = state.channels[name]?.role;
+  // Refused rather than defaulted. A state file written before this change has no role, and
+  // guessing one gives both ends the same direction — which is the exact bug, restored silently.
+  if (!role) {
+    throw new Error(
+      `the channel ${JSON.stringify(name)} predates two-way messaging and has no role. Open it `
+      + "again: a channel with no role cannot say which of its two keys is yours.");
+  }
+  return role;
+};
+
+/** The key this client SENDS under. */
+const sending = (state: State, name: string): Secret<typeof VAULT_DOMAIN> =>
+  subKey(channelOf(state, name), DIRECTION[roleOf(state, name)]);
+
+/** The key the other end sends under, which is the one this client READS. */
+const receiving = (state: State, name: string): Secret<typeof VAULT_DOMAIN> =>
+  subKey(channelOf(state, name), DIRECTION[opposite(roleOf(state, name))]);
 
 /**
  * Bundles and prekey messages on their way to a file, and back.
@@ -146,8 +192,10 @@ export const fingerprint = (bundle: Bundle): string =>
 // The handshake
 // ---------------------------------------------------------------------------
 
-const remember = (state: State, name: string, material: Uint8Array, peer: string): void => {
-  const entry: ChannelState = { materialHex: hex(material), peer, nextSeq: 0 };
+const remember = (
+  state: State, name: string, material: Uint8Array, peer: string, role: ChannelState["role"],
+): void => {
+  const entry: ChannelState = { materialHex: hex(material), peer, role, nextSeq: 0 };
   state.channels[name] = entry;
 };
 
@@ -155,7 +203,7 @@ const remember = (state: State, name: string, material: Uint8Array, peer: string
 export function open(state: State, name: string, bundle: Bundle): PrekeyMessage {
   if (state.channels[name]) throw new Error(`${name} already exists — pick another name`);
   const result = initiate(vaultRootOf(state), bundle);
-  remember(state, name, result.material, fingerprint(bundle));
+  remember(state, name, result.material, fingerprint(bundle), "initiator");
   return result.message;
 }
 
@@ -220,13 +268,30 @@ export async function collect(
 export function accept(state: State, name: string, message: PrekeyMessage): { usedOneTimePrekey: boolean } {
   if (state.channels[name]) throw new Error(`${name} already exists — pick another name`);
   const result = respondWith(vaultRootOf(state), state.prekeys, message);
-  remember(state, name, result.material, hex(message.identityKey).slice(0, 32));
+  remember(state, name, result.material, hex(message.identityKey).slice(0, 32), "responder");
   return { usedOneTimePrekey: result.agreed.usedOneTimePrekey };
 }
 
 // ---------------------------------------------------------------------------
 // Sending
 // ---------------------------------------------------------------------------
+
+/**
+ * The nullifier a message commits under.
+ *
+ * Per DIRECTION rather than per channel, so the two ends of a conversation no longer commit
+ * under one value. `commitment.ts` describes it as binding the commitment to an identity without
+ * naming it, and one nullifier for two people binds it to neither.
+ *
+ * THE RESIDUAL, and it is not small: this is derived from material BOTH ends hold, so it binds
+ * authorship against everyone except the person you are talking to. Your counterparty can
+ * compute your direction key and therefore your nullifier, and forge a message as you. Closing
+ * that needs a per-party secret the other end never learns — the sender's own vault root, with
+ * the recipient holding only a public commitment to it — which changes what Phase 5's proof is
+ * about. Written down rather than fixed here. See `decisions/0023-two-way-channels.md`.
+ */
+const nullifierFor = (state: State, name: string): bigint =>
+  BigInt(`0x${hex(expose(sending(state, name), VAULT_DOMAIN)).slice(0, 16)}`);
 
 /**
  * Publish a message's pointer now and QUEUE its upload for later.
@@ -249,10 +314,10 @@ export async function sendMessage(
   now: number = Date.now(),
   random?: () => number,
 ): Promise<{ txHash: string; uploadAt: number; decoys: number }> {
-  const channel = channelOf(state, name);
+  const channel = sending(state, name);
   const entry = state.channels[name];
   const seq = entry.nextSeq;
-  const config = { channel, nullifier: BigInt(`0x${entry.materialHex.slice(0, 16)}`), blockMs: state.blockMs };
+  const config = { channel, nullifier: nullifierFor(state, name), blockMs: state.blockMs };
   const outgoing = prepare(config, new TextEncoder().encode(text), seq, now, random);
 
   const txHash = await chain.publish(outgoing.calldata);
@@ -358,39 +423,59 @@ export async function flush(
 // ---------------------------------------------------------------------------
 
 /**
- * Read a channel: every event on chain, every plausible sequence number, one batched fetch.
+ * Read a channel: every event on chain, every plausible sequence number, one batched fetch, in
+ * BOTH directions.
  *
  * THE COST OF UNLINKABILITY IS QUADRATIC, and it is worth naming rather than hiding. A pointer
  * carries no channel and no sequence — that is the whole point, and `i3-timeline-join.test.ts`
  * is about it — so a reader cannot tell which events are theirs. `recoverBlobId` is an
  * unmasking, not a test: it returns a plausible id for any pointer and any seq. So the reader
- * computes a candidate id for every (event, seq) pair and asks the vault for all of them; the
- * ones that exist and then open under the channel key are the messages.
+ * computes a candidate id for every (event, seq, direction) triple and asks the vault for all of
+ * them; the ones that exist and then open under one of the two channel keys are the messages.
  *
- * That is `events × seq` ids for one conversation. A channel hint in the event would collapse
+ * That is `events × seq × 2` ids for one conversation. A channel hint in the event would collapse
  * it to linear and would be exactly the linkage the design refuses, so the cost is the feature.
  * What makes it affordable in practice is that the candidate set is ALSO the padded read batch
  * `read.target` requires — the work and the defence are the same work.
  */
+export type Received = {
+  readonly seq: number;
+  readonly text: string;
+  /** True for messages this client sent. A transcript that cannot say who spoke is not one. */
+  readonly mine: boolean;
+  /** The index of the chain event that carried it — the one ordering both ends agree on. */
+  readonly at: number;
+};
+
 export async function readChannel(
   state: State,
   chain: Chain,
   name: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ seq: number; text: string }[]> {
-  const channel = channelOf(state, name);
+): Promise<Received[]> {
+  const mine = sending(state, name);
+  const theirs = receiving(state, name);
   const events = await chain.events();
   const seqs = Array.from({ length: Math.max(events.length, MIN_READ_BATCH) }, (_, i) => i);
 
-  const candidates = events.flatMap((e) =>
-    seqs.map((seq) => ({ seq, pointer: feltToPointer(e.data[0]) })));
-  const ids = readSet(channel, candidates);
-  const bySeq = new Map(candidates.map((c) => [receive(channel, c.pointer, c.seq), c.seq]));
+  const candidates = events.flatMap((e, at) =>
+    seqs.map((seq) => ({ seq, at, pointer: feltToPointer(e.data[0]) })));
+
+  // Both directions, because a conversation is two of them and the ids do not overlap. It
+  // doubles the batch, which is the read defence paying for itself: the padding a lone reader
+  // would have had to invent is now other people's real traffic.
+  const ids = [...new Set([...readSet(mine, candidates), ...readSet(theirs, candidates)])];
+
+  const found = new Map<string, { seq: number; at: number; mine: boolean }>();
+  for (const c of candidates) {
+    found.set(receive(mine, c.pointer, c.seq), { seq: c.seq, at: c.at, mine: true });
+    found.set(receive(theirs, c.pointer, c.seq), { seq: c.seq, at: c.at, mine: false });
+  }
 
   const body = JSON.stringify(ids);
   // Checked here so the failure names its own cause. The vault answers "body too large", which
   // is true and unhelpful: what actually happened is that a channel grew until its candidate
-  // set times its decoy set stopped fitting in one request.
+  // set times its decoy set times its two directions stopped fitting in one request.
   if (body.length > MAX_BODY) {
     throw new Error(
       `this channel now needs ${ids.length} ids in one read (${Math.round(body.length / 1024)} KiB), `
@@ -402,18 +487,28 @@ export async function readChannel(
     method: "POST", body,
   });
   if (!res.ok) throw new Error(`the vault refused the read: ${await res.text()}`);
-  const { found } = await res.json() as { found: Record<string, string> };
+  const { found: blobs } = await res.json() as { found: Record<string, string> };
 
-  const out: { seq: number; text: string }[] = [];
-  for (const [id, b64] of Object.entries(found)) {
+  const out: Received[] = [];
+  for (const [id, b64] of Object.entries(blobs)) {
     const bytes = new Uint8Array(Buffer.from(b64, "base64"));
+    const where = found.get(id);
+    if (!where) continue;
     try {
       // A decoy or another channel's blob fails here, which is what GCM's tag is for. Silence
       // is correct: a reader that reported them would be reporting on traffic it cannot read.
-      out.push({ seq: bySeq.get(id) ?? -1, text: new TextDecoder().decode(plaintextOf(openForChannel(channel, bytes))) });
+      const channel = where.mine ? mine : theirs;
+      out.push({
+        seq: where.seq,
+        at: where.at,
+        mine: where.mine,
+        text: new TextDecoder().decode(plaintextOf(openForChannel(channel, bytes))),
+      });
     } catch { /* not ours */ }
   }
-  return out.sort((a, b) => a.seq - b.seq);
+  // Ordered by the chain, not by sequence number: each direction counts from zero, so sequence
+  // alone interleaves two conversations wrongly. The event order is the one both ends see.
+  return out.sort((a, b) => a.at - b.at || Number(a.mine) - Number(b.mine) || a.seq - b.seq);
 }
 
 /** Pad a batch that is somehow short. Exported so the test can assert the floor is respected. */

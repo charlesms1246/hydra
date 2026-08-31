@@ -192,8 +192,10 @@ switch (command) {
     const state = load();
     const [name] = positional;
     if (!name) usage();
+    // Direction, not just text. A channel is two one-way keys and a transcript that does not
+    // say which one opened a line is a transcript that puts your words in their mouth.
     for (const m of await readChannel(state, chainFor(state), name)) {
-      console.log(`${String(m.seq).padStart(3)}  ${m.text}`);
+      console.log(`${m.mine ? "you " : "them"} ${String(m.seq).padStart(3)}  ${m.text}`);
     }
     break;
   }

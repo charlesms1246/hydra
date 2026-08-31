@@ -41,6 +41,17 @@ export type ChannelState = {
   /** The bytes X3DH agreed, not the derived key — see `commands.ts` `channelOf`. */
   readonly materialHex: string;
   readonly peer: string;
+  /**
+   * Which end of the handshake this is, and it decides which of the channel's TWO keys this
+   * client sends under.
+   *
+   * A channel is not one key. It was, and a reply broke it: both parties derived the same cover
+   * from the same sequence numbers, so ten uploads became six objects, eight invites bought
+   * four, and every message sat at a sequence number the other end was also using. Nothing in
+   * the suite noticed, because nothing in the suite ever replied. See
+   * `claude-docs/decisions/0023-two-way-channels.md`.
+   */
+  readonly role: "initiator" | "responder";
   nextSeq: number;
 };
 
