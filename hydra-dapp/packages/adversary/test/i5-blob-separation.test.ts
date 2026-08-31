@@ -10,7 +10,7 @@
  *   1. "a fuzz/property test that attempts to publish an encrypted blob through every code
  *      path and asserts each one fails" — the runtime checks below;
  *   2. "a type-level separation that makes the mistake uncompilable" — `i5-must-not-compile.ts`
- *      attempts seven routes and tsc must reject all of them.
+ *      attempts eight routes and tsc must reject all of them.
  *
  * The standing rule this enforces, from §4: **publishing is never a mode, always an act.** Any
  * change that makes it easier to publish accidentally is a regression regardless of how it
@@ -121,7 +121,7 @@ test("no export converts one blob class into the other", () => {
   assert.match(constructors[0], /^export function publish\b/);
 });
 
-test("none of the seven publish routes compiles", () => {
+test("none of the eight publish routes compiles", () => {
   const local = join(HERE, "..", "node_modules", ".bin", "tsc");
   const shared = join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc");
   const tsc = existsSync(local) ? local : existsSync(shared) ? shared : null;
@@ -136,9 +136,15 @@ test("none of the seven publish routes compiles", () => {
     out = String((e as { stdout?: string }).stdout ?? "");
   }
   const lines = out.split("\n").filter((l) => /error TS/.test(l));
+  // Counted by DISTINCT LINE, not by error. Eight errors on seven routes passes a count check
+  // while one route silently compiles — and the route that compiles is the one that publishes
+  // a private message. Every numbered attempt has to be rejected on its own.
   const fixture = lines.filter((l) => l.includes("i5-must-not-compile"));
-  assert.ok(fixture.length >= 7,
-    `the fixture produced ${fixture.length} type errors, expected at least 7:\n${out}`);
+  const offending = new Set(fixture.map((l) => l.match(/\((\d+),/)?.[1]).filter(Boolean));
+  const attempts = readFileSync(join(HERE, "i5-must-not-compile.ts"), "utf8")
+    .split("\n").filter((l) => /^\/\/ \d+\./.test(l)).length;
+  assert.equal(offending.size, attempts,
+    `${attempts} numbered routes, ${offending.size} rejected — one of them compiles:\n${out}`);
   // Nothing ELSE may fail to type-check, or this passes for the wrong reason. Every
   // `*-must-not-compile.ts` is excluded, not just this one: they exist to fail, and a new
   // invariant's fixture must not break an older invariant's build gate.

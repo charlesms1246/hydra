@@ -10,7 +10,7 @@
  */
 
 import {
-  sealForChannel, publish, wireBytes, uploadPathFor, PUBLIC_ENDPOINT,
+  sealForChannel, publish, wireBytes, uploadPathFor, openForChannel, PUBLIC_ENDPOINT,
 } from "../../vault-client/src/blobs.ts";
 import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
@@ -42,5 +42,10 @@ publish(new Uint8Array([1, 2, 3]));
 
 // 7. Send an encrypted blob to the public endpoint by naming the endpoint directly.
 uploadPathFor(secret, PUBLIC_ENDPOINT);
+
+// 8. Decrypt it, then publish what came out. The route that opened when reading was built:
+//    `openForChannel` is the first function that ever produced a private message as plain
+//    bytes, and plain bytes are what `publish` takes. Reading it out has to be its own act.
+publish(openForChannel(chan, new Uint8Array(64)), intent);
 
 export { relabelled, stolenId };

@@ -1,0 +1,155 @@
+/**
+ * Two people hold a conversation — Phase 4's first acceptance clause, minus the desktop shell.
+ *
+ * Everything up to now proved halves. The sender could seal, pad, point, commit, schedule and
+ * upload; the operator could be shown to learn nothing; and `readPublic`'s comment said the
+ * encrypted class "is opened elsewhere" while **nowhere opened it**. A platform that can send
+ * and cannot receive has not been tested end to end, it has been tested end to middle.
+ *
+ * So this drives the whole loop through the real HTTP vault: alice sends three messages, bob
+ * fetches a padded batch, picks his out of it, opens them, and reads the text back. Then the
+ * ways it must fail — the wrong channel, altered bytes, a vault that files a blob under an id
+ * it does not hash to.
+ *
+ * WHAT IS STUBBED, SAID PLAINLY: bob is handed alice's channel secret directly. There is no key
+ * agreement in this platform yet. `openChannel` derives from ONE party's vault root, so the
+ * other party cannot compute it — in a real deployment it has to come from the pool's own
+ * channel between two registered viewing keys, and that is unbuilt. Every guarantee below is
+ * conditional on the two of them sharing that secret somehow, and nothing here establishes it.
+ */
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { send, openChannel } from "../../client/src/session.ts";
+import { readSet, select, MIN_READ_BATCH } from "../../client/src/read.ts";
+import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
+import { serve } from "../../vault-server/src/http.ts";
+import { openForChannel, plaintextOf, encryptedIdFor } from "../../vault-client/src/blobs.ts";
+import { BUCKETS } from "../../vault-client/src/buckets.ts";
+import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
+  from "../../identity/src/domains.ts";
+
+const BLOCK = 30_000;
+const config = (channel: ReturnType<typeof openChannel>) =>
+  ({ channel, nullifier: 7n, blockMs: BLOCK });
+
+const aliceRoot = derive(VAULT_DOMAIN,
+  rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(3), "alice"))));
+// The stub. See the header: bob cannot derive this, he is given it.
+const channel = openChannel(aliceRoot, "alice→bob");
+
+const TEXTS = ["hello", "the second one, which is longer than the first", "ok"];
+
+/** Alice's side: seal, point, commit, schedule — and the bytes that go to the vault. */
+const outgoing = TEXTS.map((t, seq) =>
+  send(config(channel), new TextEncoder().encode(t), seq, seq * BLOCK, () => 0.5));
+
+async function withVault(fn: (url: string, vault: Vault) => Promise<void>) {
+  const vault = new Vault({ invites: TEXTS.map((_, i) => `inv-${i}`), buckets: BUCKETS });
+  const { url, server } = await serve(vault);
+  try {
+    for (const [i, m] of outgoing.entries()) {
+      const res = await fetch(`${url}${ENCRYPTED_ENDPOINT}/${m.blobId}`, {
+        method: "PUT", headers: { "x-hydra-invite": `inv-${i}` }, body: m.body,
+      });
+      assert.equal(res.status, 201, `the vault refused an upload: ${await res.text()}`);
+    }
+    await fn(url, vault);
+  } finally {
+    server.close();
+  }
+}
+
+/** Bob's side: the pointers he read off the chain are all he has to start from. */
+const seen = outgoing.map((m, seq) => ({ seq, pointer: m.pointer as unknown as Uint8Array }));
+
+async function fetchBatch(url: string, ids: string[]): Promise<Map<string, Uint8Array>> {
+  const res = await fetch(`${url}${ENCRYPTED_ENDPOINT}`, {
+    method: "POST", body: JSON.stringify(ids),
+  });
+  const body = await res.json() as { found: Record<string, string> };
+  return new Map(Object.entries(body.found)
+    .map(([k, v]) => [k, new Uint8Array(Buffer.from(v, "base64"))]));
+}
+
+test("alice sends, bob reads it back, through the real vault over HTTP", async () => {
+  await withVault(async (url) => {
+    const ids = readSet(channel, seen);
+    // The batch is padded past what he wants, because asking for one id names the message.
+    assert.ok(ids.length >= MIN_READ_BATCH);
+    const batch = await fetchBatch(url, ids);
+    // The decoy ids miss, which is what makes the padding free: a miss looks like a message
+    // that has not been sent yet.
+    assert.equal(batch.size, TEXTS.length, "the decoys hit something, or a real message missed");
+
+    const read = seen.map((s) => {
+      const bytes = select(batch, channel, s);
+      assert.ok(bytes, `bob could not find message ${s.seq} in his own batch`);
+      return new TextDecoder().decode(plaintextOf(openForChannel(channel, bytes)));
+    });
+    assert.deepEqual(read, TEXTS, "the conversation did not survive the round trip");
+  });
+});
+
+test("the padding comes off exactly, whatever the message length", () => {
+  // The length prefix is inside the sealed region, so this is the check that it is being read
+  // back rather than the plaintext being whatever survived the bucket.
+  for (const n of [0, 1, 17, 900, 991]) {
+    const m = send(config(channel), new Uint8Array(n).fill(0xab), 0, 0, () => 0.5);
+    const out = plaintextOf(openForChannel(channel, m.body));
+    assert.equal(out.length, n, `a ${n}-byte message came back ${out.length} bytes`);
+    assert.ok(out.every((b) => b === 0xab));
+    // And it was one bucket on the wire regardless.
+    assert.equal(m.body.length, BUCKETS[0]);
+  }
+});
+
+test("another channel's holder gets nothing, not garbage", () => {
+  // GCM's tag is what makes this a refusal rather than a plausible-looking wrong answer. A
+  // mode without one would hand the wrong reader bytes and no reason to doubt them.
+  const other = openChannel(derive(VAULT_DOMAIN,
+    rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(4), "mallory")))), "alice→bob");
+  assert.throws(() => openForChannel(other, outgoing[0].body), /unable to authenticate|bad decrypt/i);
+  // Same root, different channel id — the case that matters more, because it is the one a bug
+  // in channel derivation would produce.
+  assert.throws(() => openForChannel(openChannel(aliceRoot, "alice→carol"), outgoing[0].body),
+    /unable to authenticate|bad decrypt/i);
+});
+
+test("a body the operator altered fails to open, wherever it was altered", () => {
+  for (const at of [0, 11, 12, 500, outgoing[0].body.length - 1]) {
+    const tampered = new Uint8Array(outgoing[0].body);
+    tampered[at] ^= 0xff;
+    assert.throws(() => openForChannel(channel, tampered),
+      /unable to authenticate|bad decrypt/i, `a flipped bit at ${at} was not detected`);
+  }
+});
+
+test("a vault that files a blob under someone else's id is caught", async () => {
+  // The attack decryption alone cannot see. Every message in a channel opens under the same
+  // key, so a vault that returns message 2's bytes for message 0's id produces real plaintext —
+  // bob reads a message alice did send, in the wrong place, with nothing wrong. Content
+  // addressing is the binding, and it is only a binding because `select` checks it.
+  await withVault(async (url) => {
+    const batch = await fetchBatch(url, readSet(channel, seen));
+    const swapped = new Map(batch);
+    swapped.set(outgoing[0].blobId, batch.get(outgoing[1].blobId)!);
+    assert.throws(() => select(swapped, channel, seen[0]), /does not hash to/);
+    // Without the check it would have opened cleanly, which is why the check exists.
+    const substituted = swapped.get(outgoing[0].blobId)!;
+    assert.doesNotThrow(() => openForChannel(channel, substituted));
+    assert.notEqual(encryptedIdFor(substituted), outgoing[0].blobId);
+  });
+});
+
+test("a message never appears in the clear on the wire or at rest", async () => {
+  await withVault(async (_url, vault) => {
+    const stored = JSON.stringify(vault.observe());
+    for (const t of TEXTS) assert.ok(!stored.includes(t), `the vault's record contains ${t}`);
+    for (const m of outgoing) {
+      const hay = Buffer.from(m.body).toString("latin1");
+      for (const t of TEXTS) assert.ok(!hay.includes(t), `${t} is readable in the uploaded body`);
+    }
+  });
+});

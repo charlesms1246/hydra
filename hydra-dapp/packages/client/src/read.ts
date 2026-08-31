@@ -23,6 +23,7 @@
 import { randomBytes } from "node:crypto";
 import { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 import { recoverBlobId, ID_BYTES } from "../../channel/src/pointer.ts";
+import { encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 
@@ -76,5 +77,15 @@ export function select(
   wanted: SeenPointer,
 ): Uint8Array | null {
   const id = `enc:${Buffer.from(recoverBlobId(channel, wanted.pointer, wanted.seq)).toString("hex")}`;
-  return batch.get(id) ?? null;
+  const bytes = batch.get(id);
+  if (bytes === undefined) return null;
+  // The batch is a map the VAULT built. Decryption alone would not catch a vault that filed one
+  // of this channel's messages under another's id — every message in a channel opens under the
+  // same key, so the substituted one decrypts to real text and the reader sees the wrong
+  // message with nothing wrong. Content addressing is what binds bytes to the pointer that
+  // named them, and it is only a binding if somebody checks it.
+  if (encryptedIdFor(bytes) !== id) {
+    throw new Error(`the vault returned bytes that are not ${id.slice(0, 12)}…; it filed a blob under an id it does not hash to`);
+  }
+  return bytes;
 }

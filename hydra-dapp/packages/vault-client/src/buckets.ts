@@ -26,8 +26,10 @@ export const BUCKETS: readonly number[] = [1024, 4096, 16384, 65536, 262144];
 /** The 4-byte big-endian length prefix that makes padding removable. */
 export const LENGTH_PREFIX = 4;
 
-/** What AES-GCM adds after padding: a 12-byte nonce and a 16-byte tag. */
-export const SEAL_OVERHEAD = 12 + 16;
+/** What AES-GCM adds after padding: a nonce in front and a tag behind. */
+export const NONCE_BYTES = 12;
+export const TAG_BYTES = 16;
+export const SEAL_OVERHEAD = NONCE_BYTES + TAG_BYTES;
 
 /**
  * The bucket a message lands in, given how many bytes will be added after padding.
