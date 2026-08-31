@@ -34,7 +34,7 @@ const SIZE = { rows: 26, cols: 100 };
 const plain = (m: Model) => render(m, SIZE).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
 
 /** A model showing one channel's transcript, with nothing else on screen to confuse the check. */
-function showing(messages: readonly ReceivedMessage[]): Model {
+function showing(messages: readonly ReceivedMessage[], anchor?: string): Model {
   const state = {
     vaultUrl: "", rpcUrl: "", contract: "", fromBlock: 0, accountsFile: "", account: "",
     blockMs: 30_000, seedHex: "00".repeat(32),
@@ -48,6 +48,7 @@ function showing(messages: readonly ReceivedMessage[]): Model {
         send: { chainHex: "55".repeat(32), next: 0, skipped: {} },
         recv: { chainHex: "66".repeat(32), next: 0, skipped: {} },
         nextSeq: 0, readTo: 0, history: [...messages], foreignSeen: 0, refusedSeen: 0,
+        ...(anchor ? { anchor } : {}),
       },
     },
   } as unknown as State;
@@ -119,6 +120,27 @@ test("every message on screen carries exactly one mark, including your own", () 
   }
 });
 
+test("the screen says WHERE a signature's key came from, not just that there was one", () => {
+  // I7 is about naming the basis, and after `anchorPeer` the basis is different: the key is on
+  // chain, checkable by anyone, instead of having arrived over the handshake. A frame that drew
+  // the same sentence in both cases would be over-claiming in the unanchored one — which is
+  // what it did until a record existed to compare against.
+  const loose = plain(showing([message(0, "on the record", "signed")]));
+  assert.match(loose, /key from the handshake/);
+  assert.doesNotMatch(loose, /0xfeed/);
+
+  const anchored = plain(showing([message(0, "on the record", "signed")], "0xfeed"));
+  assert.match(anchored, /0xfeed/, "the anchor is not on screen, so checking it changed nothing");
+  // And it must not upgrade a deniable message: the anchor is about the key, the mark is about
+  // whether this message was signed with it.
+  const deniable = plain(showing([message(0, "bring the money", "unverifiable")], "0xfeed"));
+  for (const line of deniable.split("\n")) {
+    if (!line.includes("bring the money")) continue;
+    assert.ok(line.includes(UNVERIFIABLE_MARK) && !line.includes(SIGNED_MARK),
+      `an anchor upgraded a deniable message: ${line.trim()}`);
+  }
+});
+
 test("the marks mean something on screen, because the screen says what", () => {
   // A glyph nobody can decode is decoration. The legend is on the same page as the transcript,
   // not in a help screen somebody has to know to open.
@@ -134,8 +156,18 @@ test("the two marks are distinct, and the label names its own basis", () => {
   assert.equal(signed.name, "alice");
   assert.equal(deniable.name, "alice", "a deniable message hid the name rather than marking it");
   assert.notEqual(signed.mark, deniable.mark);
-  assert.match(signed.basis, /provable/);
   assert.match(deniable.basis, /either of you/);
+  // A signed message names WHERE its key came from, and the two sources are not the same claim.
+  // Unanchored, the key arrived over the handshake: the signature proves whoever answered that
+  // handshake wrote this, which is a real guarantee and a weaker one than a tick alone suggests.
+  // Anchored, the key is on chain under a signature naming the address. The label used to say
+  // "provable to anyone holding their bundle" in both cases, which was true of the second and
+  // wishful about the first.
+  assert.match(signed.basis, /not published/);
+  const chained = attributionLabel({ mine: false, attribution: "signed" }, "alice", "0xbeef");
+  assert.equal(chained.mark, SIGNED_MARK, "an anchor must not change the mark, only the basis");
+  assert.match(chained.basis, /0xbeef/);
+  assert.notEqual(chained.basis, signed.basis, "the anchor made no difference to what is shown");
   // Your own messages are labelled as yours, whichever mode they were sent in.
   assert.equal(attributionLabel({ mine: true, attribution: "signed" }, "alice").name, "you");
 });

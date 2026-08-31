@@ -24,12 +24,21 @@ import type { Key } from "./keys.ts";
 import type { State } from "../../cli/src/state.ts";
 import type { Received } from "../../cli/src/commands.ts";
 
-export type Page = "chats" | "connect" | "identity" | "disclosure" | "status";
+export type Page = "chats" | "connect" | "identity" | "record" | "disclosure" | "status";
 
 export const PAGES: readonly { readonly id: Page; readonly label: string }[] = [
   { id: "chats", label: "Chats" },
   { id: "connect", label: "Connect" },
   { id: "identity", label: "Identity" },
+  /**
+   * Publishing is its own page because it is its own act, with a cost none of the others have.
+   *
+   * It went on Identity first and pushed the seed-in-the-clear disclosure off the bottom of the
+   * frame — `tui-conversation.test.ts` caught it. A page too full to show what it costs is the
+   * failure this interface is built around, so the answer is another page rather than shorter
+   * warnings.
+   */
+  { id: "record", label: "Record" },
   { id: "disclosure", label: "Disclosure" },
   { id: "status", label: "Status" },
 ];
@@ -57,6 +66,12 @@ export const FIELDS: Record<Page | "setup", readonly { readonly key: string; rea
     { key: "exportPath", label: "write my bundle to" },
   ],
   identity: [],
+  record: [
+    { key: "myAddress", label: "my Starknet address, for a published record" },
+    { key: "recordPath", label: "record felts file" },
+    { key: "anchorName", label: "whose record to check" },
+    { key: "anchorAddress", label: "their Starknet address" },
+  ],
   disclosure: [],
   status: [],
 };
@@ -77,6 +92,14 @@ export type Effect =
   | { readonly t: "rotate" }
   | { readonly t: "invite"; readonly name: string; readonly path: string }
   | { readonly t: "export"; readonly path: string }
+  /** Write the felts to publish. Writing them is not publishing them — see `identity` in `view.ts`. */
+  | { readonly t: "record"; readonly address: string; readonly path: string }
+  | {
+    readonly t: "anchor";
+    readonly channel: string;
+    readonly address: string;
+    readonly path: string;
+  }
   | { readonly t: "forget"; readonly channel: string };
 
 export type Event =
@@ -294,7 +317,7 @@ function command(m: Model, k: Key): Step {
   if (k.t === "page-down") return move(m, 10);
 
   if (k.t === "char") {
-    const digit = "12345".indexOf(k.value);
+    const digit = "123456".indexOf(k.value);
     if (digit >= 0 && m.page !== "setup") return just(go(m, PAGES[digit].id));
     if (k.value === "]" && m.page !== "setup") return just(cycle(m, 1));
     if (k.value === "[" && m.page !== "setup") return just(cycle(m, -1));
@@ -381,6 +404,34 @@ function action(m: Model, ch: string): Step {
     case "connect":
       if (ch === "c") return run(m, "collect", { t: "collect" });
       if (ch === "e") return run(m, "export", { t: "export", path: m.fields.exportPath || "bundle.json" });
+      return just(m);
+    case "record":
+      if (ch === "A") {
+        if (!m.fields.myAddress) return just(say(m, "an address first — the record commits to it", "warn"));
+        return just({
+          ...m,
+          confirm: {
+            // The one confirm in the product about a DISCLOSURE rather than a destruction, and
+            // it is asked here because this is the moment the user decides. `linkage.ts`
+            // computes the join; this sentence is what it looks like to a person.
+            question: `write the record that names your messaging identity and ${m.fields.myAddress} `
+              + "together? published, that link is permanent and readable by everybody, and "
+              + "everything else that address ever does is joined to your conversations. what it "
+              + "buys is that a stranger can check a signature you made.",
+            label: "record",
+            effect: { t: "record", address: m.fields.myAddress, path: m.fields.recordPath || "record.felts" },
+          },
+        });
+      }
+      if (ch === "C") {
+        if (!m.fields.anchorName || !m.fields.anchorAddress) {
+          return just(say(m, "a channel name and their address, then C", "warn"));
+        }
+        return run(m, "anchor", {
+          t: "anchor", channel: m.fields.anchorName, address: m.fields.anchorAddress,
+          path: m.fields.recordPath || "record.felts",
+        });
+      }
       return just(m);
     case "identity":
       if (ch === "R") {

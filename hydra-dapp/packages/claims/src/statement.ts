@@ -172,14 +172,29 @@ export function statement(): Statement {
         // the party who cannot tell who wrote a deniable message is EVERYONE, including the
         // person you sent it to, and that is the point of choosing it.
         says: "Every message is either signed or deniable, and you choose which before you send "
-          + "it. A signed message carries a signature under a key only you hold, so anyone with "
-          + "your published bundle can prove you wrote it — including people you never sent it "
-          + "to, and you cannot take that back. A deniable message carries no signature at all: "
+          + "it. A signed message carries a signature under a key only you hold, so anyone "
+          + "holding that key can prove you wrote it — and you cannot take that back. Who holds "
+          + "it is up to you: by default only people who have started a conversation with you, "
+          + "and everybody if you publish it. A deniable message carries no signature at all: "
           + "the only thing authenticating it is a key you and the person you are talking to "
           + "both hold, so either of you could have written it and neither of you can prove "
           + "which. That is deliberate, and it means a deniable message is not evidence of "
           + "anything, in either direction.",
         from: "handshake/src/authorship.ts, adversary/test/authorship.test.ts",
+        complete: false,
+      },
+      {
+        // Placed among the partial guarantees rather than the limitations because it is a
+        // TRADE the user makes, not a defect: the same act buys verification by strangers and
+        // costs a permanent public link. `linkage.ts` computes the link from the same rule that
+        // computes every other disclosure here.
+        says: "Publishing your keys, so that someone you have never spoken to can check a "
+          + "signature you made, puts your messaging identity and one Starknet address in the "
+          + "same public record. That link is permanent: everything else that address ever does "
+          + "is joined to your conversations by anyone reading the chain, and replacing the "
+          + "record later changes what is current rather than what people already read — a "
+          + "record is not revocable. Nothing in this client publishes for you.",
+        from: "handshake/src/record.ts, identity/src/linkage.ts, adversary/test/record.test.ts",
         complete: false,
       },
       {

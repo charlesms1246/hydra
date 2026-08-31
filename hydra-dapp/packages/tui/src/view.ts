@@ -82,9 +82,10 @@ const KEYS: Record<Page | "setup", string> = {
   setup: "i type · Tab field · Enter create identity · ctrl-c quit",
   chats: "i type · Enter send · s sign · r read · D forget · j/k channel · f flush · q quit",
   connect: "i type · Tab field · Enter invite · e export bundle · c collect · q quit",
-  identity: "R rotate prekey · 1-5 pages · q quit",
-  disclosure: "c citations · j/k scroll · 1-5 pages · q quit",
-  status: "f flush now · j/k scroll · 1-5 pages · q quit",
+  identity: "R rotate prekey · 1-6 pages · q quit",
+  record: "i type · Tab field · A write mine · C check theirs · 1-6 pages · q quit",
+  disclosure: "c citations · j/k scroll · 1-6 pages · q quit",
+  status: "f flush now · j/k scroll · 1-6 pages · q quit",
 };
 
 const field = (m: Model, index: number, key: string, label: string, cols: number): string => {
@@ -134,12 +135,15 @@ function chats(m: Model, size: Size, height: number): string[] {
   });
 
   const messages = current ? m.transcript[current] ?? [] : [];
+  // Where this channel's signing key is published, or null while it is only what the handshake
+  // said. It changes what a tick MEANS, so it reaches both the label and the legend below.
+  const anchor = (current && m.state?.channels[current]?.anchor) || null;
   const body = messages.length
     ? messages.flatMap((msg) => {
       // I7: the name and what backs it, together, from the one function that decides both. A
       // deniable message still shows the name the reader gave this channel — their own belief is
       // theirs to hold — but never without the mark that says the product cannot prove it.
-      const who = attributionLabel(msg, current ?? "");
+      const who = attributionLabel(msg, current ?? "", anchor);
       const tone = msg.attribution === "signed" ? "green" : "yellow";
       return bullet(
         msg.text, size.cols - listWidth - 4,
@@ -181,7 +185,9 @@ function chats(m: Model, size: Size, height: number): string[] {
     ),
     ...box(compose, {
       width: size.cols, height: composeHeight, focus: m.typing,
-      title: "message  ✓ signed · ? unverifiable",
+      title: anchor
+        ? `message  ✓ signed, key at ${anchor.slice(0, 10)}… · ? unverifiable`
+        : "message  ✓ signed, key from the handshake · ? unverifiable",
     }),
   ];
 }
@@ -236,6 +242,49 @@ function identity(m: Model, size: Size, height: number): string[] {
       + "only way not to have them.", size.cols - 4),
   ];
   return box(lines, { width: size.cols, height, title: "identity" });
+}
+
+/**
+ * Publishing a signing key, and checking somebody else's.
+ *
+ * Its own page because it is its own act. Signed content is checked against a key that arrived
+ * over the handshake, which proves the author is whoever answered it and nothing about who that
+ * was; a record moves the key somewhere a stranger can find it. That is a real gain and a real
+ * disclosure, and the disclosure is the part a user has to see before pressing anything.
+ */
+function record(m: Model, size: Size, height: number): string[] {
+  const anchored = Object.entries(m.state?.channels ?? {})
+    .filter(([, c]) => c.anchor)
+    .map(([n, c]) => `${paint(n.padEnd(16), "cyan")}${c.anchor}`);
+  const lines = [
+    ...fieldBlock(m, size.cols),
+    "",
+    ...note("`A` writes the felts to publish at your address. the record carries your identity "
+      + "and signing keys signed a SECOND time, over that address — otherwise anyone could "
+      + "republish your keys under a name of their own and be believed as you, which is the "
+      + "same forgery signing was meant to close.", size.cols - 4),
+    "",
+    ...note("THIS PROGRAM DOES NOT PUT IT ON CHAIN. the identity contract's data ABI is not "
+      + "verified anywhere in this repo and a record written under a guessed entrypoint is a "
+      + "record nobody looks at. (decisions/0027)", size.cols - 4)
+      .map((l) => paint(l.replace(/\x1b\[[0-9;]*m/g, ""), "gray")),
+    "",
+    ...note("PUBLISHING IT CANNOT BE UNDONE. the record names your messaging identity and that "
+      + "address together, forever, for everybody — so everything else the address ever does "
+      + "joins to your conversations. rotation replaces what is current, not what was.",
+      size.cols - 4).map((l) => paint(l.replace(/\x1b\[[0-9;]*m/g, ""), "yellow")),
+    "",
+    ...note("`C` checks their record against the key you handshook with. it refuses on "
+      + "disagreement rather than preferring one, because nothing here can tell a wrong record "
+      + "from a wrong handshake — and it still does not say the address is the person you mean.",
+      size.cols - 4),
+    "",
+    ...(anchored.length
+      ? [paint("checked", "bold"), ...anchored]
+      : note("no channel's key is published yet. their signatures still verify; only you can "
+        + "check them.", size.cols - 4)),
+  ];
+  return box(lines, { width: size.cols, height, title: "published keys", focus: m.typing });
 }
 
 function disclosure(m: Model, size: Size, height: number): string[] {
@@ -327,7 +376,7 @@ function confirmBody(m: Model, size: Size, height: number): string[] {
 // ---------------------------------------------------------------------------
 
 const PAGE_BODY: Record<Page | "setup", (m: Model, size: Size, height: number) => string[]> = {
-  setup, chats, connect, identity, disclosure, status,
+  setup, chats, connect, identity, record, disclosure, status,
 };
 
 /** The lines of one frame. `main.ts` is what turns these into a write. */

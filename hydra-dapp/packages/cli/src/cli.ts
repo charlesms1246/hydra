@@ -14,6 +14,8 @@
  *
  *     hydra init --vault URL --rpc URL --contract 0x… --account NAME --accounts-file PATH
  *     hydra bundle [--epoch N] [--one-time N]     > bundle.json   (give this to people)
+ *     hydra record 0xADDRESS                      > the felts to publish at that address
+ *     hydra anchor NAME 0xADDRESS FELT…           check their record against the handshake
  *     hydra open NAME bundle.json                 > prekey.json   (give this to them)
  *     hydra invite NAME bundle.json               same, delivered through the vault
  *     hydra accept NAME prekey.json
@@ -35,6 +37,7 @@ import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
   fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
+  myRecord, anchorPeer, anchorOf, recordFelts,
   encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
 import { chainFor } from "./chain.ts";
@@ -51,7 +54,7 @@ const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.st
 
 const usage = () => {
   console.error(readFileSync(new URL(import.meta.url), "utf8")
-    .split("\n").slice(3, 27).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
+    .split("\n").slice(3, 30).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
   process.exit(2);
 };
 
@@ -93,6 +96,51 @@ switch (command) {
       console.error("no one-time prekeys left — this bundle has no replay resistance.");
       console.error("run `hydra rotate` to mint more.");
     }
+    break;
+  }
+
+  case "record": {
+    // The address is an argument because it is what the record commits to. `state.account` is a
+    // name in an sncast accounts file, not an address, and guessing would produce a record that
+    // verifies nowhere — a failure that would appear at a stranger's client rather than here.
+    const state = load();
+    const [where] = positional;
+    if (!where) usage();
+    const { felts, fingerprint: fp } = myRecord(state, BigInt(where));
+    console.log(felts.map((f) => `0x${f.toString(16)}`).join(" "));
+    console.log("");
+    console.error(`fingerprint ${fp}`);
+    console.error(`${felts.length} felts, to be written at ${where} where anyone can read them.`);
+    console.error("");
+    console.error("WHAT THIS COSTS, and it is the reason it is not done for you: the record");
+    console.error("names your messaging identity and that address together, on chain, forever.");
+    console.error("anything else that address ever does is joined to your conversations by");
+    console.error("anyone reading the chain — see `hydra disclose`. what it buys is that a");
+    console.error("stranger can check a signature you made without ever talking to you.");
+    console.error("");
+    console.error("this client does not write it. the identity contract's data ABI is not");
+    console.error("verified anywhere in this repo, and publishing under a guessed entrypoint is");
+    console.error("how a record ends up somewhere nobody looks. see claude-docs/decisions/0027.");
+    break;
+  }
+
+  case "anchor": {
+    // Reading rather than writing, and it is the half that matters to a user: the signing key a
+    // channel verifies against arrived over the handshake, and this is what turns that into a
+    // check against something published.
+    const state = load();
+    const [name, where, ...felts] = positional;
+    if (!name || !where || felts.length !== recordFelts) {
+      console.error(`a record is ${recordFelts} felts; got ${felts.length}`);
+      usage();
+    }
+    const at = anchorPeer(state, name, BigInt(where), felts.map((f) => BigInt(f)));
+    save(state);
+    console.log(`${name}'s signing key is published at ${at}, and it is the one you handshook with`);
+    console.log("");
+    console.log("this does NOT say the address is the person you mean. it says the key you have");
+    console.log("been verifying their signatures against is on chain under a signature naming");
+    console.log("that address. who owns the address is still a fingerprint question.");
     break;
   }
 
@@ -213,13 +261,20 @@ switch (command) {
     // I7: never a name without what backs it. `attributionLabel` is the only place either front
     // end turns a message into an author, so the rule cannot hold in one and not the other.
     const read = await readChannel(state, chainFor(state), name);
+    const at = anchorOf(state, name);
     for (const m of read) {
-      const who = attributionLabel(m, name);
+      const who = attributionLabel(m, name, at);
       console.log(`${who.mark} ${who.name.padEnd(12)} ${String(m.seq).padStart(3)}  ${m.text}`);
     }
     console.log("");
-    console.log("✓ signed — that person's key, provable to anyone holding their bundle");
+    // The legend changes with the anchor because what a tick MEANS changes with it. A key that
+    // came from the handshake proves the author is whoever answered it; a key on chain is
+    // checkable by anyone. Printing the stronger sentence in both cases is the over-claim.
+    console.log(at
+      ? `✓ signed — their key is published at ${at}, so anyone can check this`
+      : "✓ signed — under the key they handshook with; it is not published, so only you can check it");
     console.log("? unverifiable — a key you both hold, so either of you could have written it");
+    if (!at) console.log(`  \`hydra anchor ${name} 0xADDRESS FELT…\` if they have published a record`);
     const foreign = foreignSends(state, name);
     if (foreign) {
       console.error("");

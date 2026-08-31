@@ -139,8 +139,12 @@ test("every citation in the linkage table resolves to a real file and line", () 
     ...records({ op: "withdraw", user: "a", to: "c", submitter: "b" }),
     ...records({ op: "privateTransfer", from: "a", to: "c", submitter: "b" }),
     ...records({ op: "erc20", from: "a", to: "c" }),
+    ...records({ op: "publishRecord", user: "a", identity: "m", submitter: "b" }),
   ];
-  const cites = all.flatMap((r) => [...r.cite.matchAll(/([\w./-]+\.cairo):(\d+)(?:-(\d+))?/g)]);
+  // `.ts` as well as `.cairo`, because a step can now be disclosed by OUR code rather than by
+  // the pool's — publishing a record is a link this project chose to create, not one it
+  // inherited. A citation into a file this repo owns rots exactly as fast as one into upstream.
+  const cites = all.flatMap((r) => [...r.cite.matchAll(/([\w./-]+\.(?:cairo|ts)):(\d+)(?:-(\d+))?/g)]);
   assert.ok(cites.length >= 8, `expected the table to be cited throughout, found ${cites.length}`);
 
   for (const [, file, from, to] of cites) {

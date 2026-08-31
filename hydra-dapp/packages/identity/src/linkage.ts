@@ -48,7 +48,16 @@ export type Step =
   | { op: "withdraw"; user: Party; to: Party; submitter: Party }
   | { op: "privateTransfer"; from: Party; to: Party; submitter: Party }
   /** An ordinary token transfer outside the pool. The token contract emits both ends. */
-  | { op: "erc20"; from: Party; to: Party };
+  | { op: "erc20"; from: Party; to: Party }
+  /**
+   * Anchoring a messaging bundle at an address, so a stranger can check a signature.
+   *
+   * `identity` is the messaging identity — the keys in `handshake/src/record.ts`, not an
+   * address. It is a separate party from `user` because the whole question this step answers
+   * is whether an observer joins the two, and a model that named them with one label would
+   * assume the answer.
+   */
+  | { op: "publishRecord"; user: Party; identity: Party; submitter: Party };
 
 /** One record an observer can read, and the source that says so. */
 export type Record = {
@@ -139,6 +148,25 @@ export function records(step: Step): Record[] {
           names: [step.from, step.to],
           why: "the escrowed viewing key derives the channel and decrypts the note, so the auditor reads the edge",
           cite: `${POOL}/privacy.cairo:331-350 (the escrow), :669 (EncNoteCreated), :630 (NoteUsed)`,
+        },
+      ];
+
+    case "publishRecord":
+      return [
+        submitterRecord("publishRecord", [step.user, step.submitter]),
+        {
+          step: "publishRecord",
+          observer: "public",
+          names: [step.user, step.identity],
+          why: "the record's anchor signature names the address, which is what stops it being copied under another name — the binding IS the disclosure",
+          cite: "hydra-dapp/packages/handshake/src/record.ts:109-121 (anchorStatement), :156 (verifyRecord)",
+        },
+        {
+          step: "publishRecord",
+          observer: "public",
+          names: [step.identity],
+          why: "chain state is read by every full node without asking anyone, and rotation replaces what is current rather than what was",
+          cite: "hydra-dapp/packages/handshake/src/record.ts:89 (RECORD_FELTS slots, and no delete)",
         },
       ];
 

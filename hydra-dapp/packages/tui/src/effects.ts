@@ -18,6 +18,7 @@
 import {
   init, publishBundle, openAndSend, collect, sendMessage, flush, readChannel, rotatePrekey,
   fingerprint, nextOneTime, encodeWire, decodeWire, foreignSends, forget,
+  myRecord, anchorPeer, recordFelts,
 } from "../../cli/src/commands.ts";
 import type { State } from "../../cli/src/state.ts";
 import type { Chain } from "../../cli/src/chain.ts";
@@ -127,6 +128,32 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
         text: index === undefined
           ? `wrote ${effect.path} — WITH NO ONE-TIME PREKEY, so it has no replay resistance; press R`
           : `wrote ${effect.path} — give it to whoever wants to reach you`,
+      };
+    }
+    case "record": {
+      // The client writes the felts; it does not write them to chain. The identity contract's
+      // data ABI is not verified anywhere in this repo, and publishing under a guessed
+      // entrypoint puts a record where nobody looks. `decisions/0027` says so and says what
+      // would close it.
+      const { felts, fingerprint: fp } = myRecord(state, BigInt(effect.address));
+      deps.writeFile(effect.path, felts.map((f) => `0x${f.toString(16)}`).join(" "));
+      return {
+        t: "ok", state,
+        text: `wrote ${felts.length} felts to ${effect.path} for ${fp} — publishing them at `
+          + `${effect.address} is a separate act this client does not perform`,
+      };
+    }
+    case "anchor": {
+      const felts = deps.readFile(effect.path).trim().split(/\s+/).filter(Boolean).map((f) => BigInt(f));
+      if (felts.length !== recordFelts) {
+        return { t: "error", text: `a record is ${recordFelts} felts; ${effect.path} holds ${felts.length}` };
+      }
+      const at = anchorPeer(state, effect.channel, BigInt(effect.address), felts);
+      deps.save(state);
+      return {
+        t: "ok", state,
+        text: `${effect.channel}'s signing key is published at ${at} and matches the handshake — `
+          + "which does not say the address is the person you mean",
       };
     }
     default:

@@ -77,6 +77,20 @@ export type ChannelState = {
    * relay can swap, after which this client attributes content to a key of their choosing.
    */
   readonly peerSigningKeyHex: string;
+  /**
+   * The Starknet address their signing key is published at, once it has been checked.
+   *
+   * Absent until somebody confirms it, and absent is the honest default: the key above arrived
+   * over the handshake, which binds it to the person who ran the handshake and to nobody else.
+   * That is trust on first use — good enough that a relay cannot swap it mid-conversation, and
+   * no help at all if the wrong person answered in the first place.
+   *
+   * `anchorPeer` sets this only when a record published at an address carries the SAME key, so
+   * the value means "this key is also on chain", not "this key came from chain". A record that
+   * disagrees is refused rather than stored, because a disagreement is either the handshake or
+   * the record being wrong and the client cannot tell which.
+   */
+  anchor?: string;
 
   /** The ratchet, one chain per direction. See `handshake/src/ratchet.ts`. */
   send: ChainState;

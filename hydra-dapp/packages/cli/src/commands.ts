@@ -22,6 +22,8 @@ import { createStore, mintOneTime, rotate, bundleFrom, oneTimeRemaining }
 import { postPrekey, collectPrekeys, httpTransport } from "../../handshake/src/inbox.ts";
 import { newChain, keyFor, packChain, forgetOldSkipped } from "../../handshake/src/ratchet.ts";
 import { signedBy, ephemeral, unframe, verifyAuthorship } from "../../handshake/src/authorship.ts";
+import { recordFor, encodeRecord, decodeRecord, verifyRecord, RECORD_FELTS }
+  from "../../handshake/src/record.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex } from "../../channel/src/cover.ts";
@@ -159,6 +161,67 @@ export function publishBundle(state: State, oneTimeIndex?: number): Bundle {
   return bundleFrom(vaultRootOf(state), state.prekeys, oneTimeIndex);
 }
 
+/**
+ * The record to publish at `owner`, as the felts a chain write takes.
+ *
+ * WHY THIS IS NOT `publishBundle` WITH AN ADDRESS BOLTED ON. A bundle is public bytes, so
+ * anybody can copy yours into their own name and a stranger checking a signature would be told
+ * they wrote it — the forgery `decisions/0026` closed, moved up a level to somebody who needs no
+ * shared secret at all. The record carries a second signature over the address, so a copy lands
+ * at an address its own signature does not name and `verifyRecord` refuses it.
+ *
+ * `owner` is passed in rather than read from `state.account`, which is a name in an accounts
+ * file and not an address. Committing to the wrong value produces a record that verifies
+ * nowhere, and it would fail at a stranger's client rather than here.
+ *
+ * NO ONE-TIME PREKEY. There are many, they are consumed, and a chain record charges per felt.
+ * They stay in the vault where `collect` already reaches them.
+ */
+export function myRecord(state: State, owner: bigint): { felts: bigint[]; fingerprint: string } {
+  const record = recordFor(vaultRootOf(state), state.prekeys, owner);
+  verifyRecord(record, owner);
+  return {
+    felts: encodeRecord(record),
+    fingerprint: fingerprint(record),
+  };
+}
+
+/**
+ * Check a peer's published record against the key this channel already verifies against.
+ *
+ * THIS IS THE POINT OF THE WHOLE FILE. Signed content is checked against
+ * `peerSigningKeyHex`, which arrived over the handshake — so a signature proves "the person who
+ * ran the handshake wrote this" and nothing about who that was. A record turns that into a
+ * check: the key is also at an address, permanently, under a signature naming that address.
+ *
+ * It REFUSES on disagreement rather than replacing the key. A record that carries a different
+ * signing key means either the handshake was answered by somebody else or the record is not
+ * theirs, and nothing here can tell those apart — so overwriting would resolve, silently and in
+ * the attacker's favour, the exact question the user asked this command to settle.
+ *
+ * It also does not make the fingerprint check unnecessary: this says the key is published at an
+ * address, not that the address is your Alice's.
+ */
+export function anchorPeer(state: State, name: string, owner: bigint, felts: readonly bigint[]): string {
+  const entry = channelAt(state, name);
+  const record = decodeRecord(felts);
+  verifyRecord(record, owner);
+  if (hex(record.signingKey) !== entry.peerSigningKeyHex) {
+    throw new Error(
+      `the record at 0x${owner.toString(16)} publishes a different signing key than ${name} `
+      + "handshook with — one of the two is not them, and this client cannot tell which");
+  }
+  entry.anchor = `0x${owner.toString(16)}`;
+  return entry.anchor;
+}
+
+/** Where this channel's signing key is published, or null while it is only trust on first use. */
+export const anchorOf = (state: State, name: string): string | null =>
+  state.channels[name]?.anchor ?? null;
+
+/** How many felts a record is, so a front end can refuse a bad paste before decoding it. */
+export const recordFelts = RECORD_FELTS;
+
 /** The next unused one-time prekey, or undefined once they run out. */
 export const nextOneTime = (state: State): number | undefined => {
   const keys = Object.keys(state.prekeys.oneTime).map(Number).sort((a, b) => a - b);
@@ -187,7 +250,7 @@ export function rotatePrekey(state: State): { retired: number; oneTimeLeft: numb
  * who could substitute it would keep a matching fingerprint while controlling which prekeys the
  * victim's contacts accept.
  */
-export const fingerprint = (bundle: Bundle): string =>
+export const fingerprint = (bundle: Pick<Bundle, "identityKey" | "signingKey">): string =>
   hex(bundle.identityKey).slice(0, 16) + hex(bundle.signingKey).slice(0, 16);
 
 // ---------------------------------------------------------------------------
@@ -686,11 +749,19 @@ export async function readChannel(
 export function attributionLabel(
   message: Pick<ReceivedMessage, "mine" | "attribution">,
   channelName: string,
+  anchor?: string | null,
 ): { readonly name: string; readonly mark: string; readonly basis: string } {
   const name = message.mine ? "you" : channelName;
-  return message.attribution === "signed"
-    ? { name, mark: SIGNED_MARK, basis: "signed — provable to anyone holding their bundle" }
-    : { name, mark: UNVERIFIABLE_MARK, basis: "unverifiable — either of you could have written it" };
+  if (message.attribution !== "signed") {
+    return { name, mark: UNVERIFIABLE_MARK, basis: "unverifiable — either of you could have written it" };
+  }
+  // The basis differs because what backs it differs, and I7 is about naming the basis rather
+  // than about having one. Without a record the key came from the handshake, so the signature
+  // proves the author is whoever answered it — which is a real guarantee and a weaker one than
+  // a reader assumes when a tick is all they are shown.
+  return anchor
+    ? { name, mark: SIGNED_MARK, basis: `signed — their key is published at ${anchor}` }
+    : { name, mark: SIGNED_MARK, basis: "signed — under the key they handshook with, which is not published" };
 }
 
 /**

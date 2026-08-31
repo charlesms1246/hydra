@@ -135,6 +135,12 @@ test("the costs are on the page that performs the act, not in a help screen", as
     assert.match(prose({ ...m, page: "connect" }), /90%/);
     // The identity page says where the root key is and what protects it, which is `0600`.
     assert.match(prose({ ...m, page: "identity" }), /in the clear/);
+    // Publishing a signing key is its own page because it is its own act: it is the only thing
+    // in the product that deliberately puts a permanent, public link between the messaging
+    // identity and a chain address. It went on Identity first and pushed the line above off the
+    // bottom of the frame, which is how this assertion earned its neighbour.
+    assert.match(prose({ ...m, page: "record" }), /CANNOT BE UNDONE/);
+    assert.match(prose({ ...m, page: "record" }), /joins to your conversations/);
     // And the disclosure page is the generated statement, not prose.
     assert.match(prose({ ...m, page: "disclosure" }), /generated from the code/);
   } finally { server.close(); }
@@ -146,7 +152,7 @@ test("modal: letters act in command mode and type in typing mode", async () => {
     const h = harness(url, invites);
     let m = await created(h);
     // A digit in command mode is a page.
-    m = await feed(m, h.deps, "4");
+    m = await feed(m, h.deps, "5");
     assert.equal(m.page, "disclosure");
     m = await feed(m, h.deps, "2");
     assert.equal(m.page, "connect");
