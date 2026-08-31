@@ -145,6 +145,15 @@ export function openChannel(
  * The mapping is deliberately narrow. A catch-all that turned every compilation failure into
  * "already registered" would be worse than the raw string: it would be confidently wrong, and
  * the honest answer for an unrecognised failure is to say so and show the original.
+ *
+ * `recipient-not-registered` came from a fresh chain. The lifecycle suite had been passing on a
+ * devnet that survived several sessions, where the recipient happened to have registered at
+ * some point nobody recorded; rebuilt from nothing, the transfer failed. The SDK asserts at
+ * `.upstream/sdk/src/internal/compiler.ts:294` that the sender holds channel context for the
+ * recipient, and the string it produces names a data structure rather than the situation. The
+ * situation is that **the other person has not set themselves up and you cannot do it for
+ * them** — which is the one failure here that is not the user's to fix, so saying so is the
+ * whole value of the translation.
  */
 export type Explained = { readonly kind: string; readonly says: string; readonly raw: string };
 
@@ -171,6 +180,15 @@ export function explain(error: string, context: "register" | "transfer" | "depos
       kind: "proof-expired",
       says: `The proof is older than the pool's ${PROOF_VALIDITY_BLOCKS}-block window and has `
         + "to be rebuilt. Nothing was sent and nothing was spent.",
+      raw: error,
+    };
+  }
+  if (/Missing channel context for recipient/i.test(error)) {
+    return {
+      kind: "recipient-not-registered",
+      says: "The person you are sending to has not registered a viewing key with the pool. "
+        + "Nothing you can do on your side fixes this — a channel can only be opened to "
+        + "someone the pool can already encrypt to, so they have to register first.",
       raw: error,
     };
   }

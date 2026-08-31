@@ -116,6 +116,20 @@ test("the pool's nameless failures are given names", () => {
     "no-change-destination");
 });
 
+test("the one failure that is not the sender's to fix says so", () => {
+  // Found by rebuilding the devnet from nothing: the lifecycle suite had been green on a chain
+  // where the recipient had registered at some point nobody wrote down, so the test was resting
+  // on session history rather than on anything it did. On a fresh chain the transfer fails.
+  const raw = "Missing channel context for recipient 0x2939f2dc3f80cc7d620e8a86f2e69c1e187b7ff44b74056647368b5c49dc370";
+  const e = explain(raw, "transfer");
+  assert.equal(e.kind, "recipient-not-registered");
+  // The point of the translation: the raw string names a data structure the sender has no
+  // control over, and a user reading it will go looking for the mistake on their own side.
+  assert.match(e.says, /has not registered|they have to register/i);
+  assert.match(e.says, /nothing you can do/i);
+  assert.equal(e.raw, raw);
+});
+
 test("an unrecognised failure is admitted, not guessed at", () => {
   // The important half. A catch-all mapping every compilation failure to "already registered"
   // would be confidently wrong, which is worse than the raw string — and the same raw string
