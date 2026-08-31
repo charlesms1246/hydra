@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { scheduleUpload, jitterWindowMs } from "../../channel/src/schedule.ts";
-import { coverPlan, coverBody, coverId, coverKey, COVER_RATE, COVER_LEAD_BLOCKS, anonymitySetFloor }
+import { coverPlan, coverBody, coverId, coverKey, COVER_RATE, coverLeadMs, anonymitySetFloor }
   from "../../channel/src/cover.ts";
 import { best } from "../src/matchers.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
@@ -67,7 +67,7 @@ test("cover begins before the first message, or the leak is unchanged", () => {
   // the session start would keep the storage cost and lose the defence.
   const plan = coverPlan(Array.from({ length: 12 }, (_, i) => ({ at: i * BLOCK, bucket: BUCKETS[0] })), cfg, lcg(1));
   assert.ok(plan[0].at < 0, `cover starts at ${plan[0].at}, not before the first event`);
-  assert.ok(plan[0].at <= -COVER_LEAD_BLOCKS * BLOCK * 0.5,
+  assert.ok(plan[0].at <= -coverLeadMs(cfg) * 0.5,
     "the lead is far shorter than configured");
   assert.ok(plan.at(-1)!.at > 11 * BLOCK, "cover stops before the last message");
   // Sorted, so a consumer can merge it with a real schedule without re-sorting.
@@ -216,4 +216,46 @@ test("the floor does not depend on how many messages a conversation has", () => 
     assert.ok(Math.abs(scored - anonymitySetFloor(cfg)) < 0.06,
       `${n} messages scored ${scored.toFixed(3)} against a floor of ${anonymitySetFloor(cfg).toFixed(3)}`);
   }
+});
+
+test("the lead is the jitter window exactly, and that is what makes the floor a floor", () => {
+  // Not a tunable, and the reason is a distribution argument rather than a preference. The real
+  // upload lands uniformly in [event, event+W). A decoy lands uniformly in [event-lead,
+  // event+W), and |uniform(-W, W)| is uniform on [0, W) — so at lead == W, and only there, a
+  // decoy is indistinguishable from the real upload by distance.
+  assert.equal(coverLeadMs(cfg), jitterWindowMs(cfg));
+
+  // Measured across leads, one isolated message, nearest-to-event. A LONGER lead sounds prudent
+  // and is catastrophic: decoys spread wider than the real upload, so the nearest candidate is
+  // usually the real one.
+  const attack = (leadMs: number) => {
+    const random = lcg(53);
+    let hit = 0;
+    const trials = 4000;
+    for (let t = 0; t < trials; t++) {
+      const candidates = [{ at: scheduleUpload(0, cfg, random), real: true }];
+      for (let k = 0; k < COVER_RATE; k++) {
+        candidates.push({ at: -leadMs + random() * (leadMs + jitterWindowMs(cfg)), real: false });
+      }
+      let best: { at: number; real: boolean } | null = null;
+      let gap = Infinity;
+      for (const c of candidates) {
+        const d = Math.abs(c.at);
+        if (d < gap) { gap = d; best = c; }
+      }
+      if (best?.real) hit++;
+    }
+    return hit / trials;
+  };
+
+  const W = jitterWindowMs(cfg);
+  const atWindow = attack(W);
+  assert.ok(Math.abs(atWindow - anonymitySetFloor(cfg)) < 0.02,
+    `lead == window scored ${atWindow.toFixed(3)}, floor is ${anonymitySetFloor(cfg).toFixed(3)}`);
+  // Four times the window roughly doubles what the operator gets.
+  assert.ok(attack(4 * W) > atWindow * 1.8,
+    "a much longer lead should be much worse; if not, the distribution argument has changed");
+  // And a much shorter one pushes below the floor, which is its own exploitable signal.
+  assert.ok(attack(W / 8) < atWindow * 0.85,
+    "a much shorter lead should fall below the floor");
 });

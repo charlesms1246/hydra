@@ -26,7 +26,7 @@
 
 import { OBSERVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
-import { COVER_RATE, COVER_LEAD_BLOCKS } from "../../channel/src/cover.ts";
+import { COVER_RATE, coverLeadMs } from "../../channel/src/cover.ts";
 import { NOTE_FELTS } from "../../channel/src/note.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 
@@ -53,7 +53,8 @@ export type Statement = {
 export const MEASURED = {
   jitterBlocks: MIN_JITTER_BLOCKS,
   coverRate: COVER_RATE,
-  coverLeadBlocks: COVER_LEAD_BLOCKS,
+  /** Derived from the jitter window, not chosen — see `channel/src/cover.ts`. */
+  coverLeadBlocks: MIN_JITTER_BLOCKS,
   noteFelts: NOTE_FELTS,
   buckets: BUCKETS,
   /**

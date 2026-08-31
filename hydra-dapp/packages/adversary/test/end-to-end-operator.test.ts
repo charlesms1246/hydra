@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import { send, cover, openChannel } from "../../client/src/session.ts";
 import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
 import { serve } from "../../vault-server/src/http.ts";
-import { coverBody, coverId } from "../../channel/src/cover.ts";
+import { coverBody, coverId, COVER_RATE } from "../../channel/src/cover.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { recoverBlobId } from "../../channel/src/pointer.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
@@ -189,5 +189,99 @@ test("the recipient can still find every message, which is the point", () => {
     const recovered = Buffer.from(recoverBlobId(channel, out.pointer, a.seq)).toString("hex");
     assert.equal(`enc:${recovered}`, a.id, `message ${a.seq} is unreachable from its pointer`);
     assert.ok(stored.has(a.id));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Mixed message sizes, through the real client and the real vault
+// ---------------------------------------------------------------------------
+
+/** A conversation where the messages are not all the same size — the realistic case. */
+function mixedConversation(random: () => number, withCover: boolean) {
+  const channel = openChannel(vaultRoot, "alice→bob");
+  const config = { blockMs: BLOCK, channel, nullifier: 9n };
+  // One long message among short ones. Before cover carried its bucket, this was the message
+  // an operator could pick out by size alone, every time.
+  const sizes = [40, 60, 20_000, 55, 30, 45, 70, 25];
+  const sent = sizes.map((n, seq) =>
+    send(config, new Uint8Array(n).fill(seq + 1), seq, seq * BLOCK, random));
+  const arrivals: Arrival[] = sent.map((out, seq) => ({
+    at: out.uploadAt, id: out.blobId, bytes: out.body.length, real: true, seq,
+  }));
+  if (withCover) {
+    for (const decoy of cover(config, sent, random)) {
+      const body = coverBody(channel, decoy.bucket);
+      arrivals.push({ at: decoy.at, id: coverId(body), bytes: body.length, real: false, seq: -1 });
+    }
+  }
+  arrivals.sort((a, b) => a.at - b.at);
+  return { events: sizes.map((_, i) => i * BLOCK), arrivals, sent, channel, config };
+}
+
+test("the odd-sized message is not alone in its size band", () => {
+  // The composition check for the bucket fix. An operator's first move is to sort by size, so
+  // what matters is how many candidates remain after it does.
+  const { arrivals, sent } = mixedConversation(lcg(41), true);
+  const large = sent[2].body.length;
+  const inBand = arrivals.filter((a) => a.bytes === large);
+  assert.ok(inBand.length > 1, "the large message is the only upload of its size");
+  assert.equal(inBand.filter((a) => a.real).length, 1);
+  assert.equal(inBand.filter((a) => !a.real).length, COVER_RATE,
+    `the large message got ${inBand.filter((a) => !a.real).length} decoys, expected ${COVER_RATE}`);
+});
+
+test("an operator that sorts by size first still cannot pick the odd message out", () => {
+  // Scored the way the attack actually runs: restrict to the size band, then match on timing.
+  // Without cover in that band the answer is 1.000 — that is what this is defending against.
+  const random = lcg(43);
+  let hits = 0;
+  const trials = 400;
+  for (let t = 0; t < trials; t++) {
+    const { arrivals, sent } = mixedConversation(random, true);
+    const large = sent[2].body.length;
+    const band = arrivals.filter((a) => a.bytes === large);
+    let best: Arrival | null = null;
+    let gap = Infinity;
+    for (const a of band) {
+      const d = Math.abs(a.at - 2 * BLOCK);
+      if (d < gap) { gap = d; best = a; }
+    }
+    if (best?.real) hits++;
+  }
+  const rate = hits / trials;
+  assert.ok(rate < 0.35, `the odd-sized message is identified ${rate.toFixed(3)} of the time`);
+});
+
+test("without the bucket carried, the same attack succeeds every time", () => {
+  // The teeth. Reproduces the defect by covering everything in the smallest band, which is what
+  // the old API made natural — and shows the attack going to 1.000.
+  const random = lcg(43);
+  const { arrivals, sent } = mixedConversation(random, false);
+  const channel = openChannel(vaultRoot, "alice→bob");
+  // Cover, but all of it in the wrong band.
+  for (let i = 0; i < COVER_RATE * sent.length; i++) {
+    const body = coverBody(channel, BUCKETS[0]);
+    arrivals.push({ at: random() * 8 * BLOCK, id: coverId(body), bytes: body.length, real: false, seq: -1 });
+  }
+  const large = sent[2].body.length;
+  const band = arrivals.filter((a) => a.bytes === large);
+  assert.equal(band.length, 1, "mis-banded cover should leave the large message alone");
+  assert.equal(band[0].real, true, "and the single candidate is the message itself");
+});
+
+test("every message the client sends is uploadable and findable, mixed sizes included", () => {
+  // The defence must not break the product. Every size still round-trips through the vault.
+  const { arrivals, sent, channel } = mixedConversation(lcg(47), true);
+  const vault = new Vault({ invites: arrivals.map((_, i) => `mx-${i}`), buckets: BUCKETS });
+  let i = 0;
+  for (const out of sent) {
+    const res = vault.handle({
+      op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: out.blobId, body: out.body, invite: `mx-${i++}`,
+    });
+    assert.equal(res.ok, true, `a ${out.body.length}-byte upload was refused`);
+  }
+  for (const [seq, out] of sent.entries()) {
+    const recovered = Buffer.from(recoverBlobId(channel, out.pointer, seq)).toString("hex");
+    assert.equal(`enc:${recovered}`, out.blobId, `message ${seq} is unreachable from its pointer`);
   }
 });

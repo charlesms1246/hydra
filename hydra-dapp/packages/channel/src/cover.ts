@@ -11,6 +11,9 @@
  * a real message. So a session opens with cover: indistinguishable decoy uploads, beginning
  * before the first real one and continuing throughout.
  *
+ * The lead is not among them: see `coverLeadMs`. It is the jitter window, exactly, and that is
+ * what makes the floor below a floor rather than a coincidence.
+ *
  * MEASURED at the default rate of 4, against the strongest of four matchers
  * (`adversary/src/matchers.ts`), over twelve messages in four session shapes:
  *
@@ -45,18 +48,35 @@ import type { ScheduleConfig } from "./schedule.ts";
 export const COVER_RATE = 4;
 
 /**
- * How long before the first real message cover begins, in block intervals.
+ * How long before its event a decoy may be sent: **exactly the jitter window**, and this is not
+ * a tunable.
  *
- * It matters far less than the rate — the measurements move by about 0.02 between a four-block
- * and a sixteen-block lead — but it cannot be zero, or the first upload of the session is again
- * the first message's and the whole leak is back.
+ * The floor of 1/(rate+1) holds only when a decoy's distance from the event is distributed the
+ * same way the real upload's is. The real upload lands uniformly in `[event, event+W)`. A decoy
+ * lands uniformly in `[event-lead, event+W)`, and `|uniform(-W, W)|` is uniform on `[0, W)` —
+ * so at `lead == W`, and only there, the two are indistinguishable by distance.
+ *
+ * Measured, one isolated message, nearest-to-event attack, floor 0.200:
+ *
+ *     lead  1 block   0.142      lead  8 blocks  0.194   <- equals the window
+ *     lead  2 blocks  0.130      lead 16 blocks  0.296
+ *     lead  4 blocks  0.148      lead 32 blocks  0.461
+ *
+ * A **longer** lead is catastrophic and sounds prudent, which is the dangerous combination: at
+ * four times the window the operator is right 46% of the time, more than double the floor,
+ * because decoys spread wider than the real upload so the nearest candidate is usually real.
+ * A shorter lead pushes accuracy below the floor, which is not safety either — an operator
+ * whose guess is reliably wrong inverts it.
+ *
+ * This used to be an independent constant that happened to equal `MIN_JITTER_BLOCKS`. Nothing
+ * enforced the equality, and anyone widening it for margin would have halved the protection
+ * silently. It is derived now, and there is no knob.
  */
-export const COVER_LEAD_BLOCKS = 8;
+export const coverLeadMs = (config: ScheduleConfig): number => jitterWindowMs(config);
 
 export type CoverConfig = ScheduleConfig & {
   /** Decoys per jitter window. Defaults to {@link COVER_RATE}. */
   readonly coverRate?: number;
-  readonly leadBlocks?: number;
 };
 
 /** A message to be covered: when its chain event lands, and the bucket its upload will be. */
@@ -105,7 +125,7 @@ export function coverPlan(
   if (!(rate > 0)) throw new Error("cover: a rate of zero is no cover at all");
   if (events.length === 0) throw new Error("cover: a session with no events needs no cover");
   const window = jitterWindowMs(config);
-  const lead = (config.leadBlocks ?? COVER_LEAD_BLOCKS) * config.blockMs;
+  const lead = coverLeadMs(config);
   const out: Decoy[] = [];
   for (const event of events) {
     // Spanning [event - lead, event + window): the lead is what stops the session's earliest
