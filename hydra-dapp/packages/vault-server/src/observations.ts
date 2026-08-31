@@ -55,7 +55,8 @@ export type Mechanism =
   | "invite-destroyed"
   | "pad-before-seal"
   | "inbox-not-content-addressed"
-  | "x3dh-authenticates-not-vault";
+  | "x3dh-authenticates-not-vault"
+  | "no-session-tickets";
 
 /** One clause of a reason, with the code that makes that clause true. */
 export type Because = {
@@ -152,6 +153,16 @@ export const OBSERVABLE: readonly Observation[] = [
     id: "read.channelSet",
     what: "which blobs form one conversation — the ids in a single read batch that exist are exactly one channel's objects",
     why: "a reader has to name what it wants, and what it wants is its channel's whole set. The uploads disclose no grouping; the READER supplies it, grouped, in one request. Padding widens the question and not the answer, because a padding id does not exist and is dropped for free. This was published as something the operator could NOT see until adversary/test/i3-batch-membership.test.ts recovered both channels of a two-channel session exactly",
+  },
+  {
+    id: "tls.sni",
+    what: "the hostname a client asked for, in the clear, before any encryption starts",
+    why: "SNI is sent unencrypted in the ClientHello so the server knows which certificate to present; anyone on the path sees it too. Terminating TLS here rather than behind a proxy does not create this — it decides WHO holds it, and the honest answer is that it is this process rather than somebody else's",
+  },
+  {
+    id: "tls.parameters",
+    what: "the cipher suite, TLS version and ALPN a client negotiated, which together fingerprint its software",
+    why: "a handshake has to agree on them, so the server necessarily learns them. The fingerprint is not a name, and across a small user base it can be close to one",
   },
   {
     id: "store.totals",
@@ -264,6 +275,14 @@ export const NOT_OBSERVABLE: readonly Guarantee[] = [
     because: [
       { claim: "padding to a bucket happens before encryption, so the true length never reaches the wire",
         mechanism: "pad-before-seal" },
+    ],
+  },
+  {
+    id: "tls.resumption",
+    what: "that two TLS connections came from the same client",
+    because: [
+      { claim: "session tickets are disabled and the session cache is off, so there is no resumption state for the server to recognise a returning client by",
+        mechanism: "no-session-tickets" },
     ],
   },
   {

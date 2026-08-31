@@ -20,6 +20,8 @@
  */
 
 import { createServer } from "node:http";
+import { createServer as createSecureServer } from "node:https";
+import { constants } from "node:crypto";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT } from "./server.ts";
 import { RateLimiter, DEFAULT_RATE_LIMIT } from "./ratelimit.ts";
@@ -54,17 +56,40 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
  * array of ids fetches a batch — reads are batched because a client that asks for one id tells
  * the operator which message it wanted. `DELETE /v1/pub/<id>` is the operator's takedown.
  */
+/**
+ * Terminating TLS here rather than behind a proxy.
+ *
+ * The alternative was a reverse proxy, and the reasoning against it is this project's own: a
+ * proxy means a DIFFERENT PARTY holds the SNI, the cipher suite, the ALPN and the resumption
+ * state — not nobody. Given the choice between two parties seeing it, pick the one you control
+ * and can describe. So the rows go on the disclosure table and this process produces them.
+ *
+ * SESSION TICKETS ARE OFF, and that is the one that mattered. A ticket lets a client resume,
+ * which means the server can recognise the same client across separate connections — a durable
+ * link between requests that the whole design refuses to keep anywhere else. `SSL_OP_NO_TICKET`
+ * turns it off; `tls.resumption` is on the NOT_OBSERVABLE table with that as its mechanism.
+ *
+ * The cost is real and is not hidden: every connection does a full handshake. That is more CPU
+ * on both ends and an extra round trip, paid so that two connections from one client cannot be
+ * joined by the server.
+ */
+export type TlsConfig = {
+  readonly key: string | Buffer;
+  readonly cert: string | Buffer;
+};
+
 export function serve(
   vault: Vault,
   port = 0,
-  options: { observeTransport?: boolean; rateLimit?: RateLimitConfig } = {},
+  options: { observeTransport?: boolean; rateLimit?: RateLimitConfig; tls?: TlsConfig } = {},
 ): Promise<{ url: string; server: Server; limiter: RateLimiter }> {
   // Defaults to `global`: a public service needs a limit, and the mode that needs no
   // per-client state is the one to reach for first. `per-peer` is a decision with a row on
   // the disclosure table, so it has to be asked for.
   const limiter = new RateLimiter(options.rateLimit ?? DEFAULT_RATE_LIMIT);
   vault.useRateLimiter(limiter);
-  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  if (options.tls) vault.servedOverTls();
+  const handler = (req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       // Off by default. Flipping it is one argument, which is exactly why the transport rows
       // are on the disclosure table whether or not it is on.
@@ -129,12 +154,24 @@ export function serve(
         return send(400, { ok: false, error: String((e as Error).message).slice(0, 80) });
       }
     })();
-  });
+  };
+  const server: Server = options.tls
+    ? createSecureServer({
+      key: options.tls.key,
+      cert: options.tls.cert,
+      // No tickets, and no session cache either: both are resumption, and resumption is the
+      // server recognising a client it has seen before.
+      secureOptions: constants.SSL_OP_NO_TICKET,
+      sessionTimeout: 0,
+    }, handler) as unknown as Server
+    : createServer(handler);
+  if (options.tls) (server as unknown as { setMaxListeners(n: number): void }).setMaxListeners(0);
+
   return new Promise((resolve) => {
     server.listen(port, "127.0.0.1", () => {
       const addr = server.address();
       const p = typeof addr === "object" && addr ? addr.port : port;
-      resolve({ url: `http://127.0.0.1:${p}`, server, limiter });
+      resolve({ url: `${options.tls ? "https" : "http"}://127.0.0.1:${p}`, server, limiter });
     });
   });
 }

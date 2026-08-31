@@ -148,6 +148,8 @@ export class Vault {
   readonly #reads: ReadRecord[] = [];
   readonly #transport: TransportRecord[] = [];
   #invitesRedeemed = 0;
+  /** Set by `http.ts` when the vault is served over TLS, so the tls.* rows become producible. */
+  #tls = false;
   readonly #now: () => number;
   readonly #buckets: readonly number[];
   readonly #dir: string | null;
@@ -211,6 +213,11 @@ export class Vault {
    * Told about the transport's rate limiter, so the disclosure table can report what it keeps.
    * The vault does not use it; it only has to be able to say that it exists.
    */
+  /** Told, not detected: the vault object does not own its transport. */
+  servedOverTls(): void {
+    this.#tls = true;
+  }
+
   useRateLimiter(limiter: { keyedByPeer: boolean }): void {
     this.#limiter = limiter;
   }
@@ -373,6 +380,12 @@ export class Vault {
       seen.add("transport.peer");
       seen.add("transport.headers");
       seen.add("transport.timing");
+    }
+    // TLS rows come with a TLS listener, not with a request: the handshake happens whether or
+    // not anybody sends anything, and the server learns them either way.
+    if (this.#tls) {
+      seen.add("tls.sni");
+      seen.add("tls.parameters");
     }
     if (Object.keys(o.totals).length) seen.add("store.totals");
     if (this.#limiter?.keyedByPeer) seen.add("rate.peerBucket");

@@ -22,7 +22,8 @@ import { serve, MAX_BODY } from "../../vault-server/src/http.ts";
 import { RateLimiter } from "../../vault-server/src/ratelimit.ts";
 import { MIN_READ_BATCH, readSet, select } from "../../client/src/read.ts";
 import { mkdtemp, rm, stat, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OBSERVABLE, OBSERVABLE_IDS, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
@@ -137,6 +138,35 @@ test("everything the table claims is observable actually is", async () => {
     // makes and this is what exercises the other side of it.
     onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "d1" });
     for (const k of onDisk.observedKeys()) observed.add(k);
+    // And a TLS listener, because the `tls.*` rows are only producible when this process is the
+    // one terminating. Adding them without this is what made this check fail — for the third
+    // time now, after the transport rows and the `fs.*` rows.
+    //
+    // The certificate is generated here and thrown away. A test key committed to a public repo
+    // is a test key somebody eventually uses, however loudly it is labelled.
+    const certDir = await mkdtemp(join(tmpdir(), "hydra-tls-"));
+    try {
+      // A missing openssl is a FAILURE, not a skip: the TLS rows would silently stop being
+      // checked, which is how a disclosure row becomes decorative.
+      execFileSync("openssl", [
+        "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        "-subj", "/CN=localhost",
+        "-keyout", join(certDir, "k.pem"), "-out", join(certDir, "c.pem"),
+      ], { stdio: "ignore" });
+      const tlsVault = new Vault({ buckets: BUCKETS });
+      const t = await serve(tlsVault, 0, {
+        tls: {
+          key: readFileSync(join(certDir, "k.pem")),
+          cert: readFileSync(join(certDir, "c.pem")),
+        },
+      });
+      assert.ok(t.url.startsWith("https://"), "the TLS listener did not come up on https");
+      t.server.close();
+      for (const k of tlsVault.observedKeys()) observed.add(k);
+    } finally {
+      await rm(certDir, { recursive: true, force: true });
+    }
+
     // And the limiter mode that produces `rate.peerBucket`, for the same reason.
     const peered = new Vault({ buckets: BUCKETS });
     const p = await serve(peered, 0, { rateLimit: { mode: "per-peer", perMinute: 10 } });
@@ -215,8 +245,8 @@ test("the capture confirms each NOT_OBSERVABLE claim", () => {
   // Every NOT_OBSERVABLE row is one of the cases above; this keeps the two lists in step.
   assert.deepEqual(
     NOT_OBSERVABLE.map((o) => o.id).sort(),
-    ["blob.trueLength", "content.plaintext", "inbox.sender", "read.target", "upload.channel",
-      "uploader.identity"],
+    ["blob.trueLength", "content.plaintext", "inbox.sender", "read.target", "tls.resumption",
+      "upload.channel", "uploader.identity"],
   );
 });
 

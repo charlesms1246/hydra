@@ -23,6 +23,10 @@ import { dirname, join } from "node:path";
 import { NOT_OBSERVABLE, whyOf } from "../../vault-server/src/observations.ts";
 import type { Mechanism } from "../../vault-server/src/observations.ts";
 import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
+import { serve } from "../../vault-server/src/http.ts";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { connect } from "node:tls";
 import { MIN_READ_BATCH } from "../../client/src/read.ts";
 import { sealForChannel, wireBytes } from "../../vault-client/src/blobs.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
@@ -76,7 +80,7 @@ function grep(pattern: string, path: string): string[] {
  * One assertion per mechanism. Keyed by the same union the guarantees use, so a typo is a
  * compile error rather than a silently absent check.
  */
-const MECHANISMS: Record<Mechanism, () => void> = {
+const MECHANISMS: Record<Mechanism, () => void | Promise<void>> = {
   "no-key-in-server": () => {
     // The server holds no key, so it cannot decrypt regardless of intent. Checked as an absence
     // in the code rather than as a property of a run: a run only exercises the paths it took,
@@ -229,6 +233,57 @@ const MECHANISMS: Record<Mechanism, () => void> = {
     assert.throws(() => respond(bob, forged), /unable to authenticate|bad decrypt/i);
   },
 
+  "no-session-tickets": async () => {
+    // Resumption is the server recognising a client it has seen before — a durable link between
+    // separate connections, which is the one thing TLS termination would otherwise hand it.
+    //
+    // CONNECTED TWICE rather than grepped for `SSL_OP_NO_TICKET`. An earlier version of this
+    // checked the source for the flag, and this project has already been caught once by a source
+    // check that matched its own disclosure table instead of its behaviour. The flag being
+    // present is not the claim; the server refusing to resume is.
+    const dir = await mkdtemp(join(tmpdir(), "hydra-tls-mech-"));
+    try {
+      execFileSync("openssl", [
+        "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
+        "-keyout", join(dir, "k.pem"), "-out", join(dir, "c.pem"),
+      ], { stdio: "ignore" });
+      const v = new Vault({ buckets: BUCKETS });
+      const { server, url } = await serve(v, 0, {
+        tls: { key: readFileSync(join(dir, "k.pem")), cert: readFileSync(join(dir, "c.pem")) },
+      });
+      const port = Number(new URL(url).port);
+      try {
+        const opts = { host: "127.0.0.1", port, rejectUnauthorized: false } as const;
+        // Waited for on the `session` EVENT, not read at connect time. Under TLS 1.3 the ticket
+        // arrives after the handshake finishes, so `getSession()` in the connect callback
+        // returns something that cannot resume whatever the server is configured to do — which
+        // made the first version of this test pass with tickets enabled. A check that cannot
+        // fail is not a check, and this file exists because of that exact mistake elsewhere.
+        const session = await new Promise<Buffer | null>((res) => {
+          const c = connect(opts, () => { /* wait for the ticket, or give up */ });
+          const done = setTimeout(() => { c.end(); res(null); }, 2000);
+          c.once("session", (s) => { clearTimeout(done); c.end(); res(s); });
+        });
+        const reused = await new Promise<boolean>((res) => {
+          const c = connect({ ...opts, session: session ?? undefined }, () => {
+            const r = c.isSessionReused(); c.end(); res(r);
+          });
+        });
+        // The claim is that the SERVER does not resume, not that node's client keeps nothing:
+        // node emits a `session` blob of its own regardless, and asserting on that was checking
+        // the client's cache rather than the server's behaviour. What matters is that offering
+        // a real, freshly-issued session back does not get it accepted.
+        assert.ok(session, "no session was offered at all, so this cannot distinguish anything");
+        assert.equal(reused, false,
+          "the server resumed a session, so two connections from one client are linkable");
+      } finally {
+        server.close();
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+
   "pad-before-seal": () => {
     // Padding is inside the constructors, so a caller cannot skip it, and the server refuses a
     // body that is not exactly a bucket — which is the only place it can be enforced, since a
@@ -279,8 +334,8 @@ test("no single claim smuggles a second claim inside it", () => {
 
 for (const guarantee of NOT_OBSERVABLE) {
   for (const because of guarantee.because) {
-    test(`${guarantee.id} — ${because.mechanism}`, () => {
-      MECHANISMS[because.mechanism]();
+    test(`${guarantee.id} — ${because.mechanism}`, async () => {
+      await MECHANISMS[because.mechanism]();
     });
   }
 }

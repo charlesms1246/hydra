@@ -15,6 +15,8 @@
  * been turned on.
  */
 
+import { readFileSync } from "node:fs";
+
 import { Vault } from "./server.ts";
 import { serve } from "./http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
@@ -46,9 +48,20 @@ const perMinute = Number(flag("per-minute", "600"));
 const rateLimit: RateLimitConfig =
   mode === "none" ? { mode } : { mode, perMinute };
 
+// TLS terminates HERE when a key and cert are given, rather than behind a proxy. Both choices
+// disclose SNI, cipher suite and ALPN to somebody; this one discloses them to the party running
+// the vault, who is the party already describing what they can see. Session tickets are off, so
+// two connections from one client cannot be joined — see `http.ts`.
+const tlsKey = flag("tls-key");
+const tlsCert = flag("tls-cert");
+if (Boolean(tlsKey) !== Boolean(tlsCert)) {
+  throw new Error("--tls-key and --tls-cert go together; one without the other is not TLS");
+}
+
 const { url } = await serve(vault, Number(flag("port", "8080")), {
   observeTransport: args.includes("--observe-transport"),
   rateLimit,
+  ...(tlsKey ? { tls: { key: readFileSync(tlsKey), cert: readFileSync(tlsCert) } } : {}),
 });
 
 console.log(`vault on ${url}`);
@@ -58,3 +71,6 @@ console.log(`limiter  ${mode}${mode === "none" ? "" : ` at ${perMinute}/min`}`
   + `${mode === "per-peer" ? "  (adds rate.peerBucket to the table)" : ""}`);
 if (args.includes("--observe-transport")) console.log("transport observation is ON");
 if (args.includes("--observe-reads")) console.log("read logging is ON");
+console.log(tlsKey
+  ? "transport TLS terminates here; session tickets are disabled, so every connection is a full\n         handshake and two connections cannot be linked to one client"
+  : "transport PLAINTEXT — anyone on the path reads every id and every body");
