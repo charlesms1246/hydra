@@ -31,6 +31,7 @@ import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import { scheduleUpload, assertSafeSchedule } from "../../channel/src/schedule.ts";
 import type { ScheduleConfig } from "../../channel/src/schedule.ts";
 import { coverPlan } from "../../channel/src/cover.ts";
+import type { Decoy } from "../../channel/src/cover.ts";
 import { sealForChannel, wireBytes, uploadPathFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
@@ -44,6 +45,8 @@ export type Outgoing = {
   readonly calldata: readonly [bigint, bigint];
   /** Wall-clock time to upload at, which is strictly after the chain event. */
   readonly uploadAt: number;
+  /** When the chain event was published. Carried so cover can be derived from the messages. */
+  readonly publishedAt: number;
   readonly pointer: Pointer<typeof VAULT_DOMAIN>;
 };
 
@@ -77,6 +80,7 @@ export function send(
     body,
     calldata: noteCalldata(pointer, commit(config.nullifier, contentHashFor(plaintext))),
     uploadAt: scheduleUpload(publishedAt, config, random),
+    publishedAt,
     pointer,
   };
 }
@@ -93,12 +97,25 @@ export function receive(
 /**
  * Decoy uploads for a session, so the first real one is not the earliest thing seen.
  *
- * Takes every event rather than a span: cover is per event, and the count is `coverRate` times
- * the number of messages regardless of how long the conversation runs. See `channel/src/cover.ts`
- * for why the span version was unaffordable.
+ * Takes the `Outgoing` messages rather than bare times, and that is not a convenience. A decoy
+ * only hides an upload it resembles, and size is the first thing an operator filters on — a
+ * message in a bucket with no decoys is identified **every time**. Deriving the plan from the
+ * messages themselves is what makes a mismatch impossible to write.
+ *
+ * Cover is per event, so the count is `coverRate` times the number of messages regardless of
+ * how long the conversation runs. See `channel/src/cover.ts` for why the span version was
+ * unaffordable.
  */
-export function cover(config: SessionConfig, events: readonly number[], random?: () => number) {
-  return coverPlan(events, config, random);
+export function cover(
+  config: SessionConfig,
+  messages: readonly { readonly publishedAt: number; readonly body: Uint8Array }[],
+  random?: () => number,
+): Decoy[] {
+  return coverPlan(
+    messages.map((m) => ({ at: m.publishedAt, bucket: m.body.length })),
+    config,
+    random,
+  );
 }
 
 /** Open a channel. Named so a caller cannot accidentally pass a pool or sandbox root. */

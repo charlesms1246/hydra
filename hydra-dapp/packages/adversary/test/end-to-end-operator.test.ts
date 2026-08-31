@@ -51,17 +51,20 @@ function conversation(random: () => number, withCover: boolean) {
   const events: number[] = [];
   const arrivals: Arrival[] = [];
 
+  const sent = [];
   for (let seq = 0; seq < MESSAGES; seq++) {
     const publishedAt = seq * BLOCK;
     events.push(publishedAt);
     const out = send(config, new TextEncoder().encode(`message number ${seq}`), seq, publishedAt, random);
+    sent.push(out);
     arrivals.push({ at: out.uploadAt, id: out.blobId, bytes: out.body.length, real: true, seq });
   }
 
   if (withCover) {
-    for (const at of cover(config, events, random)) {
-      const body = coverBody(channel, BUCKETS[0]);
-      arrivals.push({ at, id: coverId(body), bytes: body.length, real: false, seq: -1 });
+    // Derived from the messages, so each decoy is the size of something it could be hiding.
+    for (const decoy of cover(config, sent, random)) {
+      const body = coverBody(channel, decoy.bucket);
+      arrivals.push({ at: decoy.at, id: coverId(body), bytes: body.length, real: false, seq: -1 });
     }
   }
 

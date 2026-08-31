@@ -42,9 +42,10 @@ function accuracy(coverRate: number, trials = 2000) {
     const events = Array.from({ length: MESSAGES }, (_, i) => i * BLOCK);
     const real = events.map((at) => scheduleUpload(at, cfg, random));
     const decoys = coverRate > 0
-      ? coverPlan(events, { ...cfg, coverRate }, random)
+      ? coverPlan(events.map((at) => ({ at, bucket: BUCKETS[0] })), { ...cfg, coverRate }, random)
       : [];
-    const uploads = [...real, ...decoys];
+    // Decoys carry their bucket now; the matcher only needs the time.
+    const uploads = [...real, ...decoys.map((d) => d.at)];
     for (let i = 0; i < MESSAGES; i++) {
       let best = -1;
       let gap = Infinity;
@@ -64,13 +65,13 @@ function accuracy(coverRate: number, trials = 2000) {
 test("cover begins before the first message, or the leak is unchanged", () => {
   // The lead is the whole mechanism. A caller — or a future refactor — that clamped these to
   // the session start would keep the storage cost and lose the defence.
-  const plan = coverPlan(Array.from({ length: 12 }, (_, i) => i * BLOCK), cfg, lcg(1));
-  assert.ok(plan[0] < 0, `cover starts at ${plan[0]}, not before the first event`);
-  assert.ok(plan[0] <= -COVER_LEAD_BLOCKS * BLOCK * 0.5,
+  const plan = coverPlan(Array.from({ length: 12 }, (_, i) => ({ at: i * BLOCK, bucket: BUCKETS[0] })), cfg, lcg(1));
+  assert.ok(plan[0].at < 0, `cover starts at ${plan[0].at}, not before the first event`);
+  assert.ok(plan[0].at <= -COVER_LEAD_BLOCKS * BLOCK * 0.5,
     "the lead is far shorter than configured");
-  assert.ok(plan.at(-1)! > 11 * BLOCK, "cover stops before the last message");
+  assert.ok(plan.at(-1)!.at > 11 * BLOCK, "cover stops before the last message");
   // Sorted, so a consumer can merge it with a real schedule without re-sorting.
-  assert.deepEqual([...plan].sort((a, b) => a - b), plan);
+  assert.deepEqual([...plan].sort((a, b) => a.at - b.at), plan);
 });
 
 test("cover traffic closes the first-message leak that jitter could not", () => {
@@ -115,9 +116,9 @@ test("cover is per bucket, and mixing sizes is not covered", () => {
 });
 
 test("a cover rate of zero is refused rather than silently meaning none", () => {
-  assert.throws(() => coverPlan([0], { ...cfg, coverRate: 0 }), /no cover at all/);
+  assert.throws(() => coverPlan([{ at: 0, bucket: BUCKETS[0] }], { ...cfg, coverRate: 0 }), /no cover at all/);
   // And the schedule guard still applies: cover does not excuse an unsafe jitter window.
-  assert.throws(() => coverPlan([0], { blockMs: BLOCK, jitterBlocks: 1 }), /jitter/i);
+  assert.throws(() => coverPlan([{ at: 0, bucket: BUCKETS[0] }], { blockMs: BLOCK, jitterBlocks: 1 }), /jitter/i);
 });
 
 test("the cover key stays in the vault domain", () => {
@@ -132,7 +133,7 @@ test("the cost is bounded by messages, not by how long the conversation runs", (
   // function of DURATION: twelve messages a day apart cost 15,848 decoys and 15 MiB, against 14
   // for the same twelve messages five minutes apart. Every published number came from the short
   // session, so the cost never appeared in a measurement.
-  const twelve = (gap: number) => Array.from({ length: 12 }, (_, i) => i * gap);
+  const twelve = (gap: number) => Array.from({ length: 12 }, (_, i) => ({ at: i * gap, bucket: BUCKETS[0] }));
   const short = coverPlan(twelve(BLOCK), cfg, lcg(1)).length;
   const long = coverPlan(twelve(86_400_000), cfg, lcg(1)).length;
   assert.equal(short, long, "the decoy count still depends on how long the conversation ran");
@@ -147,7 +148,7 @@ test("an isolated message gets the floor the rate buys, and no more", () => {
   const random = lcg(31);
   const runs = Array.from({ length: 800 }, () => {
     const uploads = isolated.map((at, seq) => ({ t: scheduleUpload(at, cfg, random), real: true, seq }));
-    for (const t of coverPlan(isolated, cfg, random)) uploads.push({ t, real: false, seq: -1 });
+    for (const d of coverPlan(isolated.map((at) => ({ at, bucket: BUCKETS[0] })), cfg, random)) uploads.push({ t: d.at, real: false, seq: -1 });
     return { events: isolated, uploads };
   });
   const floor = anonymitySetFloor(cfg);
@@ -164,9 +165,55 @@ test("messages that cluster do better than the floor, which is a bonus not the g
   const clustered = Array.from({ length: 12 }, (_, i) => i * BLOCK);
   const runs = Array.from({ length: 800 }, () => {
     const uploads = clustered.map((at, seq) => ({ t: scheduleUpload(at, cfg, random), real: true, seq }));
-    for (const t of coverPlan(clustered, cfg, random)) uploads.push({ t, real: false, seq: -1 });
+    for (const d of coverPlan(clustered.map((at) => ({ at, bucket: BUCKETS[0] })), cfg, random)) uploads.push({ t: d.at, real: false, seq: -1 });
     return { events: clustered, uploads };
   });
   assert.ok(best(runs).mean.mean < anonymitySetFloor(cfg) / 2,
     "clustered messages should comfortably beat the isolated floor");
+});
+
+test("a message in a bucket with no decoys has no cover at all", () => {
+  // The hole the plan's shape now prevents. Cover was bare times and `coverBody` took whatever
+  // bucket a caller passed, so the obvious thing to pass was the smallest one — and any larger
+  // message was naked. Measured before the fix: 1.000, an operator right every single time,
+  // because filtering by size left exactly one candidate.
+  const events = Array.from({ length: 8 }, (_, i) => ({ at: i * BLOCK, bucket: BUCKETS[0] }));
+  const plan = coverPlan(events, cfg, lcg(11));
+  const covered = new Set(plan.map((d) => d.bucket));
+  assert.deepEqual([...covered], [BUCKETS[0]]);
+  // A message in a bucket the plan never mentions is alone in its size class.
+  assert.ok(!covered.has(BUCKETS[3]), "the fixture is not exercising an uncovered bucket");
+
+  // With the buckets carried, a mixed-size session covers each size it actually uses.
+  const mixed = [
+    { at: 0, bucket: BUCKETS[0] },
+    { at: BLOCK, bucket: BUCKETS[3] },
+    { at: 2 * BLOCK, bucket: BUCKETS[0] },
+  ];
+  const mixedPlan = coverPlan(mixed, cfg, lcg(12));
+  for (const bucket of new Set(mixed.map((m) => m.bucket))) {
+    const n = mixedPlan.filter((d) => d.bucket === bucket).length;
+    assert.equal(n, COVER_RATE * mixed.filter((m) => m.bucket === bucket).length,
+      `bucket ${bucket} got ${n} decoys, not rate-per-message-in-that-bucket`);
+  }
+});
+
+test("the floor does not depend on how many messages a conversation has", () => {
+  // A virtue of covering per event rather than per session: a two-message conversation gets the
+  // same guarantee as a fifty-message one. The span-based design did not have this — its
+  // protection came from the crowd, so a short conversation had a small crowd.
+  for (const n of [2, 5, 25]) {
+    const random = lcg(31);
+    const isolated = Array.from({ length: n }, (_, i) => i * 86_400_000);
+    const runs = Array.from({ length: 400 }, () => {
+      const uploads = isolated.map((at, seq) => ({ t: scheduleUpload(at, cfg, random), real: true, seq }));
+      for (const d of coverPlan(isolated.map((at) => ({ at, bucket: BUCKETS[0] })), cfg, random)) {
+        uploads.push({ t: d.at, real: false, seq: -1 });
+      }
+      return { events: isolated, uploads };
+    });
+    const scored = best(runs).mean.mean;
+    assert.ok(Math.abs(scored - anonymitySetFloor(cfg)) < 0.06,
+      `${n} messages scored ${scored.toFixed(3)} against a floor of ${anonymitySetFloor(cfg).toFixed(3)}`);
+  }
 });

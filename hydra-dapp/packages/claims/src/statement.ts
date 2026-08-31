@@ -129,8 +129,9 @@ export function statement(): Statement {
       },
       {
         says: `Message sizes are padded to one of ${MEASURED.buckets.length} fixed sizes, so the `
-          + `server learns a size band rather than a length. Decoys are per band, so a message `
-          + `in an unusual size band has less cover than one in a common band.`,
+          + `server learns a size band rather than a length. Decoys are sent in the same band as `
+          + `the message they hide — a decoy of the wrong size is not cover, because the server `
+          + `sorts by size before it does anything else.`,
         from: "vault-client/src/buckets.ts, channel/src/cover.ts",
         complete: false,
       },

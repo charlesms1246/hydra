@@ -88,9 +88,12 @@ test("a different channel cannot resolve the pointer", () => {
 });
 
 test("cover traffic starts before the session's first message", () => {
-  const plan = cover(config, Array.from({ length: 11 }, (_, i) => i * BLOCK), lcg(3));
+  const msgs = Array.from({ length: 11 }, (_, i) => send(config, new Uint8Array(8), i, i * BLOCK, lcg(i + 1)));
+  const plan = cover(config, msgs, lcg(3));
   assert.ok(plan.length > 0);
-  assert.ok(plan[0] < 0, "cover does not lead the first message");
+  assert.ok(plan[0].at < 0, "cover does not lead the first message");
+  assert.ok(plan.every((d) => d.bucket === msgs[0].body.length),
+    "a decoy was planned at a size no message uses");
 });
 
 test("the session refuses an unsafe schedule outright", () => {

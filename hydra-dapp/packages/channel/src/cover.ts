@@ -23,10 +23,15 @@
  * The last row IS the floor — 1/(rate+1) = 0.2 — and the others beat it because overlapping
  * windows merge anonymity sets. The overhead is constant because cover is per event.
  *
- * COVER IS PER BUCKET. A decoy hides a real upload only if it looks like one, and size is the
- * most visible thing about an upload. Decoys in the 1 KiB bucket do nothing for a 64 KiB
- * message: the operator simply ignores everything that is the wrong size. So each bucket in
- * use needs its own cover stream, and `coverPlan` takes the bucket it is covering.
+ * COVER IS PER BUCKET, AND THE TYPE ENFORCES IT. A decoy hides a real upload only if it looks
+ * like one, and size is the most visible thing about an upload. This was a caveat in this
+ * comment for a while and nothing made it true: `coverPlan` returned bare times, `coverBody`
+ * took whatever bucket a caller passed, and the obvious thing to pass is the smallest one. A
+ * message in any other bucket then had **no cover at all** — measured at 1.000, an operator
+ * identifying it every single time, because filtering by size leaves exactly one candidate.
+ *
+ * So a cover plan is a list of `{at, bucket}` derived from the messages it covers. There is no
+ * longer a way to ask for cover without saying what size it has to look like.
  */
 
 import { randomBytes, randomInt } from "node:crypto";
@@ -53,6 +58,12 @@ export type CoverConfig = ScheduleConfig & {
   readonly coverRate?: number;
   readonly leadBlocks?: number;
 };
+
+/** A message to be covered: when its chain event lands, and the bucket its upload will be. */
+export type CoverEvent = { readonly at: number; readonly bucket: number };
+
+/** A decoy to send: when, and at what size so it is indistinguishable from what it hides. */
+export type Decoy = { readonly at: number; readonly bucket: number };
 
 /**
  * When to send decoys: `coverRate` of them around each chain event.
@@ -85,23 +96,28 @@ export type CoverConfig = ScheduleConfig & {
  * A caller that clamps them to the session start has removed the defence and kept the cost.
  */
 export function coverPlan(
-  events: readonly number[],
+  events: readonly CoverEvent[],
   config: CoverConfig,
   random: () => number = () => randomInt(1 << 30) / (1 << 30),
-): number[] {
+): Decoy[] {
   assertSafeSchedule(config);
   const rate = config.coverRate ?? COVER_RATE;
   if (!(rate > 0)) throw new Error("cover: a rate of zero is no cover at all");
   if (events.length === 0) throw new Error("cover: a session with no events needs no cover");
   const window = jitterWindowMs(config);
   const lead = (config.leadBlocks ?? COVER_LEAD_BLOCKS) * config.blockMs;
-  const out: number[] = [];
-  for (const at of events) {
+  const out: Decoy[] = [];
+  for (const event of events) {
     // Spanning [event - lead, event + window): the lead is what stops the session's earliest
     // upload being its first message, and the window is where the real upload will land.
-    for (let k = 0; k < rate; k++) out.push(at - lead + random() * (lead + window));
+    //
+    // The bucket is the covered message's own. A decoy of a different size is not cover; an
+    // operator filters by size before it does anything else.
+    for (let k = 0; k < rate; k++) {
+      out.push({ at: event.at - lead + random() * (lead + window), bucket: event.bucket });
+    }
   }
-  return out.sort((a, b) => a - b);
+  return out.sort((a, b) => a.at - b.at);
 }
 
 /** The floor this rate buys: an operator's accuracy against an isolated message. */
