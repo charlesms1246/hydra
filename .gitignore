@@ -20,6 +20,12 @@ claude-docs/
 devtool/packages/skills/
 devtool/packages/mcp/
 
+# Internal working notes, same class as CLAUDE.md and the docs above: they steer the
+# work, they are not the work. Ignored rather than merely untracked for the same reason
+# as the block above — `git add -A` should not be able to sweep them into a public commit.
+OPEN-QUESTIONS.md
+ANSWERS.md
+
 # Third-party STRK20 agent skills, installed via:
 #   npx skills add welttowelt/strk20-skills
 # 312K of upstream documentation bundled verbatim. Ignored rather than vendored
