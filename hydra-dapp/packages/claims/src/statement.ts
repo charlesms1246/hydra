@@ -74,6 +74,20 @@ export const MEASURED = {
   isolatedMessageIdentified: 0.2,
   clusteredMessageIdentified: 0.028,
   chance: 1 / 12,
+  /**
+   * How often anyone reading the chain identifies who published a pointer. One.
+   *
+   * Not a fraction, and deliberately not folded in with the numbers above. Those describe a
+   * vault operator correlating an upload with an event, which jitter and cover make hard. This
+   * describes reading a signed transaction, which nothing makes hard: `sender_address` names
+   * the account and `nonce` orders that account's messages.
+   *
+   * `note.ts` guarantees the EVENT carries two felts and nothing else, and that is true. The
+   * event is inside a transaction. `adversary/test/chain-sender-disclosure.test.ts` measures
+   * it, and `claude-docs/decisions/0011-cli-client.md` says what routing through the pool would
+   * cost to build.
+   */
+  senderIdentifiedOnChain: 1,
 } as const;
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -93,9 +107,18 @@ export function statement(): Statement {
       complete: true,
     })).concat([
       {
-        says: "Anyone reading the blockchain sees that a message happened, and when — "
-          + `${MEASURED.noteFelts} values, neither of which says who sent it, who it is for, or what it says.`,
+        says: `Anyone reading the blockchain sees that a message happened, and when — ${MEASURED.noteFelts} `
+          + "values, neither of which says who it is for or what it says.",
         from: "channel/src/note.ts (NOTE_FELTS)",
+        complete: true,
+      },
+      {
+        says: "With the current client, anyone reading the blockchain also sees WHICH ACCOUNT "
+          + "published each of those messages, and in what order, every time. The two values "
+          + "themselves do not say — but they travel inside a signed transaction, and the "
+          + "transaction does. Removing this needs the message to be published by the pool on "
+          + "your behalf rather than by you, which is how it is meant to work and is not built.",
+        from: "adversary/test/chain-sender-disclosure.test.ts, cli/src/chain.ts",
         complete: true,
       },
       {

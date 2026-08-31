@@ -122,7 +122,13 @@ export function initiate(
   myVaultRoot: Secret<typeof VAULT_DOMAIN>,
   theirBundle: Bundle,
   options: { ephemeralSeed?: Uint8Array; channelMaterial?: Uint8Array } = {},
-): { message: PrekeyMessage; channel: Secret<typeof VAULT_DOMAIN>; agreed: Agreed } {
+): {
+  message: PrekeyMessage;
+  channel: Secret<typeof VAULT_DOMAIN>;
+  agreed: Agreed;
+  /** The agreed bytes, so a client can persist them and rebuild the channel. See `respond`. */
+  material: Uint8Array;
+} {
   verifyBundle(theirBundle);
 
   const ek = ephemeral(options.ephemeralSeed ?? new Uint8Array(randomBytes(KEY_BYTES)));
@@ -149,6 +155,7 @@ export function initiate(
     },
     channel: channelFrom(material, hex(theirBundle.identityKey)),
     agreed,
+    material,
   };
 }
 
@@ -164,7 +171,21 @@ export function initiate(
 export function respond(
   myVaultRoot: Secret<typeof VAULT_DOMAIN>,
   message: PrekeyMessage,
-): { channel: Secret<typeof VAULT_DOMAIN>; agreed: Agreed; oneTimeIndex: number | null } {
+): {
+  channel: Secret<typeof VAULT_DOMAIN>;
+  agreed: Agreed;
+  oneTimeIndex: number | null;
+  /**
+   * The agreed bytes.
+   *
+   * Returned because a client has to survive being restarted, and the alternative is `expose`
+   * on the derived secret — the same raw bytes with a less honest name. Storing the MATERIAL
+   * rather than the derived key means both sides rebuild through the identical
+   * `fromChannelWrap` path, so a divergence in that derivation breaks both at once instead of
+   * silently giving two people two different channels.
+   */
+  material: Uint8Array;
+} {
   const spk = signedPrekey(myVaultRoot, message.epoch);
   const ik = identityDh(myVaultRoot);
 
@@ -185,6 +206,7 @@ export function respond(
     channel: channelFrom(material, hex(message.identityKey)),
     agreed,
     oneTimeIndex: message.oneTimeIndex,
+    material,
   };
 }
 

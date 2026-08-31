@@ -52,6 +52,14 @@ export class RateLimiter {
   readonly #now: () => number;
 
   constructor(config: RateLimitConfig = DEFAULT_RATE_LIMIT, now: () => number = () => Date.now()) {
+    // Checked, because the failure without this check is silent and looks like the client's
+    // fault: `n <= undefined` is false, so a config missing `perMinute` refuses every request
+    // after the first one in a window and the caller sees "rate limited" with no way to tell
+    // that the limiter is misconfigured rather than that they are going too fast. Found by
+    // running the real vault entry point, which nothing imported and so nothing type-checked.
+    if (config.mode !== "none" && !(Number.isFinite(config.perMinute) && config.perMinute > 0)) {
+      throw new Error(`rate limit mode ${config.mode} needs a positive perMinute, got ${config.perMinute}`);
+    }
     this.#config = config;
     // Per process, never written down. A stable salt would turn this key into a durable
     // pseudonym for an address, which is what the mode is trying not to be.

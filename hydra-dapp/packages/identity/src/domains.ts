@@ -174,6 +174,22 @@ export const fromTestVector = (bytes: Uint8Array, label: string): ExternalBytes 
 export const fromChannelWrap = (bytes: Uint8Array, peer: string): ExternalBytes =>
   external(bytes, `channel wrap from ${peer}`);
 
+/**
+ * This client's own entropy, read back off disk.
+ *
+ * A client that cannot be restarted is not a client, so the root has to be written down and
+ * re-entered. `where` is recorded because it is the honest answer to "how well is this
+ * protected" — the CLI's answer is a 0600 file and nothing else, and
+ * `cli/src/state.ts` says so at the top rather than leaving it to be discovered.
+ *
+ * Deliberately not `fromTestVector`, which was the near-miss: it would have worked, and
+ * `i1-key-domains.test.ts` greps production source for it precisely so that reaching for the
+ * convenient adapter fails the build instead of putting "test vector" in the provenance of
+ * every real user's root key.
+ */
+export const fromStoredSeed = (bytes: Uint8Array, where: string): ExternalBytes =>
+  external(bytes, `stored seed at ${where}`);
+
 /** Fresh entropy from the OS. */
 export const randomEntropy = (n = 32): Entropy => entropyFrom(fromOsRandom(n));
 
