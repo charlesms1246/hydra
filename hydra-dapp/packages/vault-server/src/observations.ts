@@ -56,7 +56,8 @@ export type Mechanism =
   | "pad-before-seal"
   | "inbox-not-content-addressed"
   | "x3dh-authenticates-not-vault"
-  | "no-session-tickets";
+  | "no-session-tickets"
+  | "shared-key-authenticator";
 
 /** One clause of a reason, with the code that makes that clause true. */
 export type Because = {
@@ -293,6 +294,14 @@ export const NOT_OBSERVABLE: readonly Guarantee[] = [
         mechanism: "inbox-not-content-addressed" },
       { claim: "the vault authenticates nothing, so a stranger writing into a slot produces something the recipient discards rather than something the operator can attribute",
         mechanism: "x3dh-authenticates-not-vault" },
+    ],
+  },
+  {
+    id: "content.author",
+    what: "which of a conversation's two participants wrote a message that was sent deniably",
+    because: [
+      { claim: "a deniable message carries no signature, only the AEAD tag under a content key both participants hold, so either of them could have produced it",
+        mechanism: "shared-key-authenticator" },
     ],
   },
 ];

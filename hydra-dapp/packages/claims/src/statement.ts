@@ -167,6 +167,22 @@ export function statement(): Statement {
     // would round up to a guarantee.
     whatIsPartial: [
       {
+        // The pair, stated together, because either alone reads as the whole story. The
+        // NOT_OBSERVABLE row for this is scoped to the storage operator, which understates it:
+        // the party who cannot tell who wrote a deniable message is EVERYONE, including the
+        // person you sent it to, and that is the point of choosing it.
+        says: "Every message is either signed or deniable, and you choose which before you send "
+          + "it. A signed message carries a signature under a key only you hold, so anyone with "
+          + "your published bundle can prove you wrote it — including people you never sent it "
+          + "to, and you cannot take that back. A deniable message carries no signature at all: "
+          + "the only thing authenticating it is a key you and the person you are talking to "
+          + "both hold, so either of you could have written it and neither of you can prove "
+          + "which. That is deliberate, and it means a deniable message is not evidence of "
+          + "anything, in either direction.",
+        from: "handshake/src/authorship.ts, adversary/test/authorship.test.ts",
+        complete: false,
+      },
+      {
         says: "Decoy uploads are fetched by the recipient exactly like real messages are, which "
           + "is what makes the number below true. It does NOT hold otherwise: when decoys were "
           + "not fetched, a storage server told every decoy from every message by asking which "

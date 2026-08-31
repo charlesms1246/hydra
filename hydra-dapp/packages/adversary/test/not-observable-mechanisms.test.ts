@@ -34,6 +34,9 @@ import { channelSecret, pointerFor, blobIdFrom, recoverBlobId } from "../../chan
 import { readSet } from "../../client/src/read.ts";
 import { inboxSlots, encodePrekey, decodePrekey } from "../../handshake/src/inbox.ts";
 import { initiate, respond, bundleFor } from "../../handshake/src/x3dh.ts";
+import { ephemeral, signedBy, unframe } from "../../handshake/src/authorship.ts";
+import { send } from "../../client/src/session.ts";
+import { openForChannel, plaintextOf } from "../../vault-client/src/blobs.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
 
@@ -231,6 +234,43 @@ const MECHANISMS: Record<Mechanism, () => void | Promise<void>> = {
       rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(25), "x3dh-mallory"))));
     const forged = initiate(mallory, bundleFor(mallory, 0, 0)).message;
     assert.throws(() => respond(bob, forged), /unable to authenticate|bad decrypt/i);
+  },
+
+  /**
+   * Deniability, asserted as a property rather than described as one.
+   *
+   * The mechanism is that a deniable message's only authenticator is the AEAD tag under a
+   * content key BOTH participants hold. So the check is not "there is no signature in the
+   * frame" — that is a source check, and this file exists because a source check let
+   * `read.target` be false for months. The check is that the counterparty can PRODUCE a message
+   * indistinguishable from the author's, which is the thing a third party would have to
+   * distinguish and cannot.
+   */
+  "shared-key-authenticator": () => {
+    const root = (n: number) => derive(VAULT_DOMAIN,
+      rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(n), "deniable"))));
+    const channel = channelSecret(root(21), "either-of-us");
+    const words = new TextEncoder().encode("meet me at eight");
+
+    // Alice writes it deniably; bob, holding the same content key, writes the same thing.
+    const config = { blockMs: 30_000, channel, author: ephemeral() };
+    const hers = send(config, words, 0, 0, () => 0.5);
+    const his = send(config, words, 0, 0, () => 0.5);
+
+    // Both open under the shared key, and neither frame carries a signature to tell them apart.
+    for (const body of [hers.body, his.body]) {
+      const opened = unframe(plaintextOf(openForChannel(channel, body)));
+      assert.equal(opened.signature, null,
+        "a deniable message carried a signature, which would settle who wrote it");
+      assert.deepEqual(Buffer.from(opened.plaintext), Buffer.from(words));
+    }
+    assert.equal(hers.body.length, his.body.length);
+
+    // And the property is a CHOICE: the same call with a signing attribution is not deniable, so
+    // this mechanism is about content that asked for it rather than about content that got it.
+    const signed = send({ ...config, author: signedBy(root(21)) }, words, 0, 0, () => 0.5);
+    assert.ok(unframe(plaintextOf(openForChannel(channel, signed.body))).signature,
+      "a signed message came out deniable, so the choice does not reach the wire");
   },
 
   "no-session-tickets": async () => {

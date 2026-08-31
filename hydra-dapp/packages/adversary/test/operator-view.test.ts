@@ -242,11 +242,22 @@ test("the capture confirms each NOT_OBSERVABLE claim", () => {
   assert.ok(!mailView.includes(senderKeyHex),
     "the sender's identity key is in the operator's record of a mailbox slot");
 
+  // Content author: the record has no field that could name one, and two blobs written by
+  // different participants of one channel are the same shape in it. The load-bearing half of
+  // this claim — that the counterparty can produce an indistinguishable message — is measured in
+  // `not-observable-mechanisms.test.ts`, because it is a property of the frame rather than of
+  // the record.
+  const rows = vault.observe().rows;
+  for (const row of rows) {
+    assert.deepEqual(Object.keys(row).filter((k) => /author|sender|from|signer/i.test(k)), [],
+      `the stored record has a field that could name an author: ${Object.keys(row)}`);
+  }
+
   // Every NOT_OBSERVABLE row is one of the cases above; this keeps the two lists in step.
   assert.deepEqual(
     NOT_OBSERVABLE.map((o) => o.id).sort(),
-    ["blob.trueLength", "content.plaintext", "inbox.sender", "read.target", "tls.resumption",
-      "upload.channel", "uploader.identity"],
+    ["blob.trueLength", "content.author", "content.plaintext", "inbox.sender", "read.target",
+      "tls.resumption", "upload.channel", "uploader.identity"],
   );
 });
 
