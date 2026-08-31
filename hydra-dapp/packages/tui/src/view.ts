@@ -18,6 +18,7 @@
 
 import { box, beside, fit, frame, paint, truncate, wrap, width } from "./screen.ts";
 import { PAGES, FIELDS, channelNames, selected, due } from "./app.ts";
+import { attributionLabel } from "../../cli/src/commands.ts";
 import type { Model, Page } from "./app.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { bundleFrom, oneTimeRemaining } from "../../handshake/src/prekeys.ts";
@@ -134,11 +135,16 @@ function chats(m: Model, size: Size, height: number): string[] {
 
   const messages = current ? m.transcript[current] ?? [] : [];
   const body = messages.length
-    ? messages.flatMap((msg) => bullet(
-      msg.text, size.cols - listWidth - 4,
-      // Who spoke, on every line's first row. A channel is two one-way keys, and which one
-      // opened a message is the only thing that establishes authorship on this screen.
-      msg.mine ? paint("you  ", "gray") : paint(`${current}  `, "cyan")))
+    ? messages.flatMap((msg) => {
+      // I7: the name and what backs it, together, from the one function that decides both. A
+      // deniable message still shows the name the reader gave this channel — their own belief is
+      // theirs to hold — but never without the mark that says the product cannot prove it.
+      const who = attributionLabel(msg, current ?? "");
+      const tone = msg.attribution === "signed" ? "green" : "yellow";
+      return bullet(
+        msg.text, size.cols - listWidth - 4,
+        paint(who.mark, tone) + " " + paint(`${who.name}  `, msg.mine ? "gray" : "cyan"));
+    })
     : note(current
       ? "nothing read yet. `r` fetches every chain event and asks the vault for every "
         + "candidate id at once — that batch IS the read defence, and it is why reading is "
@@ -173,7 +179,10 @@ function chats(m: Model, size: Size, height: number): string[] {
       box(list, { width: listWidth, height: top, title: `channels (${names.length})` }),
       box(visible, { width: size.cols - listWidth, height: top, title: current ?? "—" }),
     ),
-    ...box(compose, { width: size.cols, height: composeHeight, title: "message", focus: m.typing }),
+    ...box(compose, {
+      width: size.cols, height: composeHeight, focus: m.typing,
+      title: "message  ✓ signed · ? unverifiable",
+    }),
   ];
 }
 

@@ -34,7 +34,7 @@
 import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
-  fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget,
+  fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
   encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
 import { chainFor } from "./chain.ts";
@@ -210,10 +210,16 @@ switch (command) {
     if (!name) usage();
     // Direction, not just text. A channel is two one-way keys and a transcript that does not
     // say which one opened a line is a transcript that puts your words in their mouth.
+    // I7: never a name without what backs it. `attributionLabel` is the only place either front
+    // end turns a message into an author, so the rule cannot hold in one and not the other.
     const read = await readChannel(state, chainFor(state), name);
     for (const m of read) {
-      console.log(`${m.mine ? "you " : "them"} ${String(m.seq).padStart(3)}  ${m.text}`);
+      const who = attributionLabel(m, name);
+      console.log(`${who.mark} ${who.name.padEnd(12)} ${String(m.seq).padStart(3)}  ${m.text}`);
     }
+    console.log("");
+    console.log("✓ signed — that person's key, provable to anyone holding their bundle");
+    console.log("? unverifiable — a key you both hold, so either of you could have written it");
     const foreign = foreignSends(state, name);
     if (foreign) {
       console.error("");

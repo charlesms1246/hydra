@@ -672,6 +672,37 @@ export async function readChannel(
 }
 
 /**
+ * How a message may be labelled on any surface — invariant I7.
+ *
+ * ONE FUNCTION, because the rule is that the product never shows a name without showing what
+ * backs it, and a rule enforced in two renderers is a rule that holds in one of them. The TUI
+ * and the CLI both call this; `adversary/test/i7-attribution.test.ts` renders real transcripts
+ * and fails if a name reaches a frame any other way.
+ *
+ * A reader's own belief about who they are talking to is theirs to hold, so deniable content is
+ * still shown under the name they gave the channel. What the product may not do is present it as
+ * something a screenshot or a forward would read as proof.
+ */
+export function attributionLabel(
+  message: Pick<ReceivedMessage, "mine" | "attribution">,
+  channelName: string,
+): { readonly name: string; readonly mark: string; readonly basis: string } {
+  const name = message.mine ? "you" : channelName;
+  return message.attribution === "signed"
+    ? { name, mark: SIGNED_MARK, basis: "signed — provable to anyone holding their bundle" }
+    : { name, mark: UNVERIFIABLE_MARK, basis: "unverifiable — either of you could have written it" };
+}
+
+/**
+ * The two marks, defined once.
+ *
+ * Not decorative and not interchangeable: a surface that showed the same glyph for both, or none
+ * at all, would be a surface where a forgery reads exactly like a signature.
+ */
+export const SIGNED_MARK = "✓";
+export const UNVERIFIABLE_MARK = "?";
+
+/**
  * Delete messages from the transcript, which now actually deletes them.
  *
  * It did not use to. Every channel key descended from material in this file, so a "deleted"
