@@ -318,9 +318,15 @@ test("TTL expires by default and pinning survives; takedown is public-only", () 
 test("every table row carries a reason, and the ids are unique", () => {
   // The table is read by people deciding whether to trust the thing. A row without a why is a
   // row that gets argued about instead of understood.
-  for (const o of [...OBSERVABLE, ...NOT_OBSERVABLE]) {
+  for (const o of OBSERVABLE) {
     assert.ok(o.what.length > 10, `${o.id} has no description`);
     assert.ok(o.why.length > 20, `${o.id} has no reason`);
+  }
+  // The guarantees carry their reasons as a list of claims, each with its own mechanism, so the
+  // check is that every claim says something rather than that one string is long enough.
+  for (const g of NOT_OBSERVABLE) {
+    assert.ok(g.because.length > 0, `${g.id} states no reason`);
+    for (const b of g.because) assert.ok(b.claim.length > 20, `${g.id} has an empty claim`);
   }
   const ids = [...OBSERVABLE, ...NOT_OBSERVABLE].map((o) => o.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate observation id");

@@ -24,7 +24,7 @@
  * because the first is uncomfortable is exactly the failure this file exists to prevent.
  */
 
-import { OBSERVABLE, DERIVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
+import { OBSERVABLE, DERIVABLE, NOT_OBSERVABLE, whyOf } from "../../vault-server/src/observations.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import { COVER_RATE, coverLeadMs } from "../../channel/src/cover.ts";
 import { NOTE_FELTS } from "../../channel/src/note.ts";
@@ -195,7 +195,7 @@ export function statement(): Statement {
     ],
 
     whatWeCannotSee: NOT_OBSERVABLE.map((o) => ({
-      says: `Whoever runs the storage server cannot see ${o.what} — ${o.why}.`,
+      says: `Whoever runs the storage server cannot see ${o.what} — ${whyOf(o)}.`,
       from: `vault-server/src/observations.ts (${o.id})`,
       complete: true,
     })),

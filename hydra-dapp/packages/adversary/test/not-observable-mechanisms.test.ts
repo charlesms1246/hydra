@@ -20,15 +20,16 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
-import type { Guarantee } from "../../vault-server/src/observations.ts";
+import { NOT_OBSERVABLE, whyOf } from "../../vault-server/src/observations.ts";
+import type { Mechanism } from "../../vault-server/src/observations.ts";
 import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
 import { MIN_READ_BATCH } from "../../client/src/read.ts";
 import { sealForChannel, wireBytes } from "../../vault-client/src/blobs.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
-import { channelSecret } from "../../channel/src/pointer.ts";
+import { channelSecret, pointerFor, blobIdFrom, recoverBlobId } from "../../channel/src/pointer.ts";
+import { readSet } from "../../client/src/read.ts";
 import { inboxSlots, encodePrekey, decodePrekey } from "../../handshake/src/inbox.ts";
-import { initiate, bundleFor } from "../../handshake/src/x3dh.ts";
+import { initiate, respond, bundleFor } from "../../handshake/src/x3dh.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
 
@@ -75,7 +76,7 @@ function grep(pattern: string, path: string): string[] {
  * One assertion per mechanism. Keyed by the same union the guarantees use, so a typo is a
  * compile error rather than a silently absent check.
  */
-const MECHANISMS: Record<Guarantee["mechanism"], () => void> = {
+const MECHANISMS: Record<Mechanism, () => void> = {
   "no-key-in-server": () => {
     // The server holds no key, so it cannot decrypt regardless of intent. Checked as an absence
     // in the code rather than as a property of a run: a run only exercises the paths it took,
@@ -174,6 +175,60 @@ const MECHANISMS: Record<Guarantee["mechanism"], () => void> = {
     assert.throws(() => decodePrekey(new Uint8Array(1024)), /too short|exceeds/);
   },
 
+  "client-pads-read": () => {
+    // The claim `min-read-batch` does NOT cover. The server refusing narrow reads is a floor;
+    // this is the separate claim that a client asks for its whole channel set rather than
+    // sailing along the floor with only the id it wants plus seven decoys. Split out because
+    // the row used to rest both clauses on the server's assertion — one mechanism, two claims.
+    const seen = [0, 1, 2].map((seq) => ({
+      seq,
+      pointer: pointerFor(chan, blobIdFrom(bytes(sealForChannel(chan, new Uint8Array([seq])))), seq),
+    }));
+    const batch = readSet(chan, seen as never);
+    assert.ok(batch.length >= MIN_READ_BATCH);
+    // Every message the client knows about is in it, not just the one it wants now.
+    for (const s of seen) {
+      const id = `enc:${Buffer.from(recoverBlobId(chan, s.pointer, s.seq)).toString("hex")}`;
+      assert.ok(batch.includes(id), `message ${s.seq} is missing from the batch`);
+    }
+    // And it is wider than the set, so the wanted id is not the only real one in it.
+    assert.ok(batch.length > seen.length, "the batch is exactly the channel set with no padding");
+  },
+
+  "no-accounts": () => {
+    // The other half of `uploader.identity`. `invite-destroyed` proves the token is not kept;
+    // this proves there is no identity for it to have been kept against. An account system
+    // would make the invite's destruction beside the point.
+    const src = readFileSync(join(SERVER_SRC, "server.ts"), "utf8");
+    assert.deepEqual(grep("(user|account|login|session|principal|owner)\\s*[:=]", SERVER_SRC), [],
+      "the vault-server has acquired something account-shaped");
+    assert.ok(!/interface\s+\w*Account|type\s+\w*Account/.test(src));
+    // And an upload request has no field an identity could travel in.
+    const upload = src.match(/export type UploadRequest = \{[^}]*\}/s);
+    assert.ok(upload);
+    assert.ok(!/user|account|from|sender/i.test(upload![0]), `an identity field appeared:\n${upload![0]}`);
+  },
+
+  "x3dh-authenticates-not-vault": () => {
+    // The other half of `inbox.sender`. `inbox-not-content-addressed` proves the ADDRESS carries
+    // nothing about the sender; this proves the vault does not check who wrote, so a stranger's
+    // object is refused by the recipient rather than attributed by the operator.
+    // Grepped for CALLS, not for the words. The first version matched this project's own
+    // disclosure table — which is stored in this directory and says the word "authenticates" —
+    // and a comment reading "unauthenticated reads". A check that a codebase never mentions a
+    // concept is not a check that it never does it.
+    assert.deepEqual(
+      grep("createVerify|\\bverify\\(|\\bsign\\(|x-hydra-(sig|auth)", SERVER_SRC), [],
+      "the vault verifies something about who is writing");
+    // A message from the wrong sender fails at `respond`, which is where authentication lives.
+    const bob = derive(VAULT_DOMAIN,
+      rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(24), "x3dh-bob"))));
+    const mallory = derive(VAULT_DOMAIN,
+      rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(25), "x3dh-mallory"))));
+    const forged = initiate(mallory, bundleFor(mallory, 0, 0)).message;
+    assert.throws(() => respond(bob, forged), /unable to authenticate|bad decrypt/i);
+  },
+
   "pad-before-seal": () => {
     // Padding is inside the constructors, so a caller cannot skip it, and the server refuses a
     // body that is not exactly a bucket — which is the only place it can be enforced, since a
@@ -191,21 +246,43 @@ const MECHANISMS: Record<Guarantee["mechanism"], () => void> = {
   },
 };
 
-test("every guarantee names a mechanism, and every mechanism is checked", () => {
-  // Both directions. A row added without an assertion is a claim nobody proved; an assertion
-  // left behind after its row is deleted is a check that no longer defends anything.
-  const claimed = NOT_OBSERVABLE.map((g) => g.mechanism).sort();
+test("every CLAIM names a mechanism, and every mechanism is checked", () => {
+  // Both directions, per claim rather than per row. `channel.membership` passed this check for
+  // weeks with one mechanism and two claims: the first was proven, the second was the
+  // disclosure written as though it were the protection, and nothing asserted it because the
+  // guard only asked whether the ROW named a mechanism.
+  const claimed = NOT_OBSERVABLE.flatMap((g) => g.because.map((b) => b.mechanism)).sort();
   const checked = Object.keys(MECHANISMS).sort();
-  assert.deepEqual(claimed, checked,
+  assert.deepEqual([...new Set(claimed)].sort(), checked,
     "the guarantees and their proofs have drifted apart");
   assert.equal(new Set(claimed).size, claimed.length,
-    "two guarantees share a mechanism — one of them is not separately proven");
+    "two claims share a mechanism — one of them is resting on the other's assertion");
+  assert.ok(NOT_OBSERVABLE.every((g) => g.because.length > 0), "a row states no reason at all");
+});
+
+test("no single claim smuggles a second claim inside it", () => {
+  // The structural fix stops a ROW carrying two claims under one mechanism. This stops a CLAIM
+  // doing the same thing inside one string, which is where the old defect actually lived: the
+  // second half arrived after an "and" and read like supporting detail.
+  //
+  // A clause needing a semicolon or an "and" that joins two assertions is two clauses. Split
+  // it and give the second one its own mechanism, or discover there is nothing proving it.
+  for (const g of NOT_OBSERVABLE) {
+    for (const b of g.because) {
+      assert.ok(!b.claim.includes(";"),
+        `${g.id}: "${b.claim}" joins two statements with a semicolon — split it`);
+      assert.ok(!/, and /.test(b.claim),
+        `${g.id}: "${b.claim}" joins two statements with ", and" — split it and prove both`);
+    }
+  }
 });
 
 for (const guarantee of NOT_OBSERVABLE) {
-  test(`${guarantee.id} — ${guarantee.mechanism}`, () => {
-    MECHANISMS[guarantee.mechanism]();
-  });
+  for (const because of guarantee.because) {
+    test(`${guarantee.id} — ${because.mechanism}`, () => {
+      MECHANISMS[because.mechanism]();
+    });
+  }
 }
 
 test("no guarantee's reason is only a claim about how clients behave", () => {
@@ -213,9 +290,11 @@ test("no guarantee's reason is only a claim about how clients behave", () => {
   // and a habit is not a mechanism — the code has to make it so, or the first caller who does
   // otherwise is not doing anything wrong. Each reason must point at something enforced.
   for (const g of NOT_OBSERVABLE) {
-    const clientBehaviour = /^clients? [a-z]/i.test(g.why.trim());
-    assert.ok(!clientBehaviour,
-      `${g.id}'s reason opens by describing what clients do: "${g.why}". Name what stops them ` +
-      "doing otherwise.");
+    for (const b of g.because) {
+      assert.ok(!/^clients? [a-z]/i.test(b.claim.trim()),
+        `${g.id}'s claim opens by describing what clients do: "${b.claim}". Name what stops `
+        + "them doing otherwise.");
+    }
+    assert.ok(whyOf(g).length > 20, `${g.id} states no reason worth reading`);
   }
 });

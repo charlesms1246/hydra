@@ -33,23 +33,45 @@ export type Observation = {
 /**
  * A thing the operator CANNOT see, and the name of the code that makes it so.
  *
- * `mechanism` exists because a `why` is prose, and prose is where a claim goes to stop being
- * true. `read.target` sat here for a week saying "clients fetch their whole channel set" while
- * no client did — the reason read like an explanation and was actually a wish.
+ * ONE MECHANISM PER CLAIM, not per row, and the difference is a bug this shape exists to
+ * prevent. `channel.membership` used to give the reason "nothing in an upload names a channel,
+ * **and** reads arrive as batches over a client's whole set". The first clause was true, had a
+ * mechanism, and had an assertion. The second was the disclosure written as though it were the
+ * protection — a batch IS the channel's whole set — and no mechanism covered it, because the
+ * guard only asked whether the ROW named one. A row with one mechanism and two claims is a row
+ * with one claim proven.
  *
- * So every row names a mechanism, `adversary/test/not-observable-mechanisms.test.ts` maps each
- * name to an assertion about the code, and the mapping is checked in both directions. A new row
- * with no mechanism fails; a mechanism with no row fails. Neither can be added alone.
+ * So a reason is a list, each element carrying the mechanism that proves that element.
+ * `not-observable-mechanisms.test.ts` maps every mechanism to an assertion and checks the
+ * mapping in both directions, per claim; and no two claims may share a mechanism, because two
+ * claims resting on one assertion is the same defect in smaller print.
  */
-export type Guarantee = Observation & {
-  readonly mechanism:
-    | "no-key-in-server"
-    | "no-channel-field"
-    | "min-read-batch"
-    | "invite-destroyed"
-    | "pad-before-seal"
-    | "inbox-not-content-addressed";
+export type Mechanism =
+  | "no-key-in-server"
+  | "no-channel-field"
+  | "min-read-batch"
+  | "client-pads-read"
+  | "no-accounts"
+  | "invite-destroyed"
+  | "pad-before-seal"
+  | "inbox-not-content-addressed"
+  | "x3dh-authenticates-not-vault";
+
+/** One clause of a reason, with the code that makes that clause true. */
+export type Because = {
+  readonly claim: string;
+  readonly mechanism: Mechanism;
 };
+
+export type Guarantee = {
+  /** Stable key. The capture is compared against these, so they are an interface. */
+  readonly id: string;
+  readonly what: string;
+  readonly because: readonly Because[];
+};
+
+/** The reason as prose, for the generated statement. Joined, never authored as one string. */
+export const whyOf = (g: Guarantee): string => g.because.map((b) => b.claim).join("; ");
 
 /**
  * Everything observable. Adding a field to a stored record or a log line without adding a row
@@ -191,37 +213,55 @@ export const NOT_OBSERVABLE: readonly Guarantee[] = [
   {
     id: "content.plaintext",
     what: "the contents of an encrypted blob",
-    why: "the server never holds a key; sealing happens client-side",
-      mechanism: "no-key-in-server",
+    because: [
+      { claim: "the server holds no key, so it cannot decrypt regardless of intent",
+        mechanism: "no-key-in-server" },
+    ],
   },
   {
     id: "upload.channel",
     what: "which channel a blob belongs to, at the moment it is uploaded",
-    why: "nothing in an upload request or in the stored record names a channel, so an operator holding the whole store and no request log cannot group it. That is the true half of what this row used to claim: it also said reads arrive as batches over a client's whole set, as though that were the protection. It is the disclosure — see read.channelSet",
-      mechanism: "no-channel-field",
+    because: [
+      { claim: "nothing in an upload request or in the stored record names a channel",
+        mechanism: "no-channel-field" },
+    ],
   },
   {
     id: "read.target",
     what: "which specific blob a reader actually wanted",
-    why: "the encrypted endpoint refuses a read of fewer than eight ids, and a client pads its channel set to that floor, so the wanted id is one of at least eight in every batch",
-      mechanism: "min-read-batch",
+    because: [
+      { claim: "the encrypted endpoint refuses a read of fewer than eight ids",
+        mechanism: "min-read-batch" },
+      { claim: "a client asks for its whole channel set, padded to that floor, so the wanted id is one of many",
+        mechanism: "client-pads-read" },
+    ],
   },
   {
     id: "uploader.identity",
     what: "who uploaded an object",
-    why: "there are no accounts, and an invite is destroyed at redemption rather than recorded against what it created",
-      mechanism: "invite-destroyed",
+    because: [
+      { claim: "there are no accounts, so there is no identity for an upload to be attributed to",
+        mechanism: "no-accounts" },
+      { claim: "an invite is destroyed at redemption rather than recorded against what it created",
+        mechanism: "invite-destroyed" },
+    ],
   },
   {
     id: "blob.trueLength",
     what: "the exact byte length of a message",
-    why: "padding to a bucket happens before encryption, so the true length never reaches the wire",
-      mechanism: "pad-before-seal",
+    because: [
+      { claim: "padding to a bucket happens before encryption, so the true length never reaches the wire",
+        mechanism: "pad-before-seal" },
+    ],
   },
   {
     id: "inbox.sender",
     what: "who put a prekey message in someone's mailbox",
-    why: "a slot is addressed by its RECIPIENT, so nothing about the sender determines where it lands; and the message that arrives is authenticated by X3DH rather than by the vault, so a stranger writing into a slot produces something the recipient discards rather than something the operator can attribute",
-      mechanism: "inbox-not-content-addressed",
+    because: [
+      { claim: "a slot is addressed by its recipient, so nothing about the sender determines where it lands",
+        mechanism: "inbox-not-content-addressed" },
+      { claim: "the vault authenticates nothing, so a stranger writing into a slot produces something the recipient discards rather than something the operator can attribute",
+        mechanism: "x3dh-authenticates-not-vault" },
+    ],
   },
 ];

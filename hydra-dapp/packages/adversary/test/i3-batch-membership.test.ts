@@ -149,7 +149,9 @@ test("the table says it, and no longer says the opposite", () => {
     "the vault still claims channel membership is not observable");
   const narrowed = NOT_OBSERVABLE.find((g) => g.id === "upload.channel");
   assert.ok(narrowed, "the true half of the old claim is gone too — it should survive");
-  assert.equal(narrowed!.mechanism, "no-channel-field");
+  assert.deepEqual(narrowed!.because.map((b) => b.mechanism), ["no-channel-field"]);
+  assert.equal(narrowed!.because.length, 1,
+    "the narrowed row states more than one claim again — each needs its own mechanism");
   assert.match(narrowed!.what, /at the moment it is uploaded/,
     "the narrowed row does not say what it is narrowed to");
 
