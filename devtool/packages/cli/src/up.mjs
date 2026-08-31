@@ -90,7 +90,14 @@ export async function up() {
   // devnet fixes its account set at spawn (`--accounts N`), so there is no way to
   // add one to a running chain. Restarting with a higher count is the honest
   // answer, and this is what makes it available.
-  const userAccounts = Math.max(2, Math.min(16, Number(process.env.HYDRA_ACCOUNTS ?? 2)));
+  // THREE, not two, and the third is not a convenience.
+  //
+  // Two signers for one account corrupt each other: `sncast` signs from an accounts file while
+  // the control API's in-process account object signs for the same address, neither knows the
+  // other's nonce, and the result is an intermittent `starknet_addInvokeTransaction` failure
+  // one run in six. The control API drives alice and bob; the extra account exists so anything
+  // signing directly — `hydra-dapp/scripts/redeploy.ts`, sncast by hand — has one to itself.
+  const userAccounts = Math.max(3, Math.min(16, Number(process.env.HYDRA_ACCOUNTS ?? 3)));
   const devnet = new Devnet({ userAccounts });
   const env = await devnet.initialize();
 

@@ -86,20 +86,22 @@ test("a transfer to an unregistered recipient is refused, and names the wrong th
   // anything it did. A live test whose precondition is "the last run left the chain like this"
   // is a live test that proves whatever the chain happens to hold.
   //
-  // So the precondition is now established here, and the failure it used to hide is asserted
-  // on the way past. `.upstream/sdk/src/internal/compiler.ts:294` requires the sender to hold
-  // channel context for the recipient, which exists only once the recipient has registered.
-  const notes = await notesOf("bob");
-  if (notes.length === 0) {
-    // Only meaningful before bob registers; on a re-run against the same chain he already has.
-    const refused = await control("transfer", { from: "alice", to: "bob", amount: "50" });
-    if (!refused.ok) {
-      assert.match(String(refused.error), /Missing channel context for recipient/,
-        `the unregistered-recipient failure changed shape: ${refused.error}`);
-      assert.equal(explain(String(refused.error), "transfer").kind, "recipient-not-registered",
-        "the client no longer translates the live pool's actual error text");
-    }
-  }
+  // The first fix was conditional and had the same disease in a smaller form; see below.
+  // `.upstream/sdk/src/internal/compiler.ts:294` requires the sender to hold channel context
+  // for the recipient, which exists only once the recipient has registered.
+  // Sent to `admin`, which is never registered by anything — it has no viewing key and no
+  // suite sets one. Using `bob` made this test depend on whether some OTHER suite had
+  // registered him first, and one silently did: the guard then took its "already registered"
+  // branch and the test asserted nothing while still reporting green. A conditional assertion
+  // is a test that stops being one the moment its condition stops holding.
+  const refused = await control("transfer", { from: "alice", to: "admin", amount: "10" });
+  assert.equal(refused.ok, false, "the pool accepted a transfer to an unregistered recipient");
+  assert.match(String(refused.error), /Missing channel context for recipient/,
+    `the unregistered-recipient failure changed shape: ${refused.error}`);
+  assert.equal(explain(String(refused.error), "transfer").kind, "recipient-not-registered",
+    "the client no longer translates the live pool's actual error text");
+
+  // And the precondition the next test needs, established here rather than inherited.
   const registered = await control("register", { who: "bob" });
   assert.ok(registered.ok || /did not compile the actions|no server message/.test(String(registered.error)),
     `registering the recipient failed for a new reason: ${registered.error}`);

@@ -38,7 +38,11 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
     });
 
   const transfers = { alice: mk(env.alice, VIEWING_KEYS.alice), bob: mk(env.bob, VIEWING_KEYS.bob) };
-  const accounts = { alice: env.alice, bob: env.bob };
+  // `admin` is here as a recipient only — it has no viewing key and nothing registers it, so it
+  // is a permanently unregistered address. `live-lifecycle.test.ts` needs one to assert what
+  // happens when you send to somebody who has not set themselves up, and using `bob` made that
+  // test depend on whether some other suite had registered him first — which it silently did.
+  const accounts = { alice: env.alice, bob: env.bob, admin: env.admin };
   const log = [];
   const note = (m) => { log.push({ at: new Date().toISOString(), m }); if (log.length > 200) log.shift(); };
 
@@ -62,6 +66,30 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
     }
   }
 
+  /**
+   * One operation at a time per account.
+   *
+   * Two concurrent callers on the same account corrupt each other, and the failure does not
+   * look like a race. `approve` SETS an allowance rather than adding to it, so a `shield` and a
+   * `publish` running together each approve their own amount, the second overwrites the first,
+   * and whichever deposit runs last fails with "Insufficient ERC20 allowance" — a message that
+   * sends you looking at token balances. The SDK's build-then-execute is stateful per account
+   * besides, so the pool-side discovery interleaves too and produces "did not compile the
+   * actions".
+   *
+   * Found because two live suites ran in parallel and failed in ways neither failed alone. The
+   * fix belongs here rather than in the tests: an API that cannot be called twice at once is a
+   * bug wherever it is called from, and a client with two windows open would hit exactly this.
+   */
+  const queues = new Map();
+  const perAccount = (who, fn) => {
+    const previous = queues.get(who) ?? Promise.resolve();
+    // Chained off the settled result, so one failure does not poison the queue behind it.
+    const mine = previous.catch(() => {}).then(fn);
+    queues.set(who, mine.catch(() => {}));
+    return mine;
+  };
+
   /** Approve the pool to pull `amount` of `token` for `who`. Deposits pull, they are not pushed. */
   async function approve(who, token, amount) {
     const r = await accounts[who].execute({
@@ -75,15 +103,18 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
 
   const ACTIONS = {
     async register({ who = "bob" }) {
+      return perAccount(who, async () => {
       note(`register ${who}`);
       const { callAndProof } = await transfers[who].build().register().execute();
       const receipt = await devnet.executeOutside(callAndProof);
       return { who, txHash: receipt.transaction_hash ?? null };
+      });
     },
 
     // `amount` is in BASE units, as the SDK's deposit()/transfer() take it. Callers
     // that mean whole tokens convert with core's toBaseUnits first.
     async shield({ who = "alice", amount = "100", token = "STRK" }) {
+      return perAccount(who, async () => {
       const tokenAddr = token === "ETH" ? env.eth : env.strk;
       note(`shield ${amount} ${token} for ${who}`);
       const approveTx = await approve(who, tokenAddr, amount);
@@ -95,6 +126,7 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
         .execute();
       const receipt = await devnet.executeOutside(callAndProof);
       return { who, amount, token, approveTx, txHash: receipt.transaction_hash ?? null };
+      });
     },
 
     async advance({ blocks = 11 }) {
@@ -103,6 +135,8 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
     },
 
     async transfer({ from = "alice", to = "bob", amount = "50", token = "STRK" }) {
+      // Queued on the SENDER: that is the account that signs, approves and spends notes.
+      return perAccount(from, async () => {
       const tokenAddr = token === "ETH" ? env.eth : env.strk;
       note(`transfer ${amount} ${token} ${from} → ${to}`);
       // Mature any note shielded moments ago; see advanceBlocks.
@@ -128,6 +162,7 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
         .execute();
       const receipt = await devnet.executeOutside(callAndProof);
       return { from, to, amount, token, txHash: receipt.transaction_hash ?? null };
+      });
     },
 
     /**
@@ -144,6 +179,7 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
      * carry it would be inventing an economic cost the design does not have.
      */
     async publish({ who = "alice", contract, calldata = [], attach = "none", amount = "1", build }) {
+      return perAccount(who, async () => {
       if (!contract) throw new Error("publish needs a contract address");
       note(`publish ${calldata.length} felts via pool for ${who} (attach=${attach})`);
       // No autoRegister and no autoSetup, and that is the finding rather than a preference.
@@ -174,9 +210,11 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
         .execute();
       const receipt = await devnet.executeOutside(callAndProof);
       return { who, contract, txHash: receipt.transaction_hash ?? null };
+      });
     },
 
     async notes({ who = "alice" }) {
+      return perAccount(who, async () => {
       const { notes } = await transfers[who].discoverNotes();
       const out = [];
       for (const [token, list] of notes) {
@@ -189,6 +227,7 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
         }
       }
       return { who, notes: out };
+      });
     },
   };
 

@@ -42,7 +42,7 @@ type State = {
   devnetUrl: string;
   controlUrl: string;
   poolAddress: string;
-  accounts: { name: string; address: string }[];
+  accounts: { name: string; address: string; flows?: boolean }[];
 };
 
 const state = JSON.parse(readFileSync(join(HYDRA, "state.json"), "utf8")) as State;
@@ -70,7 +70,31 @@ function sh(cmd: string, args: string[], cwd = CONTRACTS): string {
 type Predeployed = { address: string; public_key: string; private_key: string };
 
 const predeployed = await rpc("devnet_getPredeployedAccounts", []) as Predeployed[];
-const deployer = predeployed[0];
+
+/**
+ * An account nothing else signs for.
+ *
+ * NOT alice or bob: the control API holds in-process account objects for those and signs with
+ * them, and two signers for one address do not see each other's nonces. Running the live suites
+ * in parallel failed one run in six with an opaque `starknet_addInvokeTransaction` error, which
+ * is exactly how long it takes to stop believing it is a race.
+ *
+ * NOT admin either — that is the relayer that submits every `executeOutside`.
+ *
+ * `hydra up` predeploys a third user account for this. If it is missing, the chain came up with
+ * an older default and sharing an account would reintroduce the race, so this stops rather than
+ * quietly picking alice.
+ */
+const busy = new Set(state.accounts
+  .filter((a) => a.flows || a.name === "admin")
+  .map((a) => BigInt(a.address)));
+const deployer = predeployed.find((p) => !busy.has(BigInt(p.address)));
+if (!deployer) {
+  throw new Error(
+    "every predeployed account is already driven by the control API or the relayer. "
+    + "Bring the stack up with at least three user accounts (HYDRA_ACCOUNTS=3) so direct "
+    + "signing has an account to itself.");
+}
 const classHash = await rpc("starknet_getClassHashAt", ["latest", deployer.address]) as string;
 
 // The network key is sncast's name for the chain id the node reports. Devnet says SN_SEPOLIA.
@@ -95,6 +119,7 @@ const cast = (...args: string[]) =>
 // 2. Build, declare, deploy
 // ---------------------------------------------------------------------------
 
+console.log(`deployer ${deployer.address} (not driven by the control API)`);
 console.log("scarb build");
 sh("scarb", ["build"]);
 

@@ -24,14 +24,20 @@
  *
  *     source ~/.hydra/live-env.sh && npm run test:live
  *
- * `test:live` passes `--test-concurrency=1` because of this file. Every live suite here drives
- * the same chain and the same control API, and run in parallel they take each other's notes and
- * interleave pool transactions — these tests passed alone and failed in the suite, which is the
- * worse way round to find out. Shared mutable state is not a thing to parallelise over.
+ * These tests passed alone and failed in the suite, which is the worse way round to find out.
+ * The cause was not what it looked like: `approve` SETS an ERC20 allowance rather than adding
+ * to it, so a concurrent `shield` and `publish` on one account each approved their own amount,
+ * the second overwrote the first, and whichever deposit ran last failed with "Insufficient
+ * ERC20 allowance" — a message that sends you to look at balances. The fix is a per-account
+ * queue in `devtool/packages/cli/src/control.mjs`, because an API that cannot be called twice
+ * at once is broken wherever it is called from, not just from a test runner.
  */
 
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { starknet, poolChain } from "../../cli/src/chain.ts";
 
@@ -40,8 +46,13 @@ const CHANNEL = process.env.HYDRA_CHANNEL;
 const CONTROL = process.env.HYDRA_CONTROL;
 const ACCOUNTS = `${process.env.HOME}/.hydra/sncast-accounts.json`;
 
-type Account = { name: string; address: string };
+type Account = { name: string; address: string; flows?: boolean };
 let accounts: Account[] = [];
+/** The account `redeploy.ts` chose for direct signing. Read, not assumed. */
+let deployer = 0n;
+const addressOf = (name: string): bigint =>
+  BigInt(accounts.find((a) => a.name === name)?.address
+    ?? (() => { throw new Error(`no account called ${name} in the stack's state`); })());
 
 async function rpc(method: string, params: unknown): Promise<any> {
   const res = await fetch(RPC!, {
@@ -74,11 +85,20 @@ const senderOf = async (txHash: string): Promise<bigint> =>
 before(async () => {
   assert.ok(RPC && CHANNEL && CONTROL,
     "set HYDRA_RPC, HYDRA_CHANNEL and HYDRA_CONTROL — see the header");
-  accounts = (await rpc("devnet_getPredeployedAccounts", [])) as Account[];
-  // The control API names them; the node lists them in the same order.
-  accounts = [{ name: "alice", address: accounts[0].address },
-    { name: "bob", address: accounts[1].address },
-    { name: "admin", address: accounts[2].address }];
+  // From the stack's own state file, NOT from the node's predeployed ordering. That ordering
+  // is an implementation detail and it moved the moment `hydra up` began predeploying a third
+  // user account — which it does so that direct signing has an address the control API is not
+  // also signing for. A test that indexes into it is a test that silently checks the wrong
+  // account.
+  const state = JSON.parse(
+    readFileSync(join(process.env.HOME!, ".hydra", "state.json"), "utf8")) as { accounts: Account[] };
+  accounts = state.accounts;
+  const sncast = JSON.parse(readFileSync(ACCOUNTS, "utf8")) as
+    Record<string, Record<string, { address: string }>>;
+  deployer = BigInt(Object.values(Object.values(sncast)[0])[0].address);
+  assert.ok(![...accounts.filter((a) => a.flows || a.name === "admin")]
+    .some((a) => BigInt(a.address) === deployer),
+    "the direct-signing account is one the control API also signs for — two signers, one nonce");
   for (const who of ["alice", "bob"]) {
     // Registration is public and idempotent-by-failure; either outcome is fine here.
     await fetch(`${CONTROL}/register`, {
@@ -99,7 +119,6 @@ const pooled = (who: string) => poolChain({
 
 test("published directly, the transaction names the author as its sender", async () => {
   const tx = await direct("alice").publish([1001n, 1002n]);
-  const deployer = BigInt(accounts[0].address);
   assert.equal(await senderOf(tx), deployer,
     "sender_address is not the publishing account — recheck chain.ts");
 });
@@ -108,8 +127,8 @@ test("published through the pool, the sender is the relayer and not the author",
   // The half that works. An observer reading `sender_address` sees whoever submitted it, and a
   // relayer submits for everyone — so the field no longer answers "who wrote this".
   const tx = await pooled("alice").publish([2001n, 2002n]);
-  const alice = BigInt(accounts[0].address);
-  const admin = BigInt(accounts[2].address);
+  const alice = addressOf("alice");
+  const admin = addressOf("admin");
   const sender = await senderOf(tx);
   assert.notEqual(sender, alice, "the pool route still put the author in sender_address");
   assert.equal(sender, admin, "the submitter is not the relayer this stack uses");
@@ -120,8 +139,8 @@ test("but the author's address is in the calldata anyway, every time", async () 
   // check that each transaction contains that person's address and not the other's.
   const aliceTx = await pooled("alice").publish([3001n, 3002n]);
   const bobTx = await pooled("bob").publish([4001n, 4002n]);
-  const alice = BigInt(accounts[0].address);
-  const bob = BigInt(accounts[1].address);
+  const alice = addressOf("alice");
+  const bob = addressOf("bob");
 
   const fromAlice = await feltsOf(aliceTx);
   const fromBob = await feltsOf(bobTx);
