@@ -198,6 +198,12 @@ export const DERIVABLE: readonly Derivation[] = [
     what: "when that person's mailbox is written to, and when they collect from it",
     why: "the slots are ordinary objects, so arrival and read times are as visible as any other object's. Over time this is a usage pattern attached to one named identity, which is the sharpest thing anywhere on this table",
   },
+  {
+    id: "channel.author",
+    given: "the blockchain, which is public",
+    what: "which conversation belongs to which publishing account — by matching a channel's object count against an account's message count, with no need to link any individual upload to any individual event",
+    why: "the vault's side gives a set of blobs per channel (read.channelSet) and the chain's side gives a set of events per account, and matching SETS is a different problem from matching items. Cover does not blunt it: cover is a fixed number of decoys per event, so a channel's object count is the message count times a published constant and divides back out exactly. The 0.2 figure elsewhere on this table is about matching an upload to an event, which this attack never attempts",
+  },
 ];
 
 export const DERIVABLE_IDS: readonly string[] = DERIVABLE.map((d) => d.id);

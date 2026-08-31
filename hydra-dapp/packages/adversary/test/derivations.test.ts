@@ -1,12 +1,13 @@
 /**
- * What an operator works out that the vault never wrote down.
+ * What an observer works out that the vault never wrote down.
  *
  * `operator-view.test.ts` captures the vault's own record and compares it against `OBSERVABLE`
  * in both directions. That is the right check and it has a blind spot: an operator is not
  * limited to the record. They can combine it with information the PROTOCOL publishes and get
  * answers the record does not contain.
  *
- * The prekey inbox made this visible. Its slot ids are a public function of the recipient's
+ * The prekey inbox made the category visible first. Its slot ids are a public function of the
+ * recipient's
  * identity key — they have to be, or a stranger could not write to you before you share a
  * secret — so the vault stores them as ordinary objects and knows nothing about them. Nothing
  * in the record says "inbox". `operator-view` would never have produced the row and would have
@@ -27,6 +28,8 @@ import { inboxSlot, inboxSlots, postPrekey, collectPrekeys, encodePrekey, INBOX_
   from "../../handshake/src/inbox.ts";
 import type { Transport } from "../../handshake/src/inbox.ts";
 import { initiate, respond, bundleFor } from "../../handshake/src/x3dh.ts";
+import { send, cover, openChannel } from "../../client/src/session.ts";
+import { coverBody, coverId, COVER_RATE } from "../../channel/src/cover.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, expose, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
 
@@ -86,6 +89,55 @@ const DERIVATIONS: Record<string, () => Promise<void>> = {
     // person and not a fact about the vault being busy.
     const carolKey = bundleFor(carol, 0, 0).identityKey;
     assert.equal(inboxSlots(carolKey).filter((id) => stored().has(id)).length, 0);
+  },
+
+  "channel.author": async () => {
+    // Two records, one join key. The vault's side gives a set of blobs per channel — that is
+    // `read.channelSet`, measured in `i3-batch-membership.test.ts`. The chain's side gives a set
+    // of events per publishing account, because the transaction names the sender. Matching them
+    // needs no link between any individual upload and any individual event, which is the only
+    // thing jitter and cover make hard.
+    const invites = Array.from({ length: 400 }, (_, i) => `d-${i}`);
+    const vault = freshVault();
+    const random = () => 0.5;
+
+    const counts = { quiet: 2, busy: 7 };
+    const chain = new Map<string, number>();
+    const objects = new Map<string, number>();
+    for (const [who, n] of Object.entries(counts)) {
+      const channel = openChannel(derive(VAULT_DOMAIN,
+        rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(n + 80), who)))), who);
+      const config = { channel, nullifier: 9n, blockMs: 30_000 };
+      const messages = Array.from({ length: n }, (_, seq) =>
+        send(config, new TextEncoder().encode(`${who} ${seq}`), seq, seq * 90_000, random));
+      chain.set(who, messages.length);
+      let stored = 0;
+      for (const m of messages) {
+        vault.handle({
+          op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: m.blobId, body: m.body,
+          invite: invites.shift(),
+        });
+        stored++;
+      }
+      for (const d of cover(config, messages, random)) {
+        const body = coverBody(channel, d.bucket, d.index);
+        vault.handle({
+          op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: coverId(body), body,
+          invite: invites.shift(),
+        });
+        stored++;
+      }
+      objects.set(who, stored);
+    }
+
+    // The derivation: divide out the published cover rate and read the message count back.
+    for (const [who, stored] of objects) {
+      const implied = stored / (COVER_RATE + 1);
+      assert.equal(implied, chain.get(who),
+        `the object count no longer divides back to the message count for ${who}`);
+    }
+    // And the counts are distinct, so the join is exact rather than a hint.
+    assert.equal(new Set(chain.values()).size, Object.keys(counts).length);
   },
 
   "inbox.activity": async () => {
