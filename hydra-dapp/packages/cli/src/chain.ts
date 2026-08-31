@@ -12,6 +12,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import type { State } from "./state.ts";
 
 export type Chain = {
   /** Put a pointer and a commitment on chain. Returns the transaction hash. */
@@ -155,3 +156,23 @@ export function memoryChain(): Chain & { readonly published: [bigint, bigint][] 
     },
   };
 }
+
+/**
+ * Which route this client's state says to publish through.
+ *
+ * Here rather than in `cli.ts` because there are now two front ends and the route is a privacy
+ * decision, not a presentation one: a TUI that picked `starknet` while the CLI picked
+ * `poolChain` would give the same user two different disclosures depending on which one they
+ * happened to open.
+ *
+ * Direct is the default because `pool` needs a control API that only the devnet stack provides.
+ */
+export const chainFor = (state: State): Chain => {
+  const base = {
+    rpcUrl: state.rpcUrl, contract: state.contract, fromBlock: state.fromBlock,
+    accountsFile: state.accountsFile, account: state.account, network: state.network,
+  };
+  return state.controlUrl
+    ? poolChain({ ...base, controlUrl: state.controlUrl, who: state.poolAccount || "alice" })
+    : starknet(base);
+};

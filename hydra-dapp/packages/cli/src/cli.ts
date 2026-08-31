@@ -31,12 +31,11 @@
 import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
-  fingerprint, vaultRootOf, rotatePrekey, nextOneTime,
+  fingerprint, vaultRootOf, rotatePrekey, nextOneTime, encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
-import { starknet, poolChain } from "./chain.ts";
+import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { load, save, exists, STATE_FILE } from "./state.ts";
-import type { State } from "./state.ts";
 
 const [command, ...rest] = process.argv.slice(2);
 
@@ -45,35 +44,6 @@ const flag = (name: string, fallback = ""): string => {
   return i >= 0 ? rest[i + 1] : fallback;
 };
 const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.startsWith("--"));
-
-/** Hex in, hex out: a bundle and a prekey message are transported as JSON with hex fields. */
-const encode = (v: unknown): string => JSON.stringify(v, (_, x) =>
-  x instanceof Uint8Array ? Buffer.from(x).toString("hex") : x, 2);
-
-const decodeKeys = new Set([
-  "identityKey", "signingKey", "signedPrekey", "signedPrekeySignature", "oneTimePrekey",
-  "ephemeralKey", "wrapped",
-]);
-const decode = (text: string): any => JSON.parse(text, (k, v) =>
-  decodeKeys.has(k) && typeof v === "string" ? new Uint8Array(Buffer.from(v, "hex")) : v);
-
-/**
- * Which route puts a pointer on chain.
- *
- * `pool` is the better one and neither is good: it moves the author out of `sender_address` and
- * out of the nonce ordering, leaves their address in the calldata, and costs a small deposit
- * per message. `live-authorship.test.ts` measures both. Direct is the default because `pool`
- * needs a control API that only the devnet stack provides.
- */
-const chainFor = (state: State) => {
-  const base = {
-    rpcUrl: state.rpcUrl, contract: state.contract, fromBlock: state.fromBlock,
-    accountsFile: state.accountsFile, account: state.account, network: state.network,
-  };
-  return state.controlUrl
-    ? poolChain({ ...base, controlUrl: state.controlUrl, who: state.poolAccount || "alice" })
-    : starknet(base);
-};
 
 const usage = () => {
   console.error(readFileSync(new URL(import.meta.url), "utf8")

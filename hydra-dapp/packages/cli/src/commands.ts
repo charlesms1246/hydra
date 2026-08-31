@@ -56,6 +56,26 @@ const channelOf = (state: State, name: string): Secret<typeof VAULT_DOMAIN> => {
   return derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromChannelWrap(unhex(c.materialHex), c.peer))));
 };
 
+/**
+ * Bundles and prekey messages on their way to a file, and back.
+ *
+ * They are transported as JSON with hex fields because they change hands out of band — a file
+ * on a USB stick, a paste in another chat, a QR code — and every one of those routes wants
+ * text. Here rather than in a front end: two front ends with two encoders is two formats, and a
+ * bundle written by one that the other cannot read is a conversation that never starts.
+ */
+export const encodeWire = (v: unknown): string => JSON.stringify(v, (_, x) =>
+  x instanceof Uint8Array ? Buffer.from(x).toString("hex") : x, 2);
+
+/** The keys whose values are bytes. Anything not listed stays a string, including the epoch. */
+const WIRE_BYTES = new Set([
+  "identityKey", "signingKey", "signedPrekey", "signedPrekeySignature", "oneTimePrekey",
+  "ephemeralKey", "wrapped",
+]);
+
+export const decodeWire = (text: string): any => JSON.parse(text, (k, v) =>
+  WIRE_BYTES.has(k) && typeof v === "string" ? new Uint8Array(Buffer.from(v, "hex")) : v);
+
 // ---------------------------------------------------------------------------
 // Setup and identity
 // ---------------------------------------------------------------------------

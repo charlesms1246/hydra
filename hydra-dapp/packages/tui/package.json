@@ -1,0 +1,13 @@
+{
+  "name": "@hydra-platform/tui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "The client, as a terminal interface. No dependencies, deliberately — see src/screen.ts.",
+  "bin": {
+    "hydra-tui": "src/main.ts"
+  }
+}
