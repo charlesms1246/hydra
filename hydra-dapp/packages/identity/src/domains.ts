@@ -243,8 +243,17 @@ export function requireDomain<D extends Domain>(secret: Secret, domain: D): Secr
  *
  * Every call site is a place key material becomes an ordinary array again, which is
  * where it can be logged, serialised or handed to the wrong function. Grep for it.
+ *
+ * `NoInfer` on the domain, and it is load-bearing. Without it TypeScript infers `D` from BOTH
+ * arguments, so `expose(poolSecret, VAULT_DOMAIN)` widens `D` to the union of the two and
+ * compiles — `Secret<D>` is covariant in `D`, so a pool secret satisfies `Secret<pool | vault>`
+ * and the vault tag satisfies the same union. The runtime `requireDomain` caught it, but I1's
+ * claim is that the type stops it, and for that call the type did not.
+ *
+ * It was route 7 of `i1-must-not-compile.ts`, and it had been passing because the test counted
+ * type ERRORS rather than rejected routes: seven errors across eight attempts looked like eight.
  */
-export function expose<D extends Domain>(secret: Secret<D>, domain: D): Uint8Array {
+export function expose<D extends Domain>(secret: Secret<D>, domain: NoInfer<D>): Uint8Array {
   return Uint8Array.from(requireDomain(secret, domain).bytes as unknown as Uint8Array);
 }
 

@@ -33,7 +33,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -75,7 +75,11 @@ test("one seed yields unrelated keys in the two domains", () => {
 test("a pool secret cannot be used where a vault secret is required — at runtime", () => {
   const pool = derive(POOL_DOMAIN, seed);
   assert.throws(() => requireDomain(pool, VAULT_DOMAIN), /pool\/viewing-key/);
-  assert.throws(() => expose(pool, VAULT_DOMAIN), /pool\/viewing-key/);
+  // `as never` because the type now refuses this outright — `expose`'s domain parameter is
+  // `NoInfer<D>`, so it cannot widen to the union of the two domains the way it used to. The
+  // runtime tag is still asserted, because a call site that arrived through an `as any` is the
+  // one that matters and the type cannot reach it.
+  assert.throws(() => expose(pool, VAULT_DOMAIN as never), /pool\/viewing-key/);
   // What an unsound call site looks like after an `as any`. The runtime tag has to stop
   // it even though the type already did.
   assert.throws(() => contentKey(pool as never, "blob-1"), /pool\/viewing-key/);
@@ -169,9 +173,16 @@ test("the cross-domain derivation does not compile", () => {
     out = String((e as { stdout?: string }).stdout ?? "");
   }
   const lines = out.split("\n").filter((l) => /error TS/.test(l));
+  // Counted by DISTINCT LINE against the number of numbered attempts, not by error. Eight errors
+  // across seven routes passes a count check while one route silently compiles — and the route
+  // that compiles is the one that puts the escrowed pool key into the vault domain. The same
+  // defect was fixed in `i5-blob-separation.test.ts` and `x3dh.test.ts`; this is the third.
   const fixture = lines.filter((l) => l.includes("i1-must-not-compile"));
-  assert.ok(fixture.length >= 7,
-    `the fixture produced ${fixture.length} type errors, expected at least 6:\n${out}`);
+  const offending = new Set(fixture.map((l) => l.match(/\((\d+),/)?.[1]).filter(Boolean));
+  const attempts = readFileSync(join(HERE, "i1-must-not-compile.ts"), "utf8")
+    .split("\n").filter((l) => /^\/\/ \d+[a-z]?\./.test(l)).length;
+  assert.equal(offending.size, attempts,
+    `${attempts} numbered routes, ${offending.size} rejected — one of them compiles:\n${out}`);
   // Nothing ELSE may fail to type-check, or this test passes for the wrong reason.
   const other = lines.filter((l) => !l.includes("i1-must-not-compile"));
   assert.deepEqual(other, [], `type errors outside the fixture:\n${other.join("\n")}`);

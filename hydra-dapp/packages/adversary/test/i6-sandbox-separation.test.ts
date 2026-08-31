@@ -66,7 +66,9 @@ test("the sandbox runs the whole channel machinery, which is the point", () => {
 test("a sandbox SECRET is refused at runtime; a sandbox POINTER is not", () => {
   // Secrets carry their domain at runtime, so the boundary holds even after an `as any`.
   assert.throws(() => requireDomain(sandbox, VAULT_DOMAIN), /sandbox\/disposable/);
-  assert.throws(() => expose(sandbox, VAULT_DOMAIN), /sandbox\/disposable/);
+  // `as never`: the type refuses this now (see `expose`'s `NoInfer`), and the runtime tag is
+  // what still has to hold for a call site that got here through an `as any`.
+  assert.throws(() => expose(sandbox, VAULT_DOMAIN as never), /sandbox\/disposable/);
 
   // Pointers do not, and this asserts the weakness rather than hiding it. A pointer is 31
   // bytes of masked blob id headed for a single felt: there is no room for a domain tag, and
