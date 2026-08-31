@@ -68,6 +68,15 @@ export type ChannelState = {
    */
   readonly addressSendHex: string;
   readonly addressRecvHex: string;
+  /**
+   * The other end's Ed25519 key, which is what their signed messages verify against.
+   *
+   * Learned during the handshake and BOUND there: the initiator's copy comes from the bundle,
+   * under the bundle's own signature; the responder's comes from inside the sealed wrap, where
+   * GCM's tag refuses a substitution. A signing key accepted unauthenticated is a signing key a
+   * relay can swap, after which this client attributes content to a key of their choosing.
+   */
+  readonly peerSigningKeyHex: string;
 
   /** The ratchet, one chain per direction. See `handshake/src/ratchet.ts`. */
   send: ChainState;
@@ -106,10 +115,35 @@ export type ChannelState = {
    * the read compares. See `commands.ts` `foreignSends`.
    */
   foreignSeen: number;
+  /**
+   * Messages that opened under this channel's key and were then refused.
+   *
+   * A body whose commitment does not match the chain event that carried it, or a signature that
+   * is present and does not verify. Both mean somebody with write access to the vault or the
+   * mailbox tried something; neither is a delivery failure, and neither should be shown as a
+   * message. Counted so the client can say it happened rather than silently dropping content.
+   */
+  refusedSeen: number;
 };
 
 /** One message in a transcript, from either end. */
+/**
+ * Whether a message's author is established, and by what.
+ *
+ * `signed` means an Ed25519 signature over the on-chain commitment verified under the peer's
+ * published key — a key their counterparty does not hold, so nobody in the conversation can
+ * produce it for anybody else.
+ *
+ * `unverifiable` means the only authenticator was the AEAD tag under the channel's shared
+ * content key, which EITHER participant can produce. That is deniability, and it is chosen. It
+ * is called unverifiable rather than "unsigned" because the product's rule (invariant I7) is
+ * about what may be DISPLAYED: content with this value may never be shown under an author's
+ * name.
+ */
+export type Attributed = "signed" | "unverifiable";
+
 export type ReceivedMessage = {
+  readonly attribution: Attributed;
   /**
    * The blob id, which is what makes a message unique.
    *

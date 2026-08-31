@@ -19,6 +19,7 @@ import { MIN_READ_BATCH, readSet, select } from "../../client/src/read.ts";
 import type { SeenPointer } from "../../client/src/read.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
+import { ephemeral } from "../../handshake/src/authorship.ts";
 
 function lcg(seed: number) {
   let s = seed >>> 0;
@@ -28,7 +29,7 @@ function lcg(seed: number) {
 const BLOCK = 30_000;
 const vaultRoot = derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(13), "client"))));
 const channel = openChannel(vaultRoot, "alice→bob");
-const config = { blockMs: BLOCK, channel, nullifier: 99n };
+const config = { blockMs: BLOCK, channel, author: ephemeral() };
 
 test("the upload is always scheduled after the chain event, never before", () => {
   // The ordering the whole of I3 rests on. An operator that sees a blob arrive shortly BEFORE

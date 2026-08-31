@@ -1,10 +1,18 @@
 /**
- * The authorship commitment, client side.
+ * The content commitment, client side.
  *
  * `contracts/src/commitment.cairo` is the authority. This recomputes the same value off-chain
  * so a client can bind a commitment into a note before sending it — `HYDRA_HANDOFF.md` Phase 2
  * asks for one in every note, so that authorship of specific content stays provable after the
- * payload expires, and Phase 5 proves knowledge of the nullifier preimage against it.
+ * payload expires.
+ *
+ * THE FIRST ARGUMENT WAS CALLED A NULLIFIER AND IT IS NOT ONE. It was described as binding the
+ * commitment to an identity without naming it; in this client it came from the channel's own
+ * material, which both ends hold, so it bound a message to a CONVERSATION and either party
+ * could produce it. `two-way.test.ts` carried that as a residual and the residual was the
+ * finding. It is a `blind` — it stops the commitment being a bare hash of content that anyone
+ * who guesses the plaintext can confirm — and authorship is now an Ed25519 signature over this
+ * value under a per-author key (`handshake/src/authorship.ts`).
  *
  * The two implementations must never disagree, and a disagreement would be silent: a proof
  * that verifies against nothing, or a commitment nobody can open. That is what
@@ -43,15 +51,15 @@ const inField = (name: string, v: bigint): bigint => {
 };
 
 /**
- * Commit to a piece of content authored by the owner of `nullifier`.
+ * Commit to a piece of content, blinded.
  *
- * Order matters and is not symmetric, so a nullifier can never be passed off as a content
- * hash. Both Cairo and this file are tested for that separately.
+ * Order matters and is not symmetric, so a blind can never be passed off as a content hash.
+ * Both Cairo and this file are tested for that separately.
  */
-export function commit(nullifier: bigint, contentHash: bigint): bigint {
+export function commit(blind: bigint, contentHash: bigint): bigint {
   return poseidonHashMany([
     DOMAIN,
-    inField("nullifier", nullifier),
+    inField("blind", blind),
     inField("contentHash", contentHash),
   ]);
 }

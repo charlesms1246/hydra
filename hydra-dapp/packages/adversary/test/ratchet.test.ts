@@ -144,7 +144,7 @@ test("no key left in the state file opens a message already read", async () => {
   try {
     // Twenty messages one way, all read.
     for (let i = 0; i < 20; i++) {
-      await sendMessage(s.alice, s.chain, "bob", `message ${i}`, T0 + i * BLOCK);
+      await sendMessage(s.alice, s.chain, "bob", "ephemeral", `message ${i}`, T0 + i * BLOCK);
       await flush(s.alice, T0 + (i + 20) * BLOCK);
     }
     const read = await readChannel(s.bob, s.chain, "alice");
@@ -182,7 +182,7 @@ test("two messages never seal under one key", async () => {
     // pass a ratchet key would seal everything under the addressing key and every test above
     // would still pass.
     for (let i = 0; i < 3; i++) {
-      await sendMessage(s.alice, s.chain, "bob", "the same words every time", T0 + i * BLOCK);
+      await sendMessage(s.alice, s.chain, "bob", "ephemeral", "the same words every time", T0 + i * BLOCK);
     }
     const real = s.alice.pending.filter((p) => p.real);
     assert.equal(real.length, 3);
@@ -202,7 +202,7 @@ test("the agreed material is not in the file, because keeping it would undo all 
     // be there is anything that regenerates the chain from its beginning.
     assert.ok(dumped.includes("chainHex"));
     assert.equal(s.alice.channels.bob.send.next, 0);
-    await sendMessage(s.alice, s.chain, "bob", "one", T0);
+    await sendMessage(s.alice, s.chain, "bob", "ephemeral", "one", T0);
     assert.equal(s.alice.channels.bob.send.next, 1, "sending did not advance the chain");
   } finally { s.server.close(); }
 });

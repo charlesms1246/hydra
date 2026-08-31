@@ -32,6 +32,7 @@ import { send, cover, openChannel } from "../../client/src/session.ts";
 import { coverBody, coverId, COVER_RATE } from "../../channel/src/cover.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, expose, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
+import { ephemeral } from "../../handshake/src/authorship.ts";
 
 const rootOf = (n: number, label: string) =>
   derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(n), label))));
@@ -107,7 +108,7 @@ const DERIVATIONS: Record<string, () => Promise<void>> = {
     for (const [who, n] of Object.entries(counts)) {
       const channel = openChannel(derive(VAULT_DOMAIN,
         rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(n + 80), who)))), who);
-      const config = { channel, nullifier: 9n, blockMs: 30_000 };
+      const config = { channel, author: ephemeral(), blockMs: 30_000 };
       const messages = Array.from({ length: n }, (_, seq) =>
         send(config, new TextEncoder().encode(`${who} ${seq}`), seq, seq * 90_000, random));
       chain.set(who, messages.length);

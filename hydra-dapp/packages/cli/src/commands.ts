@@ -21,6 +21,8 @@ import { createStore, mintOneTime, rotate, bundleFrom, oneTimeRemaining }
   from "../../handshake/src/prekeys.ts";
 import { postPrekey, collectPrekeys, httpTransport } from "../../handshake/src/inbox.ts";
 import { newChain, keyFor, packChain, forgetOldSkipped } from "../../handshake/src/ratchet.ts";
+import { signedBy, ephemeral, unframe, verifyAuthorship } from "../../handshake/src/authorship.ts";
+import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex } from "../../channel/src/cover.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
@@ -206,17 +208,19 @@ export const fingerprint = (bundle: Bundle): string =>
  */
 const remember = (
   state: State, name: string, material: Uint8Array, peer: string, role: ChannelState["role"],
+  peerSigningKey: Uint8Array,
 ): void => {
   const agreed = derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromChannelWrap(material, peer))));
   const mine = subKey(agreed, DIRECTION[role]);
   const theirs = subKey(agreed, DIRECTION[opposite(role)]);
   state.channels[name] = {
     peer, role,
+    peerSigningKeyHex: hex(peerSigningKey),
     addressSendHex: hex(expose(subKey(mine, "addressing"), VAULT_DOMAIN)),
     addressRecvHex: hex(expose(subKey(theirs, "addressing"), VAULT_DOMAIN)),
     send: newChain(subKey(mine, "content chain")),
     recv: newChain(subKey(theirs, "content chain")),
-    nextSeq: 0, readTo: 0, history: [], foreignSeen: 0,
+    nextSeq: 0, readTo: 0, history: [], foreignSeen: 0, refusedSeen: 0,
   };
 };
 
@@ -224,7 +228,7 @@ const remember = (
 export function open(state: State, name: string, bundle: Bundle): PrekeyMessage {
   if (state.channels[name]) throw new Error(`${name} already exists — pick another name`);
   const result = initiate(vaultRootOf(state), bundle);
-  remember(state, name, result.material, fingerprint(bundle), "initiator");
+  remember(state, name, result.material, fingerprint(bundle), "initiator", bundle.signingKey);
   return result.message;
 }
 
@@ -289,30 +293,14 @@ export async function collect(
 export function accept(state: State, name: string, message: PrekeyMessage): { usedOneTimePrekey: boolean } {
   if (state.channels[name]) throw new Error(`${name} already exists — pick another name`);
   const result = respondWith(vaultRootOf(state), state.prekeys, message);
-  remember(state, name, result.material, hex(message.identityKey).slice(0, 32), "responder");
+  remember(state, name, result.material, hex(message.identityKey).slice(0, 32), "responder",
+    result.peerSigningKey);
   return { usedOneTimePrekey: result.agreed.usedOneTimePrekey };
 }
 
 // ---------------------------------------------------------------------------
 // Sending
 // ---------------------------------------------------------------------------
-
-/**
- * The nullifier a message commits under.
- *
- * Per DIRECTION rather than per channel, so the two ends of a conversation no longer commit
- * under one value. `commitment.ts` describes it as binding the commitment to an identity without
- * naming it, and one nullifier for two people binds it to neither.
- *
- * THE RESIDUAL, and it is not small: this is derived from material BOTH ends hold, so it binds
- * authorship against everyone except the person you are talking to. Your counterparty can
- * compute your direction key and therefore your nullifier, and forge a message as you. Closing
- * that needs a per-party secret the other end never learns — the sender's own vault root, with
- * the recipient holding only a public commitment to it — which changes what Phase 5's proof is
- * about. Written down rather than fixed here. See `decisions/0023-two-way-channels.md`.
- */
-const nullifierFor = (state: State, name: string): bigint =>
-  BigInt(`0x${hex(expose(sending(state, name), VAULT_DOMAIN)).slice(0, 16)}`);
 
 /**
  * Publish a message's pointer now and QUEUE its upload for later.
@@ -331,6 +319,19 @@ export async function sendMessage(
   state: State,
   chain: Chain,
   name: string,
+  /**
+   * Signed or deniable, and there is no default.
+   *
+   * `signed` carries an Ed25519 signature over the on-chain commitment under this author's own
+   * key — verifiable by anyone holding their bundle, forgeable by nobody, including the person
+   * they are talking to. `ephemeral` carries none, so either participant could have produced the
+   * message and a transcript proves nothing about which. Both are legitimate; neither is a
+   * default, because a default is how a product ends up with deniability nobody chose or
+   * attribution nobody can check.
+   *
+   * Before the text, so the kind qualifies the act at every call site rather than trailing it.
+   */
+  attribution: "signed" | "ephemeral",
   text: string,
   now: number = Date.now(),
   random?: () => number,
@@ -343,7 +344,10 @@ export async function sendMessage(
   const content = keyFor(entry.send, seq, WHERE);
   if (!content) throw new Error(`the sending chain is past sequence ${seq} — this is a bug`);
   const config = {
-    channel, content, nullifier: nullifierFor(state, name), blockMs: state.blockMs,
+    channel,
+    content,
+    author: attribution === "signed" ? signedBy(vaultRootOf(state)) : ephemeral(),
+    blockMs: state.blockMs,
   };
   const outgoing = prepare(config, new TextEncoder().encode(text), seq, now, random);
 
@@ -355,6 +359,7 @@ export async function sendMessage(
   // will compute — `readChannel` orders by it, and each direction counts sequences from zero.
   entry.history.push({
     id: outgoing.blobId, seq, text, mine: true, at: (await chain.events()).length - 1,
+    attribution: attribution === "signed" ? "signed" : "unverifiable",
   });
 
   state.pending.push({
@@ -582,15 +587,22 @@ export async function readChannel(
     return Array.from({ length: top - low }, (_, i) => low + i);
   };
 
+  // `data[1]` is the commitment the author put on chain. It is carried through so a signature
+  // can be checked against the value that was PUBLISHED rather than against one recomputed from
+  // the body alone — a signature over bytes proves less than a signature over a chain event.
   const build = (isMine: boolean) =>
     fresh.flatMap((e, i) =>
-      wanted(isMine).map((seq) => ({ seq, at: from + i, pointer: feltToPointer(e.data[0]) })));
+      wanted(isMine).map((seq) => ({
+        seq, at: from + i, pointer: feltToPointer(e.data[0]), commitment: e.data[1],
+      })));
 
   const forMine = build(true);
   const forTheirs = build(false);
   const ids = [...new Set([...readSet(mine, forMine), ...readSet(theirs, forTheirs)])];
 
-  const where = new Map<string, { seq: number; at: number; mine: boolean }>();
+  const where = new Map<string, {
+    seq: number; at: number; mine: boolean; commitment: bigint;
+  }>();
   for (const c of forMine) where.set(receive(mine, c.pointer, c.seq), { ...c, mine: true });
   for (const c of forTheirs) where.set(receive(theirs, c.pointer, c.seq), { ...c, mine: false });
 
@@ -613,9 +625,38 @@ export async function readChannel(
       }
       const content = keyFor(entry.recv, at.seq, WHERE);
       if (!content) continue;
-      const text = new TextDecoder().decode(
+      const opened = unframe(
         plaintextOf(openForChannel(content, new Uint8Array(Buffer.from(b64, "base64")))));
-      entry.history.push({ id, seq: at.seq, text, mine: false, at: at.at });
+
+      // THREE LINKS, and a message that breaks any of them is refused rather than shown.
+      //
+      //   1. the body commits to what the chain says was published — recompute and compare;
+      //   2. the signature, if there is one, is over that same published value;
+      //   3. it verifies under the key this channel's handshake bound to the other end.
+      //
+      // Without link one a signature proves the author signed SOMETHING; without link three it
+      // proves somebody signed it. Together they say: this author, this content, this event.
+      if (commit(opened.blind, contentHashFor(opened.plaintext)) !== at.commitment) {
+        entry.refusedSeen++;
+        continue;
+      }
+      const attribution = opened.signature
+        && verifyAuthorship(unhex(entry.peerSigningKeyHex), at.commitment, opened.signature)
+        ? "signed" as const
+        : "unverifiable" as const;
+      // A signature that is PRESENT and does not verify is not the same as no signature. It
+      // means somebody tried, so it is refused outright rather than quietly downgraded to
+      // deniable content — a forgery displayed as an ordinary message is the failure I7 exists
+      // to prevent, and silently relabelling it would be this client committing that failure.
+      if (opened.signature && attribution !== "signed") {
+        entry.refusedSeen++;
+        continue;
+      }
+
+      entry.history.push({
+        id, seq: at.seq, text: new TextDecoder().decode(opened.plaintext),
+        mine: false, at: at.at, attribution,
+      });
       seen.add(id);
     } catch { /* not ours */ }
   }

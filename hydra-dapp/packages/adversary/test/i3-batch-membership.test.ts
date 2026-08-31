@@ -29,6 +29,7 @@ import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { OBSERVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
+import { ephemeral } from "../../handshake/src/authorship.ts";
 
 const BLOCK = 30_000;
 
@@ -43,7 +44,7 @@ const root = derive(VAULT_DOMAIN,
 /** One channel's traffic, uploaded to a shared vault, plus the batch its reader would send. */
 function channelTraffic(vault: Vault, invites: string[], label: string, n: number, random: () => number) {
   const channel = openChannel(root, label);
-  const config = { channel, nullifier: 3n, blockMs: BLOCK };
+  const config = { channel, author: ephemeral(), blockMs: BLOCK };
   const messages = Array.from({ length: n }, (_, seq) =>
     send(config, new TextEncoder().encode(`${label} ${seq}`), seq, seq * BLOCK, random));
 
@@ -122,7 +123,7 @@ test("it is not the shared root: two unrelated readers separate just as cleanly"
   const otherRoot = derive(VAULT_DOMAIN,
     rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(62), "someone else"))));
   const otherChannel = openChannel(otherRoot, "theirs");
-  const config = { channel: otherChannel, nullifier: 4n, blockMs: BLOCK };
+  const config = { channel: otherChannel, author: ephemeral(), blockMs: BLOCK };
   const messages = Array.from({ length: 3 }, (_, seq) =>
     send(config, new TextEncoder().encode(`theirs ${seq}`), seq, seq * BLOCK, random));
   const theirs = new Set<string>();

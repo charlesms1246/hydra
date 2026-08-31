@@ -18,10 +18,14 @@
  *   - **Authorship was absent.** Each end read its own messages back indistinguishably from the
  *     other's.
  *
- * The fix is that a channel is two one-way keys and your role picks which you send under. What
- * it does NOT fix is forgery between the two participants: the nullifier is still derived from
- * material both ends hold, so your counterparty can compute yours. That is asserted below as a
- * KNOWN residual rather than left to be discovered. See `decisions/0023-two-way-channels.md`.
+ * The fix is that a channel is two one-way keys and your role picks which you send under. It did
+ * NOT fix forgery between the two participants — the value a message committed under came from
+ * material both ends hold — and this file carried that as an asserted residual so that nobody
+ * could believe it was closed while it was not.
+ *
+ * **It is closed now**, by a per-author signature: `authorship.test.ts`,
+ * `decisions/0026-authorship-and-deniability.md`. What remains below is the deniable half, which
+ * is the same capability turned into a choice rather than a defect.
  */
 
 import { test } from "node:test";
@@ -53,8 +57,8 @@ async function pair(n = 600) {
 test("the two ends send under different keys, so no object of theirs equals one of yours", async () => {
   const { alice, bob, v, server, chain } = await pair();
   try {
-    await sendMessage(alice, chain, "bob", "alice one", T0);
-    await sendMessage(bob, chain, "alice", "bob one", T0 + BLOCK);
+    await sendMessage(alice, chain, "bob", "ephemeral", "alice one", T0);
+    await sendMessage(bob, chain, "alice", "ephemeral", "bob one", T0 + BLOCK);
 
     const mine = new Set(alice.pending.map((p) => p.id));
     const theirs = new Set(bob.pending.map((p) => p.id));
@@ -76,9 +80,9 @@ test("the two ends send under different keys, so no object of theirs equals one 
 test("both ends read the whole conversation, in the order the chain gives", async () => {
   const { alice, bob, server, chain } = await pair();
   try {
-    await sendMessage(alice, chain, "bob", "are you there", T0);
-    await sendMessage(bob, chain, "alice", "yes", T0 + BLOCK);
-    await sendMessage(alice, chain, "bob", "the usual place then", T0 + 2 * BLOCK);
+    await sendMessage(alice, chain, "bob", "ephemeral", "are you there", T0);
+    await sendMessage(bob, chain, "alice", "ephemeral", "yes", T0 + BLOCK);
+    await sendMessage(alice, chain, "bob", "ephemeral", "the usual place then", T0 + 2 * BLOCK);
     await flush(alice, LATER);
     await flush(bob, LATER);
 
@@ -93,8 +97,8 @@ test("both ends read the whole conversation, in the order the chain gives", asyn
 test("a transcript says who spoke, and the two ends agree in mirror image", async () => {
   const { alice, bob, server, chain } = await pair();
   try {
-    await sendMessage(alice, chain, "bob", "mine", T0);
-    await sendMessage(bob, chain, "alice", "yours", T0 + BLOCK);
+    await sendMessage(alice, chain, "bob", "ephemeral", "mine", T0);
+    await sendMessage(bob, chain, "alice", "ephemeral", "yours", T0 + BLOCK);
     await flush(alice, LATER);
     await flush(bob, LATER);
 
@@ -111,9 +115,9 @@ test("a transcript says who spoke, and the two ends agree in mirror image", asyn
 test("each direction counts its own sequence numbers", async () => {
   const { alice, bob, server, chain } = await pair();
   try {
-    await sendMessage(alice, chain, "bob", "a0", T0);
-    await sendMessage(alice, chain, "bob", "a1", T0 + BLOCK);
-    await sendMessage(bob, chain, "alice", "b0", T0 + 2 * BLOCK);
+    await sendMessage(alice, chain, "bob", "ephemeral", "a0", T0);
+    await sendMessage(alice, chain, "bob", "ephemeral", "a1", T0 + BLOCK);
+    await sendMessage(bob, chain, "alice", "ephemeral", "b0", T0 + 2 * BLOCK);
     assert.equal(alice.channels.bob.nextSeq, 2);
     assert.equal(bob.channels.alice.nextSeq, 1, "the responder's counter follows the initiator's");
 
@@ -133,46 +137,8 @@ test("a channel from before the ratchet is refused rather than migrated", async 
     // stored keys. Migrating it would mean inventing chains the other end does not have, and a
     // channel whose keys only one side knows is worse than one that refuses to open.
     delete (alice.channels.bob as { addressSendHex?: string }).addressSendHex;
-    await assert.rejects(() => sendMessage(alice, chain, "bob", "x", T0), /predates the message ratchet/);
+    await assert.rejects(() => sendMessage(alice, chain, "bob", "ephemeral", "x", T0), /predates the message ratchet/);
     await assert.rejects(() => readChannel(alice, chain, "bob"), /predates the message ratchet/);
-  } finally { server.close(); }
-});
-
-test("KNOWN RESIDUAL: your counterparty can still forge as you", async () => {
-  // Asserted so it is a documented property rather than an assumption. The nullifier a message
-  // commits under comes from the sending direction's key, and both ends can derive both keys —
-  // that is what a shared secret is. So `commit` binds authorship against everybody except the
-  // one person with a motive.
-  //
-  // Closing it needs a per-party secret the other end never learns: the sender's own vault root,
-  // with the recipient holding a public commitment to it, which changes what Phase 5's proof is
-  // about. This test exists to fail the day someone believes it is already closed.
-  const { alice, bob, server, chain } = await pair();
-  try {
-    await sendMessage(alice, chain, "bob", "alice said this", T0);
-    await flush(alice, LATER);
-
-    // Bob, who holds both addressing keys and both chains because that is what a shared secret
-    // is, mints a message in ALICE's direction by swapping the two round.
-    const his = bob.channels.alice;
-    bob.channels.forged = {
-      ...his,
-      addressSendHex: his.addressRecvHex,
-      addressRecvHex: his.addressSendHex,
-      send: JSON.parse(JSON.stringify(his.recv)),
-      recv: JSON.parse(JSON.stringify(his.send)),
-      nextSeq: 1,
-      history: [],
-    };
-    await sendMessage(bob, chain, "forged", "alice did NOT say this", T0 + BLOCK);
-    await flush(bob, LATER);
-
-    // Alice's own client counts it as a message in HER direction that she did not send, which
-    // is the same signal a second device raises — the two are indistinguishable from here, and
-    // that is the honest state of it.
-    await readChannel(alice, chain, "bob");
-    assert.equal(foreignSends(alice, "bob"), 1,
-      "the forgery did not land — if this is now impossible, say what closed it");
   } finally { server.close(); }
 });
 
@@ -187,8 +153,8 @@ test("TWO CLIENTS ON ONE IDENTITY mint identical cover, and cannot be stopped fr
     laptop.invites = Array.from({ length: 200 }, (_, i) => `laptop-${i}`);
     for (const inv of laptop.invites) v.handle({ op: "invite", invite: inv } as never);
 
-    await sendMessage(alice, chain, "bob", "from the phone", T0);
-    await sendMessage(laptop, chain, "bob", "from the laptop", T0 + BLOCK);
+    await sendMessage(alice, chain, "bob", "ephemeral", "from the phone", T0);
+    await sendMessage(laptop, chain, "bob", "ephemeral", "from the laptop", T0 + BLOCK);
 
     const phone = new Set(alice.pending.map((p) => p.id));
     const shared = laptop.pending.filter((p) => phone.has(p.id));
@@ -207,8 +173,8 @@ test("and the client says so, because it cannot prevent it", async () => {
     laptop.invites = alice.invites.slice(100);
     alice.invites = alice.invites.slice(0, 100);
 
-    await sendMessage(alice, chain, "bob", "phone", T0);
-    await sendMessage(laptop, chain, "bob", "laptop", T0 + BLOCK);
+    await sendMessage(alice, chain, "bob", "ephemeral", "phone", T0);
+    await sendMessage(laptop, chain, "bob", "ephemeral", "laptop", T0 + BLOCK);
     await flush(alice, LATER);
     await flush(laptop, LATER);
 

@@ -34,7 +34,8 @@
 
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 import {
-  bundleFor, dh, ephemeral, identityDh, oneTimePrekey, privateFromSeed, rawPublic, signedPrekey,
+  bundleFor, dh, ephemeral, identityDh, identitySign, oneTimePrekey, privateFromSeed, rawPublic,
+  signedPrekey,
   verifyBundle, KEY_BYTES,
 } from "./keys.ts";
 import { take } from "./prekeys.ts";
@@ -63,7 +64,18 @@ export type PrekeyMessage = {
   readonly epoch: number;
   /** Which one-time prekey was consumed, or null when the recipient had none left. */
   readonly oneTimeIndex: number | null;
-  /** The channel material, sealed under the X3DH output. */
+  /**
+   * The channel material AND the initiator's signing key, sealed under the X3DH output.
+   *
+   * The signing key is in here rather than beside it because it has to be BOUND. It is what the
+   * responder will verify every signed message against, so a value they accept unauthenticated
+   * is a value a relay can swap — after which the responder cheerfully attributes content to a
+   * key of the attacker's choosing. Inside the seal, GCM's tag refuses a swap, and only the two
+   * parties can produce a seal that opens at all.
+   *
+   * The initiator needs no such arrangement in the other direction: they already hold the
+   * responder's bundle, which carries its signing key under the bundle's own signature.
+   */
   readonly wrapped: Uint8Array;
 };
 
@@ -116,6 +128,22 @@ function channelFrom(material: Uint8Array, peer: string): Secret<typeof VAULT_DO
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 
 /**
+ * The two fixed-width halves of what `initiate` sealed.
+ *
+ * Refuses anything else rather than taking the first 32 bytes and hoping. A wrapped payload of
+ * the wrong length is a peer speaking a different version of this protocol, and silently reading
+ * a prefix of it would give two ends two different channels for reasons nobody could see.
+ */
+function splitWrapped(bytes: Uint8Array): { material: Uint8Array; signingKey: Uint8Array } {
+  if (bytes.length !== KEY_BYTES * 2) {
+    throw new Error(
+      `a wrapped payload is ${KEY_BYTES * 2} bytes (material and signing key), got ${bytes.length}`
+      + " — this handshake was built by a client that predates signed authorship");
+  }
+  return { material: bytes.slice(0, KEY_BYTES), signingKey: bytes.slice(KEY_BYTES) };
+}
+
+/**
  * Alice's side. Needs only bob's published bundle, so bob can be offline.
  *
  * The bundle is verified here rather than by the caller: a caller who forgets loses the only
@@ -155,7 +183,10 @@ export function initiate(
       ephemeralKey: rawPublic(ek),
       epoch: theirBundle.epoch,
       oneTimeIndex: theirBundle.oneTimeIndex ?? null,
-      wrapped: seal(agreed.secret, material),
+      // Material first, signing key second, both fixed width — see `splitWrapped`.
+      wrapped: seal(agreed.secret, Buffer.concat([
+        Buffer.from(material), Buffer.from(rawPublic(identitySign(myVaultRoot))),
+      ])),
     },
     channel: channelFrom(material, hex(theirBundle.identityKey)),
     agreed,
@@ -213,12 +244,13 @@ export function respondUsing(
   ];
   if (oneTimeSeed) parts.push(dh(privateFromSeed(oneTimeSeed, "x25519"), message.ephemeralKey));
   const agreed = agree(parts, oneTimeSeed !== null);
-  const material = open(agreed.secret, message.wrapped);
+  const { material, signingKey } = splitWrapped(open(agreed.secret, message.wrapped));
   return {
     channel: channelFrom(material, hex(message.identityKey)),
     agreed,
     oneTimeIndex: message.oneTimeIndex,
     material,
+    peerSigningKey: signingKey,
   };
 }
 
@@ -245,6 +277,8 @@ export function respond(
    * silently giving two people two different channels.
    */
   material: Uint8Array;
+  /** The initiator's Ed25519 key, which is what their signed messages verify against. */
+  peerSigningKey: Uint8Array;
 } {
   const spk = signedPrekey(myVaultRoot, message.epoch);
   const ik = identityDh(myVaultRoot);
@@ -260,11 +294,13 @@ export function respond(
 
   const agreed = agree(parts, message.oneTimeIndex !== null);
   // Throws on a wrong key or a tampered message, which is the authentication: only someone who
-  // completed the same four DHs can produce a wrap that opens here.
-  const material = open(agreed.secret, message.wrapped);
+  // completed the same four DHs can produce a wrap that opens here. That is also what binds the
+  // signing key inside it — a relay cannot substitute one without breaking the tag.
+  const { material, signingKey } = splitWrapped(open(agreed.secret, message.wrapped));
   return {
     channel: channelFrom(material, hex(message.identityKey)),
     agreed,
+    peerSigningKey: signingKey,
     oneTimeIndex: message.oneTimeIndex,
     material,
   };

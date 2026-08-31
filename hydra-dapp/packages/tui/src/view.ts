@@ -79,7 +79,7 @@ const activity = (m: Model): string => {
 
 const KEYS: Record<Page | "setup", string> = {
   setup: "i type · Tab field · Enter create identity · ctrl-c quit",
-  chats: "i type · Enter send · r read · D forget · j/k channel · f flush · 1-5 pages · q quit",
+  chats: "i type · Enter send · s sign · r read · D forget · j/k channel · f flush · q quit",
   connect: "i type · Tab field · Enter invite · e export bundle · c collect · q quit",
   identity: "R rotate prekey · 1-5 pages · q quit",
   disclosure: "c citations · j/k scroll · 1-5 pages · q quit",
@@ -122,7 +122,7 @@ function chats(m: Model, size: Size, height: number): string[] {
   const names = channelNames(m);
   const current = selected(m);
   const listWidth = Math.min(26, Math.max(16, Math.floor(size.cols / 4)));
-  const composeHeight = 5;
+  const composeHeight = 6;
   const top = height - composeHeight;
 
   const list = names.map((n, i) => {
@@ -148,7 +148,15 @@ function chats(m: Model, size: Size, height: number): string[] {
   const visible = body.slice(Math.max(0, body.length - (top - 2)));
 
   const foreign = current ? m.foreign[current] ?? 0 : 0;
+  // The mode, above the line you are typing on. Which of the two things Enter is about to do is
+  // not a setting to be remembered; it is part of the message.
+  const mode = m.signing
+    ? paint(" SIGNED ", "inverse", "yellow") + paint(
+      "  only you could have written this, and anyone holding your bundle can prove it", "gray")
+    : paint(" deniable ", "inverse") + paint(
+      "  either of you could have written this — `s` to sign", "gray");
   const compose = [
+    mode,
     fit(m.fields.compose + (m.typing && m.page === "chats" ? paint("▏", "cyan") : ""), size.cols - 4),
     "",
     ...(foreign

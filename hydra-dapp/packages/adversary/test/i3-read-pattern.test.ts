@@ -30,6 +30,7 @@ import { coverBody, coverId, coverIndex, COVER_RATE, anonymitySetFloor }
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
+import { ephemeral } from "../../handshake/src/authorship.ts";
 
 const BLOCK = 30_000;
 const N = 6;
@@ -50,7 +51,7 @@ const channel = openChannel(derive(VAULT_DOMAIN,
  * design exists, and a fix with nothing to compare against is a fix nobody can evaluate.
  */
 function session(random: () => number, derived: boolean) {
-  const config = { channel, nullifier: 5n, blockMs: BLOCK };
+  const config = { channel, author: ephemeral(), blockMs: BLOCK };
   const messages = Array.from({ length: N }, (_, seq) =>
     send(config, new TextEncoder().encode(`message ${seq}`), seq, seq * BLOCK, random));
 
@@ -116,7 +117,7 @@ test("the two sides agree on a decoy's index through one function, not two", () 
   // `coverIndex` is called by the sender when it mints a decoy and by the recipient when it
   // asks for one. Two copies of the arithmetic would drift, the recipient would stop fetching
   // some decoys, and those would go back to being identifiable — with nothing failing.
-  const config = { channel, nullifier: 5n, blockMs: BLOCK };
+  const config = { channel, author: ephemeral(), blockMs: BLOCK };
   const messages = Array.from({ length: 3 }, (_, seq) =>
     send(config, new TextEncoder().encode("x"), seq, seq * BLOCK, () => 0.5));
   const planned = cover(config, messages, () => 0.5).map((d) => d.index).sort((a, b) => a - b);
@@ -129,7 +130,7 @@ test("a sender that renumbers from array position instead of sequence breaks it"
   // The specific way this fix goes wrong later. A caller that hands `cover` a SUBSET of its
   // messages — the ones it has not yet flushed, say — would mint decoys at indices the
   // recipient never asks for if the numbering came from array position.
-  const config = { channel, nullifier: 5n, blockMs: BLOCK };
+  const config = { channel, author: ephemeral(), blockMs: BLOCK };
   const all = Array.from({ length: 4 }, (_, seq) =>
     send(config, new TextEncoder().encode("x"), seq, seq * BLOCK, () => 0.5));
   const tail = all.slice(2);

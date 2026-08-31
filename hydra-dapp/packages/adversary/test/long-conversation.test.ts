@@ -67,7 +67,7 @@ function counting() {
 
 const turn = async (s: Awaited<ReturnType<typeof stack>>, i: number) => {
   const [who, name] = i % 2 ? [s.bob, "alice"] as const : [s.alice, "bob"] as const;
-  await sendMessage(who, s.chain, name, `message ${i}`, T0 + i * BLOCK);
+  await sendMessage(who, s.chain, name, "ephemeral", `message ${i}`, T0 + i * BLOCK);
   await flush(who, T0 + (i + 20) * BLOCK);
 };
 
@@ -154,7 +154,7 @@ test("reading twice changes nothing, and sending needs no read", async () => {
 
     // Alice's own message is in her transcript the moment she sends it: a client knows what it
     // said, and going to the vault for its own words costs a direction's worth of candidates.
-    await sendMessage(s.alice, s.chain, "bob", "straight into the log", T0 + 9 * BLOCK);
+    await sendMessage(s.alice, s.chain, "bob", "ephemeral", "straight into the log", T0 + 9 * BLOCK);
     assert.equal(s.alice.channels.bob.history.at(-1)!.text, "straight into the log");
     assert.equal(s.alice.channels.bob.history.at(-1)!.mine, true);
   } finally { s.server.close(); }

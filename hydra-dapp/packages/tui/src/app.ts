@@ -64,7 +64,13 @@ export const FIELDS: Record<Page | "setup", readonly { readonly key: string; rea
 /** What `main.ts` is being asked to do. Descriptions, not calls. */
 export type Effect =
   | { readonly t: "init"; readonly fields: Readonly<Record<string, string>> }
-  | { readonly t: "send"; readonly channel: string; readonly text: string }
+  | {
+    readonly t: "send";
+    readonly channel: string;
+    readonly text: string;
+    /** Signed and recorded, or deniable. No default anywhere in the stack. */
+    readonly signed: boolean;
+  }
   | { readonly t: "read"; readonly channel: string }
   | { readonly t: "flush" }
   | { readonly t: "collect" }
@@ -110,6 +116,14 @@ export type Model = {
   readonly busy: string | null;
   readonly confirm: { readonly question: string; readonly label: string; readonly effect: Effect } | null;
   readonly cite: boolean;
+  /**
+   * Whether the next message will be signed.
+   *
+   * On the model rather than decided at the keystroke, because it has to be VISIBLE before Enter
+   * is pressed. A user who cannot see which of the two things they are about to do has neither
+   * deniability nor attribution — they have whatever the default was.
+   */
+  readonly signing: boolean;
   readonly now: number;
   readonly quit: boolean;
 };
@@ -137,6 +151,7 @@ export function start(state: State | null, now: number): Model {
     busy: null,
     confirm: null,
     cite: false,
+    signing: false,
     now,
     quit: false,
   };
@@ -318,7 +333,8 @@ function submit(m: Model): Step {
       if (!channel) return just(say(m, "no channels yet — open one on Connect", "warn"));
       if (!m.fields.compose.trim()) return just(say(m, "nothing to send", "warn"));
       return run({ ...m, fields: { ...m.fields, compose: "" }, typing: false },
-        "send", { t: "send", channel, text: m.fields.compose });
+        m.signing ? "publish" : "send",
+        { t: "send", channel, text: m.fields.compose, signed: m.signing });
     }
     case "connect": {
       if (!m.fields.peerName || !m.fields.peerBundle) {
@@ -339,6 +355,12 @@ function action(m: Model, ch: string): Step {
     case "chats": {
       const channel = selected(m);
       if (ch === "r" && channel) return run(m, "read", { t: "read", channel });
+      if (ch === "s") {
+        return just(say({ ...m, signing: !m.signing }, m.signing
+          ? "deniable: either of you could have written the next message"
+          : "SIGNED: only you could have written the next message, and anyone can prove it",
+        "warn"));
+      }
       if (ch === "D" && channel) {
         return just({
           ...m,

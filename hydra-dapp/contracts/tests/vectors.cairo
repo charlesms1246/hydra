@@ -32,7 +32,7 @@ fn emit_parity_vectors() {
     ];
     println!("DOMAIN {}", DOMAIN);
     for case in cases {
-        let (nullifier, content_hash) = case;
-        println!("VECTOR {} {} {}", nullifier, content_hash, commit(nullifier, content_hash));
+        let (blind, content_hash) = case;
+        println!("VECTOR {} {} {}", blind, content_hash, commit(blind, content_hash));
     };
 }

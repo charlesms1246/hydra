@@ -302,3 +302,56 @@ test("forgetting asks first, and takes the messages off the screen as well as ou
       "the message is off the disk and still on the screen");
   } finally { server.close(); }
 });
+
+test("which of the two things Enter will do is on the screen before it is pressed", async () => {
+  // I7's precondition on the sending side. A user who cannot see whether the next message is
+  // signed has neither deniability nor attribution — they have whatever the default was, and the
+  // whole point of `decisions/0026` is that there is no default.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    let m = await created(h);
+
+    assert.equal(m.signing, false, "the client starts out signing without being asked");
+    assert.match(prose(m), /deniable/);
+    assert.match(prose(m), /either of you could have written this/);
+    assert.doesNotMatch(prose(m), /SIGNED/);
+
+    m = await feed(m, h.deps, "s");
+    assert.equal(m.signing, true);
+    assert.match(prose(m), /SIGNED/);
+    assert.match(prose(m), /anyone holding your bundle can prove it/);
+
+    // And it toggles back, so the mode is a state the user drives rather than a trap.
+    m = await feed(m, h.deps, "s");
+    assert.equal(m.signing, false);
+  } finally { server.close(); }
+});
+
+test("the send effect carries the choice, and the log says which happened", async () => {
+  const { url, server, invites } = await vault();
+  try {
+    const chain = memoryChain();
+    const ha = harness(url, invites, chain);
+    const hb = harness(url, invites, chain);
+    let alice = await created(ha);
+    let bob = await created(hb);
+
+    bob = await feed(bob, hb.deps, "2e");
+    ha.files.set("bob.json", hb.files.get("bundle.json")!);
+    alice = await feed(alice, ha.deps, "2i");
+    alice = await feed(alice, ha.deps, "bob\t");
+    alice = await feed(alice, ha.deps, "bob.json\r");
+
+    alice = await feed(alice, ha.deps, "1i");
+    alice = await feed(alice, ha.deps, "off the record\r");
+    assert.match(alice.log.at(-1)!.text, /deniable/);
+    assert.equal(alice.state!.channels.bob.history.at(-1)!.attribution, "unverifiable");
+
+    alice = await feed(alice, ha.deps, "s");
+    alice = await feed(alice, ha.deps, "i");
+    alice = await feed(alice, ha.deps, "on the record\r");
+    assert.match(alice.log.at(-1)!.text, /signed/);
+    assert.equal(alice.state!.channels.bob.history.at(-1)!.attribution, "signed");
+  } finally { server.close(); }
+});

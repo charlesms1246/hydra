@@ -38,6 +38,7 @@ import {
   rootSeed, entropyFrom, fromTestVector, derive, adoptPoolKey, requireDomain,
   POOL_DOMAIN, VAULT_DOMAIN,
 } from "../../identity/src/domains.ts";
+import { ephemeral } from "../../handshake/src/authorship.ts";
 
 const BLOCK = 30_000;
 
@@ -72,7 +73,7 @@ function world() {
 
   for (const p of people) {
     const channel = openChannel(rootOf(p.messages + 120, p.owner), p.owner);
-    const config = { channel, nullifier: 2n, blockMs: BLOCK };
+    const config = { channel, author: ephemeral(), blockMs: BLOCK };
     const messages = Array.from({ length: p.messages }, (_, seq) =>
       send(config, new TextEncoder().encode(`${p.owner} ${seq}`), seq, seq * BLOCK * 3, () => 0.5));
     published.set(p.account, messages.length);
@@ -158,7 +159,7 @@ test("the auditor's key does not open a message, and that is the whole of decisi
   const alice = rootOf(31, "alice");
   const bob = rootOf(32, "bob");
   const opened = initiate(alice, bundleFor(bob, 0, 0));
-  const message = send({ channel: opened.channel, nullifier: 1n, blockMs: BLOCK },
+  const message = send({ channel: opened.channel, author: ephemeral(), blockMs: BLOCK },
     new TextEncoder().encode("the auditor cannot read this"), 0, 0, () => 0.5);
 
   // A pool secret is not a channel. The only thing that opens the body is the agreed secret.
@@ -191,7 +192,7 @@ test("equal message counts break link two, and the composition with it", () => {
   const channels = new Map<string, string[]>();
   for (const [i, owner] of ["a", "b", "c"].entries()) {
     const channel = openChannel(rootOf(140 + i, owner), owner);
-    const config = { channel, nullifier: 2n, blockMs: BLOCK };
+    const config = { channel, author: ephemeral(), blockMs: BLOCK };
     const messages = Array.from({ length: 4 }, (_, seq) =>
       send(config, new TextEncoder().encode(`${owner} ${seq}`), seq, seq * BLOCK * 3, () => 0.5));
     published.set(`0x${owner}`, messages.length);

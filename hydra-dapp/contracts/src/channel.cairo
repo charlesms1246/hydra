@@ -57,7 +57,8 @@ pub mod Channel {
     /// Neither field says who sent it, who it is for, or what it says. `pointer` is a blob id
     /// masked by a vault-domain, per-sequence pad (`packages/channel/src/pointer.ts`), so it
     /// names a blob only to someone holding the channel secret. `commitment` is
-    /// `commit(nullifier, content_hash)`, which binds authorship without naming an author.
+    /// `commit(blind, content_hash)`. Authorship is a signature over this value, carried in
+    /// the message body — never on chain. See `packages/handshake/src/authorship.ts`.
     ///
     /// Neither is indexed. A `#[key]` would let anyone filter the chain for one pointer, which
     /// costs nothing to the reader who already has it and hands a free index to everyone else.

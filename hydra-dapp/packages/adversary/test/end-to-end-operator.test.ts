@@ -24,6 +24,7 @@ import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { recoverBlobId } from "../../channel/src/pointer.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
+import { ephemeral } from "../../handshake/src/authorship.ts";
 
 function lcg(seed: number) {
   let s = seed >>> 0;
@@ -47,7 +48,7 @@ type Arrival = { at: number; id: string; bytes: number; real: boolean; seq: numb
  */
 function conversation(random: () => number, withCover: boolean) {
   const channel = openChannel(vaultRoot, "alice→bob");
-  const config = { blockMs: BLOCK, channel, nullifier: 7n };
+  const config = { blockMs: BLOCK, channel, author: ephemeral() };
   const events: number[] = [];
   const arrivals: Arrival[] = [];
 
@@ -69,7 +70,7 @@ function conversation(random: () => number, withCover: boolean) {
   }
 
   arrivals.sort((a, b) => a.at - b.at);
-  return { events, arrivals, channel, config };
+  return { events, arrivals, channel, config, sent };
 }
 
 /** The operator: match each chain event to the nearest arrival, and see if it guessed right. */
@@ -179,15 +180,18 @@ test("the vault, served over HTTP, accepts the whole session and reveals nothing
 test("the recipient can still find every message, which is the point", () => {
   // A defence that also defeats the recipient is not a defence. Holding only the channel secret
   // and the pointers from the chain, every real blob must resolve — and no decoy must.
-  const { arrivals, channel } = conversation(lcg(31), true);
+  // The MESSAGES THEMSELVES, not a re-send of the same text. `send` is no longer reproducible:
+  // every message carries a fresh blind inside the sealed frame, and `sealForChannel` derives
+  // its nonce from the plaintext — so identical words now produce a different ciphertext and a
+  // different id every time. Re-sending to recover a pointer used to work and quietly stopped.
+  const { arrivals, sent, channel } = conversation(lcg(31), true);
   const real = arrivals.filter((a) => a.real);
   const stored = new Set(arrivals.map((a) => a.id));
 
-  const config = { blockMs: BLOCK, channel, nullifier: 7n };
-  for (const a of real) {
-    const out = send(config, new TextEncoder().encode(`message number ${a.seq}`), a.seq, a.seq * BLOCK, lcg(1));
-    const recovered = Buffer.from(recoverBlobId(channel, out.pointer, a.seq)).toString("hex");
-    assert.equal(`enc:${recovered}`, a.id, `message ${a.seq} is unreachable from its pointer`);
+  for (const out of sent) {
+    const a = real.find((r) => r.seq === out.seq)!;
+    const recovered = Buffer.from(recoverBlobId(channel, out.pointer, out.seq)).toString("hex");
+    assert.equal(`enc:${recovered}`, a.id, `message ${out.seq} is unreachable from its pointer`);
     assert.ok(stored.has(a.id));
   }
 });
@@ -199,7 +203,7 @@ test("the recipient can still find every message, which is the point", () => {
 /** A conversation where the messages are not all the same size — the realistic case. */
 function mixedConversation(random: () => number, withCover: boolean) {
   const channel = openChannel(vaultRoot, "alice→bob");
-  const config = { blockMs: BLOCK, channel, nullifier: 9n };
+  const config = { blockMs: BLOCK, channel, author: ephemeral() };
   // One long message among short ones. Before cover carried its bucket, this was the message
   // an operator could pick out by size alone, every time.
   const sizes = [40, 60, 20_000, 55, 30, 45, 70, 25];

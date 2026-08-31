@@ -71,7 +71,8 @@ export function rawPublic(key: KeyObject): Uint8Array {
   return new Uint8Array(Buffer.from(jwk.x, "base64url"));
 }
 
-const publicFromRaw = (raw: Uint8Array, crv: "X25519" | "Ed25519"): KeyObject =>
+/** Exported because `authorship.ts` verifies against a raw published key too. */
+export const publicFromRaw = (raw: Uint8Array, crv: "X25519" | "Ed25519"): KeyObject =>
   createPublicKey({
     key: { kty: "OKP", crv, x: Buffer.from(raw).toString("base64url") },
     format: "jwk",

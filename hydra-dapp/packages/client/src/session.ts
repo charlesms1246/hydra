@@ -35,6 +35,8 @@ import type { Decoy } from "../../channel/src/cover.ts";
 import { sealForChannel, wireBytes, uploadPathFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
+import { frame, freshBlind } from "../../handshake/src/authorship.ts";
+import type { Attribution } from "../../handshake/src/authorship.ts";
 
 /** Everything one message produces, in the order it must happen. */
 export type Outgoing = {
@@ -77,8 +79,19 @@ export type SessionConfig = ScheduleConfig & {
    * by `adversary/test/ratchet.test.ts`, which fails if two messages seal under one key.
    */
   readonly content?: Secret<typeof VAULT_DOMAIN>;
-  /** The pool nullifier for this note. Binds the commitment to an identity without naming it. */
-  readonly nullifier: bigint;
+  /**
+   * WHO WROTE THIS, and it has no default.
+   *
+   * Required, so every call site chooses between a signature that nobody including your
+   * counterparty can forge and deniability that nobody including your counterparty can
+   * disprove. This used to be a `nullifier` derived from the channel's shared material, which
+   * bound a message to a CONVERSATION and let either end mint one as the other —
+   * `two-way.test.ts` carried that as a residual until it stopped being acceptable.
+   *
+   * The absence of a default is the point. Deniability that nobody selected is not a property;
+   * it is an accident that has not been noticed yet.
+   */
+  readonly author: Attribution;
 };
 
 /**
@@ -96,14 +109,23 @@ export function send(
   random?: () => number,
 ): Outgoing {
   assertSafeSchedule(config);
-  const blob = sealForChannel(config.content ?? config.channel, plaintext);
+
+  // The commitment goes on chain and the signature is over the commitment, so a signature is a
+  // statement about a specific message at a specific chain event rather than about some bytes.
+  // The blind rides inside the sealed frame, because a reader who cannot recompute the
+  // commitment can only check that the author signed SOMETHING.
+  const blind = freshBlind();
+  const commitment = commit(blind, contentHashFor(plaintext));
+  const signature = config.author.kind === "signed" ? config.author.sign(commitment) : null;
+
+  const blob = sealForChannel(config.content ?? config.channel, frame(signature, blind, plaintext));
   const body = wireBytes(blob) as unknown as Uint8Array;
   const pointer = pointerFor(config.channel, blobIdFrom(body), seq);
   return {
     blobId: blob.id,
     uploadPath: uploadPathFor(blob),
     body,
-    calldata: noteCalldata(pointer, commit(config.nullifier, contentHashFor(plaintext))),
+    calldata: noteCalldata(pointer, commitment),
     uploadAt: scheduleUpload(publishedAt, config, random),
     publishedAt,
     seq,

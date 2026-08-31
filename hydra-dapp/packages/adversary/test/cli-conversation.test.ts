@@ -56,7 +56,7 @@ test("a conversation runs end to end through the CLI's own operations", async ()
     const { alice, bob } = pair(url, invites);
     const chain = memoryChain();
 
-    const sent = await sendMessage(alice, chain, "with-bob", "meet me at the usual place", T0);
+    const sent = await sendMessage(alice, chain, "with-bob", "ephemeral", "meet me at the usual place", T0);
     assert.match(sent.txHash, /^0x[0-9a-f]+$/);
 
     // At the moment of sending, the MESSAGE is not due: its upload is scheduled strictly after
@@ -87,7 +87,7 @@ test("send publishes the pointer and does NOT upload, which is the whole timing 
   try {
     const { alice } = pair(url, invites);
     const chain = memoryChain();
-    const sent = await sendMessage(alice, chain, "with-bob", "hello", T0);
+    const sent = await sendMessage(alice, chain, "with-bob", "ephemeral", "hello", T0);
 
     // On chain immediately: two felts, and only two.
     assert.equal(chain.published.length, 1);
@@ -108,7 +108,7 @@ test("cover goes up by the same route as a message, in the same size bucket", as
   try {
     const { alice } = pair(url, invites);
     const chain = memoryChain();
-    const sent = await sendMessage(alice, chain, "with-bob", "x", T0);
+    const sent = await sendMessage(alice, chain, "with-bob", "ephemeral", "x", T0);
     await flush(alice, sent.uploadAt + MIN_JITTER_BLOCKS * BLOCK);
 
     const sizes = new Set(v.observe().rows.map((r) => r["blob.bucket"]));
@@ -143,7 +143,7 @@ test("the real message is the earliest upload about a fifth of the time, and tha
     for (let t = 0; t < TRIALS; t++) {
       const alice = init({ vaultUrl: url, blockMs: BLOCK, invites: [...invites] });
       open(alice, "with-bob", publishBundle(init({ invites: [] }), 0));
-      const sent = await sendMessage(alice, chain, "with-bob", "x", T0);
+      const sent = await sendMessage(alice, chain, "with-bob", "ephemeral", "x", T0);
       const realId = alice.pending.find((p) => p.real)!.id;
       const due = [...alice.pending].sort((a, b) => a.uploadAt - b.uploadAt);
       assert.ok(sent.uploadAt > T0);
@@ -178,7 +178,7 @@ test("a flush that would run out of invites refuses before sending anything", as
     const { alice } = pair(url, invites);
     alice.invites = ["only-one"];
     const chain = memoryChain();
-    const sent = await sendMessage(alice, chain, "with-bob", "x", T0);
+    const sent = await sendMessage(alice, chain, "with-bob", "ephemeral", "x", T0);
     await assert.rejects(() => flush(alice, sent.uploadAt + MIN_JITTER_BLOCKS * BLOCK), /invites/);
     assert.equal(v.observe().rows.length, 0, "it uploaded some of them before giving up");
   } finally {
@@ -194,7 +194,7 @@ test("the read asks for more ids than it wants, always", async () => {
   try {
     const { alice, bob } = pair(url, invites);
     const chain = memoryChain();
-    const sent = await sendMessage(alice, chain, "with-bob", "one message only", T0);
+    const sent = await sendMessage(alice, chain, "with-bob", "ephemeral", "one message only", T0);
     await flush(alice, sent.uploadAt + MIN_JITTER_BLOCKS * BLOCK);
 
     // Checked on the wire the client actually puts out, not on what the server tolerated: the

@@ -19,7 +19,8 @@
  *     hydra accept NAME prekey.json
  *     hydra collect                               accept whatever is waiting for you
  *     hydra rotate                                destroy the old prekey; mint fresh ones
- *     hydra send NAME "text"                      publishes the pointer, queues the upload
+ *     hydra send NAME "text"                      deniable: either of you could have written it
+ *     hydra publish NAME "text"                   signed: only you could have, and it is provable
  *     hydra flush                                 uploads what is due
  *     hydra read NAME
  *     hydra forget NAME [--before EVENT]          delete messages; the key is already gone
@@ -50,7 +51,7 @@ const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.st
 
 const usage = () => {
   console.error(readFileSync(new URL(import.meta.url), "utf8")
-    .split("\n").slice(3, 26).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
+    .split("\n").slice(3, 27).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
   process.exit(2);
 };
 
@@ -166,15 +167,27 @@ switch (command) {
     break;
   }
 
-  case "send": {
+  case "send":
+  case "publish": {
+    // Two verbs rather than a flag, because the difference is not a setting. `send` is deniable
+    // and `publish` is signed, and a user who cannot tell which they just did has neither.
     const state = load();
     const [name, ...words] = positional;
     if (!name || !words.length) usage();
-    const result = await sendMessage(state, chainFor(state), name, words.join(" "));
+    const signed = command === "publish";
+    const result = await sendMessage(
+      state, chainFor(state), name, signed ? "signed" : "ephemeral", words.join(" "));
     save(state);
     console.log(`published ${result.txHash}`);
     console.log(`upload due at ${new Date(result.uploadAt).toISOString()} with ${result.decoys} decoys`);
     console.log("run `hydra flush` then, or on a timer. uploading now would undo the timing defence.");
+    console.log("");
+    console.log(signed
+      ? "SIGNED. anyone holding your bundle can prove you wrote this, including people you never\n"
+        + "sent it to. that is what publishing means and it cannot be taken back."
+      : "DENIABLE. the only thing authenticating this is a key you and they both hold, so either\n"
+        + "of you could have written it and neither can prove which. use `publish` if you need\n"
+        + "the other thing.");
     console.log("");
     console.log("NOTE: that transaction was signed by your own account, so the chain shows that");
     console.log("YOU published a message, and its nonce shows which one. the timing defence hides");

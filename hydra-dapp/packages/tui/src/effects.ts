@@ -59,11 +59,14 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
 
   switch (effect.t) {
     case "send": {
-      const r = await sendMessage(state, deps.chain(state), effect.channel, effect.text, deps.now());
+      const r = await sendMessage(
+        state, deps.chain(state), effect.channel,
+        effect.signed ? "signed" : "ephemeral", effect.text, deps.now());
       deps.save(state);
       return {
         t: "ok", state,
-        text: `published ${r.txHash.slice(0, 12)}… — upload at ${clock(r.uploadAt)} with ${r.decoys} decoys`,
+        text: `${effect.signed ? "signed" : "deniable"} · ${r.txHash.slice(0, 12)}… — upload at `
+          + `${clock(r.uploadAt)} with ${r.decoys} decoys`,
       };
     }
     case "read": {

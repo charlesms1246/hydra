@@ -81,7 +81,7 @@ async function session(seed: number): Promise<{ events: number[]; items: Item[] 
   for (let seq = 0; seq < MESSAGES; seq++) {
     const at = T0 + seq * GAP;
     const before = alice.pending.length;
-    await sendMessage(alice, chain, "with-bob", `message ${seq}`, at, rnd);
+    await sendMessage(alice, chain, "with-bob", "ephemeral", `message ${seq}`, at, rnd);
     events.push(at);
     for (const p of alice.pending.slice(before)) {
       items.push({ uploadAt: p.uploadAt, real: p.real, seq, sentAt: at });

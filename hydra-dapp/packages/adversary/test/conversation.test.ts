@@ -35,10 +35,12 @@ import { openForChannel, plaintextOf, encryptedIdFor } from "../../vault-client/
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, expose, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
+import { ephemeral } from "../../handshake/src/authorship.ts";
+import { unframe, FRAME_HEADER } from "../../handshake/src/authorship.ts";
 
 const BLOCK = 30_000;
 const config = (channel: ReturnType<typeof openChannel>) =>
-  ({ channel, nullifier: 7n, blockMs: BLOCK });
+  ({ channel, author: ephemeral(), blockMs: BLOCK });
 
 const aliceRoot = derive(VAULT_DOMAIN,
   rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(3), "alice"))));
@@ -122,7 +124,10 @@ test("alice sends, bob reads it back, through the real vault over HTTP", async (
     const read = seen.map((s) => {
       const bytes = select(batch, bobChannel, s);
       assert.ok(bytes, `bob could not find message ${s.seq} in his own batch`);
-      return new TextDecoder().decode(plaintextOf(openForChannel(bobChannel, bytes)));
+      // Unframed: what is sealed is `[mode][signature][blind][plaintext]`, so the bytes that
+      // come out of the blob are not the message. See `handshake/src/authorship.ts`.
+      return new TextDecoder().decode(
+        unframe(plaintextOf(openForChannel(bobChannel, bytes))).plaintext);
     });
     assert.deepEqual(read, TEXTS, "the conversation did not survive the round trip");
   });
@@ -130,10 +135,12 @@ test("alice sends, bob reads it back, through the real vault over HTTP", async (
 
 test("the padding comes off exactly, whatever the message length", () => {
   // The length prefix is inside the sealed region, so this is the check that it is being read
-  // back rather than the plaintext being whatever survived the bucket.
-  for (const n of [0, 1, 17, 900, 991]) {
+  // back rather than the plaintext being whatever survived the bucket. The authorship frame sits
+  // inside that region too, and the largest case shrank by its size — a message is now the
+  // bucket minus the frame, which is the storage cost of being able to answer "who wrote this".
+  for (const n of [0, 1, 17, 800, 991 - FRAME_HEADER]) {
     const m = send(config(channel), new Uint8Array(n).fill(0xab), 0, 0, () => 0.5);
-    const out = plaintextOf(openForChannel(channel, m.body));
+    const out = unframe(plaintextOf(openForChannel(channel, m.body))).plaintext;
     assert.equal(out.length, n, `a ${n}-byte message came back ${out.length} bytes`);
     assert.ok(out.every((b) => b === 0xab));
     // And it was one bucket on the wire regardless.

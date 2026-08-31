@@ -30,6 +30,7 @@ import { coverBody, coverId } from "../../channel/src/cover.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
+import { ephemeral } from "../../handshake/src/authorship.ts";
 
 const BLOCK = 30_000;
 
@@ -59,7 +60,7 @@ function world(people: readonly Person[], random: () => number) {
     const channel = openChannel(derive(VAULT_DOMAIN,
       rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(person.counts + 70), person.name)))),
       person.name);
-    const config = { channel, nullifier: 9n, blockMs: BLOCK };
+    const config = { channel, author: ephemeral(), blockMs: BLOCK };
     const messages = Array.from({ length: person.counts }, (_, seq) =>
       send(config, new TextEncoder().encode(`${person.name} ${seq}`), seq,
         person.start + seq * BLOCK * 3, random));
