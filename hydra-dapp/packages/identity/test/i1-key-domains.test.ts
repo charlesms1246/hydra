@@ -120,7 +120,12 @@ test("exactly one function mints a seed, and exactly one reads raw bytes", () =>
   // `(bytes, provenance)` pair, which meant `entropyFrom(expose(poolSecret, …), "wallet")`
   // compiled — the escrowed key becoming the root of a real identity, with a reassuring string
   // beside it. The count is asserted so a new adapter is a deliberate act.
-  assert.equal(count("^export const from[A-Z][a-zA-Z]* = "), 4,
+  // Five, and the fifth was a deliberate act this line forced: `fromChannelWrap`, added for
+  // X3DH. It is the only adapter whose material this system did not choose — the initiator
+  // picks 32 bytes and wraps them to the recipient's prekey bundle — and it is an entropy
+  // SOURCE rather than an adopt-style shortcut, so the delivered bytes are still stretched
+  // through `rootSeed`/`derive` and never become a `Secret` directly.
+  assert.equal(count("^export const from[A-Z][a-zA-Z]* = "), 5,
     "the set of external entropy sources changed — each one is a way key material gets in");
   assert.equal(count("^export function entropyFrom\\b"), 1, "more than one entropy entry point");
   assert.equal(count("^export function expose\\b"), 1, "not exactly one place reads raw key bytes");

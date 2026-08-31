@@ -154,6 +154,26 @@ export const fromHardwareToken = (bytes: Uint8Array, device: string): ExternalBy
 export const fromTestVector = (bytes: Uint8Array, label: string): ExternalBytes =>
   external(bytes, `test vector ${label}`);
 
+/**
+ * Channel material delivered by a peer, inside a handshake.
+ *
+ * The one adapter whose material this system did not choose. `handshake/src/x3dh.ts` has the
+ * initiator pick 32 random bytes and wrap them to the recipient's prekey bundle, so both sides
+ * end up holding the same value and neither derived it from a root — which is the point, since
+ * a channel secret either side could derive alone would be a channel secret either side's
+ * compromise would reveal for every conversation they ever had.
+ *
+ * It is an entropy SOURCE rather than an adopt-style shortcut, so the delivered bytes are
+ * stretched through `rootSeed`/`derive` like everything else and never become a `Secret`
+ * directly. `peer` is recorded for the same reason `fromWalletSignature` records its message:
+ * it makes "whose material is this" answerable at the call site rather than remembered.
+ *
+ * It cannot launder pool material. The bytes arrive out of an AES-GCM open under a key that
+ * only X3DH produces, and X3DH's inputs are `Secret<VAULT_DOMAIN>` by signature.
+ */
+export const fromChannelWrap = (bytes: Uint8Array, peer: string): ExternalBytes =>
+  external(bytes, `channel wrap from ${peer}`);
+
 /** Fresh entropy from the OS. */
 export const randomEntropy = (n = 32): Entropy => entropyFrom(fromOsRandom(n));
 

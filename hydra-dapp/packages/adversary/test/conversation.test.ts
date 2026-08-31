@@ -11,23 +11,29 @@
  * ways it must fail — the wrong channel, altered bytes, a vault that files a blob under an id
  * it does not hash to.
  *
- * WHAT IS STUBBED, SAID PLAINLY: bob is handed alice's channel secret directly. There is no key
- * agreement in this platform yet. `openChannel` derives from ONE party's vault root, so the
- * other party cannot compute it — in a real deployment it has to come from the pool's own
- * channel between two registered viewing keys, and that is unbuilt. Every guarantee below is
- * conditional on the two of them sharing that secret somehow, and nothing here establishes it.
+ * NOTHING IS SHARED OUT OF BAND. Bob used to be handed alice's channel secret, because
+ * `openChannel` derives from one party's vault root and the other party cannot compute it —
+ * every guarantee here was conditional on a step nobody had written. The two of them now run
+ * X3DH: alice reads bob's published bundle, agrees a secret against keys he generated while
+ * offline, and the wrap rides in the vault. Bob's channel secret below is computed from his own
+ * root and the prekey message, never copied from alice's.
+ *
+ * What is still unbuilt is DELIVERY. The prekey message is handed to bob in-process here,
+ * because a mailbox a stranger can address without already sharing a secret is a disclosure the
+ * vault operator gets to see, and that has not been designed. `decisions/0009` says so.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { send, openChannel } from "../../client/src/session.ts";
+import { initiate, respond, bundleFor } from "../../handshake/src/x3dh.ts";
 import { readSet, select, MIN_READ_BATCH } from "../../client/src/read.ts";
 import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
 import { serve } from "../../vault-server/src/http.ts";
 import { openForChannel, plaintextOf, encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
-import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
+import { rootSeed, entropyFrom, fromTestVector, derive, expose, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
 
 const BLOCK = 30_000;
@@ -36,8 +42,16 @@ const config = (channel: ReturnType<typeof openChannel>) =>
 
 const aliceRoot = derive(VAULT_DOMAIN,
   rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(3), "alice"))));
-// The stub. See the header: bob cannot derive this, he is given it.
-const channel = openChannel(aliceRoot, "alice→bob");
+const bobRoot = derive(VAULT_DOMAIN,
+  rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(5), "bob"))));
+
+// Alice reads what bob published and agrees a secret with him while he is offline. The
+// ephemeral key and the channel material are random, as they are in use — a fixed seed here
+// would make the whole file a test of one pair of values.
+const opening = initiate(aliceRoot, bundleFor(bobRoot, 0, 0));
+const channel = opening.channel;
+/** Bob's, computed from HIS root and the prekey message. Never copied from alice's. */
+const bobChannel = respond(bobRoot, opening.message).channel;
 
 const TEXTS = ["hello", "the second one, which is longer than the first", "ok"];
 
@@ -73,9 +87,22 @@ async function fetchBatch(url: string, ids: string[]): Promise<Map<string, Uint8
     .map(([k, v]) => [k, new Uint8Array(Buffer.from(v, "base64"))]));
 }
 
+test("bob's channel secret is his own arithmetic, not a copy of alice's", () => {
+  // The check that the stub is actually gone. If this file ever goes back to sharing a secret,
+  // the conversation still works and only this test notices.
+  const mine = Buffer.from(expose(channel, VAULT_DOMAIN));
+  const his = Buffer.from(expose(bobChannel, VAULT_DOMAIN));
+  assert.deepEqual(his, mine, "the two sides did not agree");
+  // And a third party holding everything that travelled — the bundle and the prekey message —
+  // does not get there, which is what makes the agreement worth anything.
+  const mallory = derive(VAULT_DOMAIN,
+    rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(6), "mallory"))));
+  assert.throws(() => respond(mallory, opening.message), /unable to authenticate|bad decrypt/i);
+});
+
 test("alice sends, bob reads it back, through the real vault over HTTP", async () => {
   await withVault(async (url) => {
-    const ids = readSet(channel, seen);
+    const ids = readSet(bobChannel, seen);
     // The batch is padded past what he wants, because asking for one id names the message.
     assert.ok(ids.length >= MIN_READ_BATCH);
     const batch = await fetchBatch(url, ids);
@@ -84,9 +111,9 @@ test("alice sends, bob reads it back, through the real vault over HTTP", async (
     assert.equal(batch.size, TEXTS.length, "the decoys hit something, or a real message missed");
 
     const read = seen.map((s) => {
-      const bytes = select(batch, channel, s);
+      const bytes = select(batch, bobChannel, s);
       assert.ok(bytes, `bob could not find message ${s.seq} in his own batch`);
-      return new TextDecoder().decode(plaintextOf(openForChannel(channel, bytes)));
+      return new TextDecoder().decode(plaintextOf(openForChannel(bobChannel, bytes)));
     });
     assert.deepEqual(read, TEXTS, "the conversation did not survive the round trip");
   });
