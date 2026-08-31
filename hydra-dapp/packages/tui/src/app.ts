@@ -77,7 +77,13 @@ export type Event =
   | { readonly t: "tick"; readonly now: number }
   | { readonly t: "resize" }
   | { readonly t: "ok"; readonly text: string; readonly state?: State }
-  | { readonly t: "messages"; readonly channel: string; readonly messages: readonly Received[] }
+  | {
+    readonly t: "messages";
+    readonly channel: string;
+    readonly messages: readonly Received[];
+    /** Messages in this client's own direction that this client did not send. See `commands.ts`. */
+    readonly foreign: number;
+  }
   | { readonly t: "error"; readonly text: string };
 
 export type LogLine = { readonly at: number; readonly text: string; readonly tone: "info" | "warn" | "bad" };
@@ -91,6 +97,8 @@ export type Model = {
   readonly channel: number;
   readonly scroll: number;
   readonly transcript: Readonly<Record<string, readonly Received[]>>;
+  /** Channels where something else is sending as you. `commands.ts` `foreignSends`. */
+  readonly foreign: Readonly<Record<string, number>>;
   readonly log: readonly LogLine[];
   readonly busy: string | null;
   readonly confirm: { readonly question: string; readonly label: string; readonly effect: Effect } | null;
@@ -117,6 +125,7 @@ export function start(state: State | null, now: number): Model {
     channel: 0,
     scroll: 0,
     transcript: {},
+    foreign: {},
     log: [],
     busy: null,
     confirm: null,
@@ -188,8 +197,15 @@ export function update(m: Model, event: Event): Step {
         ...m,
         busy: null,
         transcript: { ...m.transcript, [event.channel]: event.messages },
+        foreign: { ...m.foreign, [event.channel]: event.foreign },
       };
-      return just(say(next, `${event.channel}: ${event.messages.length} message(s)`, "info"));
+      // The warning goes in the log as well as on the page, because it is the kind of thing a
+      // user needs told once loudly rather than shown quietly forever.
+      return just(say(next, event.foreign
+        ? `${event.channel}: ${event.messages.length} message(s) — ${event.foreign} sent as you `
+          + "by another client"
+        : `${event.channel}: ${event.messages.length} message(s)`,
+      event.foreign ? "warn" : "info"));
     }
     case "error":
       return just(say({ ...m, busy: null }, event.text, "bad"));

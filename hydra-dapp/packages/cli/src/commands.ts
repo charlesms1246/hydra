@@ -511,6 +511,31 @@ export async function readChannel(
   return out.sort((a, b) => a.at - b.at || Number(a.mine) - Number(b.mine) || a.seq - b.seq);
 }
 
+/**
+ * How many messages in YOUR direction this client did not send.
+ *
+ * Zero unless a second client is running on the same identity — the same seed copied to a phone
+ * and a laptop, which is the obvious thing to do with a state file and the thing this design
+ * cannot support. Two devices are not two directions: they share a role, so they derive the same
+ * cover from the same sequence numbers, and their decoys are byte-identical. Measured on a
+ * two-message exchange from two copies of one state file: ten uploads, **six** objects.
+ *
+ * A blob id is a hash of its content, so an id that arrives twice is an id two clients minted
+ * independently — and cover is the only object that happens to. A vault keeping its request log
+ * reads every decoy off it with certainty.
+ *
+ * IT CANNOT BE FIXED BY GIVING THE DEVICE ITS OWN KEY. The recipient derives a message's decoys
+ * from the sender's channel and sequence number in order to fetch them (`decisions/0014` — a
+ * decoy nobody fetches is worthless), and it cannot derive them from a device identifier it has
+ * never seen. Carrying one would mean putting it on chain, and the note is two felts.
+ *
+ * So the condition is DETECTED rather than prevented, and both front ends say so. This client
+ * sent `nextSeq` messages; if the channel holds more than that in its own direction, something
+ * else is sending as you.
+ */
+export const foreignSends = (state: State, name: string, read: readonly Received[]): number =>
+  Math.max(0, read.filter((m) => m.mine).length - (state.channels[name]?.nextSeq ?? 0));
+
 /** Pad a batch that is somehow short. Exported so the test can assert the floor is respected. */
 export const readBatchFloor = MIN_READ_BATCH;
 export { randomBytes as _randomBytes, select, BUCKETS };

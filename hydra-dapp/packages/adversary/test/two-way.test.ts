@@ -27,7 +27,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { init, open, accept, publishBundle, sendMessage, flush, readChannel }
+import { init, open, accept, publishBundle, sendMessage, flush, readChannel, foreignSends }
   from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { Vault } from "../../vault-server/src/server.ts";
@@ -162,5 +162,55 @@ test("KNOWN RESIDUAL: your counterparty can still forge as you", async () => {
     assert.ok(forgedLine, "the forgery did not land — if this is now impossible, say what closed it");
     assert.equal(forgedLine.mine, true,
       "the forgery landed but was not attributed to alice, which would be a partial defence");
+  } finally { server.close(); }
+});
+
+test("TWO CLIENTS ON ONE IDENTITY mint identical cover, and cannot be stopped from it", async () => {
+  // The same defect the direction split fixed, from a place the split cannot reach: two devices
+  // sharing a seed share a ROLE, so they are one direction. Copying a state file to a second
+  // machine is the obvious thing to do with it.
+  const { alice, bob, v, server, chain } = await pair();
+  try {
+    const laptop = JSON.parse(JSON.stringify(alice)) as typeof alice;
+    // Its own invites, so nothing fails for the boring reason.
+    laptop.invites = Array.from({ length: 200 }, (_, i) => `laptop-${i}`);
+    for (const inv of laptop.invites) v.handle({ op: "invite", invite: inv } as never);
+
+    await sendMessage(alice, chain, "bob", "from the phone", T0);
+    await sendMessage(laptop, chain, "bob", "from the laptop", T0 + BLOCK);
+
+    const phone = new Set(alice.pending.map((p) => p.id));
+    const shared = laptop.pending.filter((p) => phone.has(p.id));
+    assert.equal(shared.length, COVER_RATE,
+      `${shared.length} objects collided across two devices; if this is now zero, something `
+      + "gives a device its own cover — say how the recipient fetches it");
+    assert.ok(shared.every((p) => !p.real), "a real message collided, which would be worse");
+    void bob;
+  } finally { server.close(); }
+});
+
+test("and the client says so, because it cannot prevent it", async () => {
+  const { alice, bob, server, chain } = await pair();
+  try {
+    const laptop = JSON.parse(JSON.stringify(alice)) as typeof alice;
+    laptop.invites = alice.invites.slice(100);
+    alice.invites = alice.invites.slice(0, 100);
+
+    await sendMessage(alice, chain, "bob", "phone", T0);
+    await sendMessage(laptop, chain, "bob", "laptop", T0 + BLOCK);
+    await flush(alice, LATER);
+    await flush(laptop, LATER);
+
+    // The phone sent one message and the channel holds two in its own direction.
+    const read = await readChannel(alice, chain, "bob");
+    assert.equal(read.filter((m) => m.mine).length, 2);
+    assert.equal(alice.channels.bob.nextSeq, 1);
+    assert.equal(foreignSends(alice, "bob", read), 1,
+      "a second client on this identity went unnoticed");
+
+    // And bob, who is genuinely a different party, triggers nothing.
+    const his = await readChannel(bob, chain, "alice");
+    assert.equal(foreignSends(bob, "alice", his), 0,
+      "the other END of the conversation was mistaken for another of your own devices");
   } finally { server.close(); }
 });

@@ -147,11 +147,17 @@ function chats(m: Model, size: Size, height: number): string[] {
 
   const visible = body.slice(Math.max(0, body.length - (top - 2)));
 
+  const foreign = current ? m.foreign[current] ?? 0 : 0;
   const compose = [
     fit(m.fields.compose + (m.typing && m.page === "chats" ? paint("▏", "cyan") : ""), size.cols - 4),
     "",
-    ...note("the chain shows that YOU published, and in what order. the timing defence hides "
-      + "which upload holds the text, not that you sent it.", size.cols - 4).slice(0, 2),
+    ...(foreign
+      ? wrap(`${foreign} message(s) here were sent as you by another client. two clients on one `
+        + "seed mint identical cover, and an object uploaded twice is one the storage server "
+        + "knows is cover. use one client per identity.", size.cols - 4)
+        .slice(0, 2).map((l) => paint(l, "yellow"))
+      : note("the chain shows that YOU published, and in what order. the timing defence hides "
+        + "which upload holds the text, not that you sent it.", size.cols - 4).slice(0, 2)),
   ];
 
   return [

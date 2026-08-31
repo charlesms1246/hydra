@@ -17,7 +17,7 @@
 
 import {
   init, publishBundle, openAndSend, collect, sendMessage, flush, readChannel, rotatePrekey,
-  fingerprint, nextOneTime, encodeWire, decodeWire,
+  fingerprint, nextOneTime, encodeWire, decodeWire, foreignSends,
 } from "../../cli/src/commands.ts";
 import type { State } from "../../cli/src/state.ts";
 import type { Chain } from "../../cli/src/chain.ts";
@@ -68,7 +68,10 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
     }
     case "read": {
       const messages = await readChannel(state, deps.chain(state), effect.channel, deps.fetchImpl);
-      return { t: "messages", channel: effect.channel, messages };
+      return {
+        t: "messages", channel: effect.channel, messages,
+        foreign: foreignSends(state, effect.channel, messages),
+      };
     }
     case "flush": {
       const r = await flush(state, deps.now(), deps.fetchImpl);

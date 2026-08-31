@@ -31,7 +31,8 @@
 import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
-  fingerprint, vaultRootOf, rotatePrekey, nextOneTime, encodeWire as encode, decodeWire as decode,
+  fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends,
+  encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
 import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
@@ -194,8 +195,17 @@ switch (command) {
     if (!name) usage();
     // Direction, not just text. A channel is two one-way keys and a transcript that does not
     // say which one opened a line is a transcript that puts your words in their mouth.
-    for (const m of await readChannel(state, chainFor(state), name)) {
+    const read = await readChannel(state, chainFor(state), name);
+    for (const m of read) {
       console.log(`${m.mine ? "you " : "them"} ${String(m.seq).padStart(3)}  ${m.text}`);
+    }
+    const foreign = foreignSends(state, name, read);
+    if (foreign) {
+      console.error("");
+      console.error(`${foreign} message(s) in your own direction were not sent by this client.`);
+      console.error("another client is running on this identity. two clients on one seed mint");
+      console.error("identical cover, and an object uploaded twice is an object the storage");
+      console.error("server knows is cover. use one client per identity.");
     }
     break;
   }
