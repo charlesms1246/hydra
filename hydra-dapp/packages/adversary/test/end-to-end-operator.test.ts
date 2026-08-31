@@ -59,7 +59,7 @@ function conversation(random: () => number, withCover: boolean) {
   }
 
   if (withCover) {
-    for (const at of cover(config, events[0], events.at(-1)!, random)) {
+    for (const at of cover(config, events, random)) {
       const body = coverBody(channel, BUCKETS[0]);
       arrivals.push({ at, id: coverId(body), bytes: body.length, real: false, seq: -1 });
     }

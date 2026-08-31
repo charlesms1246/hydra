@@ -39,7 +39,7 @@ function sessions(withCover: boolean, trials = 1500, seed = 23) {
     const events = Array.from({ length: N }, (_, i) => i * BLOCK);
     const uploads: Arrival[] = events.map((at, seq) => ({ t: scheduleUpload(at, cfg, random), real: true, seq }));
     if (withCover) {
-      for (const t2 of coverPlan(events[0], events.at(-1)!, cfg, random)) {
+      for (const t2 of coverPlan(events, cfg, random)) {
         uploads.push({ t: t2, real: false, seq: -1 });
       }
     }

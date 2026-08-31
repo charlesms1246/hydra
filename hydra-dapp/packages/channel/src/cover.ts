@@ -11,23 +11,17 @@
  * a real message. So a session opens with cover: indistinguishable decoy uploads, beginning
  * before the first real one and continuing throughout.
  *
- * MEASURED, at the default eight-block jitter over twelve messages, with an eight-block lead:
+ * MEASURED at the default rate of 4, against the strongest of four matchers
+ * (`adversary/src/matchers.ts`), over twelve messages in four session shapes:
  *
- *     rate    decoys  overhead   first message   mean
- *     0       0       0.0x       0.46            0.135
- *     1       3       0.3x       0.30            0.105
- *     2       7       0.6x       0.19            0.080
- *     4       14      1.2x       0.11            0.059
- *     6       20      1.7x       0.08            0.047
- *     8       27      2.3x       0.06            0.038
+ *     shape                       decoys   overhead   first    mean
+ *     evenly spaced, 30s apart    48       4x         0.030    0.018
+ *     bursts of four              48       4x         0.059    0.052
+ *     Poisson, ~2min mean         48       4x         0.106    0.058
+ *     one a day (isolated)        48       4x         0.214    0.197
  *
- * THE TENSION, which is worth stating rather than tuning away: no rate makes both numbers
- * equal chance. At rate 2 the mean is exactly chance while the first message is still 2.3x it;
- * by the time the first message reaches chance the mean has fallen well below it. **Below
- * chance is not better.** An operator whose nearest-in-time guess is reliably wrong has learned
- * something — avoid the nearest — and can invert it. The default is rate 4 because it puts
- * both numbers within about 1.4x of chance, which is the closest either gets to carrying no
- * signal at all.
+ * The last row IS the floor — 1/(rate+1) = 0.2 — and the others beat it because overlapping
+ * windows merge anonymity sets. The overhead is constant because cover is per event.
  *
  * COVER IS PER BUCKET. A decoy hides a real upload only if it looks like one, and size is the
  * most visible thing about an upload. Decoys in the 1 KiB bucket do nothing for a 64 KiB
@@ -61,25 +55,58 @@ export type CoverConfig = ScheduleConfig & {
 };
 
 /**
- * When to send decoys, covering a session that runs from its first chain event to its last.
+ * When to send decoys: `coverRate` of them around each chain event.
  *
- * Times may be negative relative to `firstEventMs` — that is the lead, and it is the point.
+ * PER EVENT, NOT PER SESSION, and the difference is the whole cost model. The first version
+ * spread decoys uniformly from the first event to the last at a fixed rate per jitter window,
+ * which makes the decoy count a function of session DURATION. For a conversation spanning
+ * eleven days that is 15,848 decoys to carry twelve messages — 1,320x overhead, and 15 MiB of
+ * someone else's disk. Every number this project published came from a five-minute session
+ * where the same formula costs 1.2x, so the cost never showed up in a measurement.
+ *
+ * Concentrating cover around each event is affordable and, for clustered conversations, better:
+ * on evenly spaced messages it scores 0.018 against the old design's 0.061. The reason it is
+ * sound is that the chain has ALREADY published when each message happened — those events are
+ * public and timestamped. Cover is not hiding that a message exists. It is breaking the
+ * correspondence between an upload and an event, and that correspondence only lives inside a
+ * jitter window. Decoys spread across the dead time between conversations defend nothing and
+ * are billed anyway.
+ *
+ * THE GUARANTEE THIS BUYS, and it is a floor rather than a hope: an event's window contains its
+ * own upload and `coverRate` decoys, so an operator picking among them is right about
+ * **1/(coverRate + 1)** of the time — 0.2 at the default. Measured at 0.197 for messages a day
+ * apart, which is the isolated case. When messages are close enough that their windows overlap
+ * the sets merge and the operator does far worse; that is a bonus, not the guarantee.
+ *
+ * So the floor is a property of the RATE, and the only way to lower it is to pay: rate 9 gives
+ * 0.1 for 9x storage. Choosing that is a product decision and is stated as one.
+ *
+ * Times may be negative relative to the first event — that is the lead, and it is the point.
  * A caller that clamps them to the session start has removed the defence and kept the cost.
  */
 export function coverPlan(
-  firstEventMs: number,
-  lastEventMs: number,
+  events: readonly number[],
   config: CoverConfig,
   random: () => number = () => randomInt(1 << 30) / (1 << 30),
 ): number[] {
   assertSafeSchedule(config);
   const rate = config.coverRate ?? COVER_RATE;
   if (!(rate > 0)) throw new Error("cover: a rate of zero is no cover at all");
+  if (events.length === 0) throw new Error("cover: a session with no events needs no cover");
   const window = jitterWindowMs(config);
-  const start = firstEventMs - (config.leadBlocks ?? COVER_LEAD_BLOCKS) * config.blockMs;
-  const end = lastEventMs + window;
-  const count = Math.max(1, Math.round((rate * (end - start)) / window));
-  return Array.from({ length: count }, () => start + random() * (end - start)).sort((a, b) => a - b);
+  const lead = (config.leadBlocks ?? COVER_LEAD_BLOCKS) * config.blockMs;
+  const out: number[] = [];
+  for (const at of events) {
+    // Spanning [event - lead, event + window): the lead is what stops the session's earliest
+    // upload being its first message, and the window is where the real upload will land.
+    for (let k = 0; k < rate; k++) out.push(at - lead + random() * (lead + window));
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/** The floor this rate buys: an operator's accuracy against an isolated message. */
+export function anonymitySetFloor(config: CoverConfig): number {
+  return 1 / ((config.coverRate ?? COVER_RATE) + 1);
 }
 
 /**

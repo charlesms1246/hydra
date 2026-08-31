@@ -57,16 +57,21 @@ export const MEASURED = {
   noteFelts: NOTE_FELTS,
   buckets: BUCKETS,
   /**
-   * How often a vault operator identifies the first message of a session, at the shipped
-   * defaults, against a chance of 1/12.
+   * How often a vault operator identifies a message, at the shipped defaults, against the
+   * strongest of four matchers.
    *
-   * 0.128, not the 0.11 published first. The earlier figure came from a single matcher — the
-   * nearest upload to each event — and an adversary is not a strategy. `adversary/src/matchers.ts`
-   * takes the maximum over four, and `i3-matchers.test.ts` fails if this drifts from it.
-   * Corrected upward, which is the direction that matters: the first number understated what
-   * an operator achieves.
+   * TWO NUMBERS, and the product publishes the worse one. A message sent well apart from any
+   * other sits in an anonymity set of exactly `coverRate + 1` — its own upload and its decoys —
+   * so the operator is right **1 in 5**. Messages close enough that their cover windows overlap
+   * do far better, at 0.028, because the sets merge.
+   *
+   * The floor is what a user is entitled to rely on: a conversation is allowed to be slow, and
+   * a claim that only holds for rapid exchanges is a claim that fails exactly when someone
+   * sends one careful message a day. Two earlier figures here — 0.11, then 0.128 — were both
+   * measured on rapid sessions and published as though they were the guarantee.
    */
-  firstMessageIdentified: 0.128,
+  isolatedMessageIdentified: 0.2,
+  clusteredMessageIdentified: 0.028,
   chance: 1 / 12,
 } as const;
 
@@ -104,12 +109,22 @@ export function statement(): Statement {
     // would round up to a guarantee.
     whatIsPartial: [
       {
-        says: `Uploads are delayed by up to ${MEASURED.jitterBlocks} blocks and mixed with decoy `
-          + `traffic, so the storage server usually cannot tell which upload belongs to which `
-          + `on-chain message. Usually is not always: for the first message of a session it `
-          + `still guesses right about ${pct(MEASURED.firstMessageIdentified)} of the time, `
-          + `against ${pct(MEASURED.chance)} for a coin flip.`,
+        says: `Uploads are delayed by up to ${MEASURED.jitterBlocks} blocks and mixed with `
+          + `${MEASURED.coverRate} decoy uploads each, so the storage server usually cannot tell `
+          + `which upload belongs to which on-chain message. How well that works depends on how `
+          + `fast you are talking. A message sent well apart from any other is identified about `
+          + `${pct(MEASURED.isolatedMessageIdentified)} of the time — one in five — because it `
+          + `is hidden only among its own decoys. Messages sent in quick succession hide among `
+          + `each other's too, and drop to about ${pct(MEASURED.clusteredMessageIdentified)}.`,
         from: "channel/src/schedule.ts, channel/src/cover.ts, i3-cover-traffic.test.ts",
+        complete: false,
+      },
+      {
+        says: `Hiding each message costs ${MEASURED.coverRate} decoy uploads, so the storage it `
+          + `takes is about ${MEASURED.coverRate + 1} times what your messages alone would need. `
+          + `That is the price of the number above, and lowering the number means raising the `
+          + `price: hiding one message in ten instead of one in five costs twice the storage.`,
+        from: "channel/src/cover.ts (COVER_RATE, anonymitySetFloor)",
         complete: false,
       },
       {

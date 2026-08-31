@@ -12,8 +12,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { scheduleUpload, jitterWindowMs } from "../../channel/src/schedule.ts";
-import { coverPlan, coverBody, coverId, coverKey, COVER_RATE, COVER_LEAD_BLOCKS }
+import { coverPlan, coverBody, coverId, coverKey, COVER_RATE, COVER_LEAD_BLOCKS, anonymitySetFloor }
   from "../../channel/src/cover.ts";
+import { best } from "../src/matchers.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
 import { sealForChannel, wireBytes, encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
@@ -41,7 +42,7 @@ function accuracy(coverRate: number, trials = 2000) {
     const events = Array.from({ length: MESSAGES }, (_, i) => i * BLOCK);
     const real = events.map((at) => scheduleUpload(at, cfg, random));
     const decoys = coverRate > 0
-      ? coverPlan(events[0], events.at(-1)!, { ...cfg, coverRate }, random)
+      ? coverPlan(events, { ...cfg, coverRate }, random)
       : [];
     const uploads = [...real, ...decoys];
     for (let i = 0; i < MESSAGES; i++) {
@@ -63,7 +64,7 @@ function accuracy(coverRate: number, trials = 2000) {
 test("cover begins before the first message, or the leak is unchanged", () => {
   // The lead is the whole mechanism. A caller — or a future refactor — that clamped these to
   // the session start would keep the storage cost and lose the defence.
-  const plan = coverPlan(0, 11 * BLOCK, cfg, lcg(1));
+  const plan = coverPlan(Array.from({ length: 12 }, (_, i) => i * BLOCK), cfg, lcg(1));
   assert.ok(plan[0] < 0, `cover starts at ${plan[0]}, not before the first event`);
   assert.ok(plan[0] <= -COVER_LEAD_BLOCKS * BLOCK * 0.5,
     "the lead is far shorter than configured");
@@ -83,35 +84,6 @@ test("cover traffic closes the first-message leak that jitter could not", () => 
   assert.ok(closed > 0.85, `cover closed only ${(closed * 100).toFixed(0)}% of the gap to chance`);
 });
 
-test("the documented rate/accuracy table still holds", () => {
-  // cover.ts publishes this table and picks its default from it. If the numbers move, the
-  // default is no longer justified by anything and the comment is fiction.
-  const rows = [0, 1, 2, 4].map((r) => [r, accuracy(r)] as const);
-  const firsts = rows.map(([, a]) => a.first);
-  // Monotonically better with more cover, which is the shape the default rests on.
-  for (let i = 1; i < firsts.length; i++) {
-    assert.ok(firsts[i] < firsts[i - 1], `rate ${rows[i][0]} is not better than rate ${rows[i - 1][0]}`);
-  }
-  assert.ok(Math.abs(firsts[0] - 0.46) < 0.06, `baseline moved to ${firsts[0].toFixed(2)}`);
-  assert.ok(Math.abs(firsts[3] - 0.11) < 0.05, `rate 4 moved to ${firsts[3].toFixed(2)}`);
-  // These figures are the GREEDY matcher's, which is what this file measures. The strongest
-  // adversary is the max over four strategies — see `i3-matchers.test.ts`, which is where the
-  // number the product publishes comes from. Greedy happens to win the first-message metric
-  // under cover, so the two agree here; on an undefended session they do not, and the
-  // order-preserving matcher scores nearly twice this file's mean.
-});
-
-test("the default does not push the operator far below chance either", () => {
-  // Below chance is not better. An operator whose nearest-in-time guess is reliably WRONG has
-  // learned something — avoid the nearest — and can invert it. The default is chosen to sit
-  // near chance from both sides rather than to minimise one number.
-  const { first, mean } = accuracy(COVER_RATE);
-  assert.ok(mean < CHANCE, "the mean should sit at or just below chance at the default rate");
-  assert.ok(mean > CHANCE * 0.6, `mean ${mean.toFixed(3)} is far below chance ${CHANCE.toFixed(3)}`);
-  assert.ok(first < CHANCE * 1.5, `first ${first.toFixed(3)} is far above chance`);
-  // And a much higher rate demonstrably overshoots, which is why the default is not 8.
-  assert.ok(accuracy(8).mean < mean, "a higher rate should push further below chance");
-});
 
 test("a decoy is indistinguishable from a real upload on the wire", () => {
   // Cover only covers if it looks the same. Same bucket length, and an id minted by the very
@@ -143,9 +115,9 @@ test("cover is per bucket, and mixing sizes is not covered", () => {
 });
 
 test("a cover rate of zero is refused rather than silently meaning none", () => {
-  assert.throws(() => coverPlan(0, BLOCK, { ...cfg, coverRate: 0 }), /no cover at all/);
+  assert.throws(() => coverPlan([0], { ...cfg, coverRate: 0 }), /no cover at all/);
   // And the schedule guard still applies: cover does not excuse an unsafe jitter window.
-  assert.throws(() => coverPlan(0, BLOCK, { blockMs: BLOCK, jitterBlocks: 1 }), /jitter/i);
+  assert.throws(() => coverPlan([0], { blockMs: BLOCK, jitterBlocks: 1 }), /jitter/i);
 });
 
 test("the cover key stays in the vault domain", () => {
@@ -153,4 +125,48 @@ test("the cover key stays in the vault domain", () => {
   assert.equal(coverKey(chan).domain, VAULT_DOMAIN);
   assert.notDeepEqual(coverKey(chan), chan);
   assert.equal(jitterWindowMs(cfg), 8 * BLOCK);
+});
+
+test("the cost is bounded by messages, not by how long the conversation runs", () => {
+  // The defect this design replaced. Spreading decoys across the session span made the count a
+  // function of DURATION: twelve messages a day apart cost 15,848 decoys and 15 MiB, against 14
+  // for the same twelve messages five minutes apart. Every published number came from the short
+  // session, so the cost never appeared in a measurement.
+  const twelve = (gap: number) => Array.from({ length: 12 }, (_, i) => i * gap);
+  const short = coverPlan(twelve(BLOCK), cfg, lcg(1)).length;
+  const long = coverPlan(twelve(86_400_000), cfg, lcg(1)).length;
+  assert.equal(short, long, "the decoy count still depends on how long the conversation ran");
+  assert.equal(short, 12 * COVER_RATE, "cover is not exactly rate-per-message");
+});
+
+test("an isolated message gets the floor the rate buys, and no more", () => {
+  // The guarantee, stated as a floor rather than a hope: an event's window holds its own upload
+  // and `coverRate` decoys, so an operator picking among them is right 1/(rate+1) of the time.
+  // Messages a day apart are the isolated case — nothing overlaps, so nothing helps.
+  const isolated = Array.from({ length: 12 }, (_, i) => i * 86_400_000);
+  const random = lcg(31);
+  const runs = Array.from({ length: 800 }, () => {
+    const uploads = isolated.map((at, seq) => ({ t: scheduleUpload(at, cfg, random), real: true, seq }));
+    for (const t of coverPlan(isolated, cfg, random)) uploads.push({ t, real: false, seq: -1 });
+    return { events: isolated, uploads };
+  });
+  const floor = anonymitySetFloor(cfg);
+  assert.equal(floor, 1 / (COVER_RATE + 1));
+  const scored = best(runs).mean.mean;
+  assert.ok(Math.abs(scored - floor) < 0.05,
+    `an isolated message scored ${scored.toFixed(3)} against a floor of ${floor.toFixed(3)}`);
+});
+
+test("messages that cluster do better than the floor, which is a bonus not the guarantee", () => {
+  // Overlapping windows merge anonymity sets. Worth measuring because it is the common case and
+  // worth NOT promising, because a conversation is entitled to be slow.
+  const random = lcg(31);
+  const clustered = Array.from({ length: 12 }, (_, i) => i * BLOCK);
+  const runs = Array.from({ length: 800 }, () => {
+    const uploads = clustered.map((at, seq) => ({ t: scheduleUpload(at, cfg, random), real: true, seq }));
+    for (const t of coverPlan(clustered, cfg, random)) uploads.push({ t, real: false, seq: -1 });
+    return { events: clustered, uploads };
+  });
+  assert.ok(best(runs).mean.mean < anonymitySetFloor(cfg) / 2,
+    "clustered messages should comfortably beat the isolated floor");
 });

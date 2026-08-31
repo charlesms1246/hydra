@@ -90,9 +90,15 @@ export function receive(
   return `enc:${Buffer.from(recoverBlobId(channel, pointer, seq)).toString("hex")}`;
 }
 
-/** Decoy uploads for a session, so the first real one is not the earliest thing seen. */
-export function cover(config: SessionConfig, firstAt: number, lastAt: number, random?: () => number) {
-  return coverPlan(firstAt, lastAt, config, random);
+/**
+ * Decoy uploads for a session, so the first real one is not the earliest thing seen.
+ *
+ * Takes every event rather than a span: cover is per event, and the count is `coverRate` times
+ * the number of messages regardless of how long the conversation runs. See `channel/src/cover.ts`
+ * for why the span version was unaffordable.
+ */
+export function cover(config: SessionConfig, events: readonly number[], random?: () => number) {
+  return coverPlan(events, config, random);
 }
 
 /** Open a channel. Named so a caller cannot accidentally pass a pool or sandbox root. */

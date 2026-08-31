@@ -88,7 +88,7 @@ test("a different channel cannot resolve the pointer", () => {
 });
 
 test("cover traffic starts before the session's first message", () => {
-  const plan = cover(config, 0, 10 * BLOCK, lcg(3));
+  const plan = cover(config, Array.from({ length: 11 }, (_, i) => i * BLOCK), lcg(3));
   assert.ok(plan.length > 0);
   assert.ok(plan[0] < 0, "cover does not lead the first message");
 });

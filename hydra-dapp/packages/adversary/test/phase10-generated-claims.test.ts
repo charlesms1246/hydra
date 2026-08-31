@@ -64,6 +64,10 @@ test("the numbers it quotes are the numbers the code runs on", () => {
   assert.equal(MEASURED.jitterBlocks, MIN_JITTER_BLOCKS);
   assert.equal(MEASURED.coverRate, COVER_RATE);
   assert.equal(MEASURED.noteFelts, NOTE_FELTS);
+  // The published floor must be the one the rate actually buys, not a measured best case.
+  assert.equal(MEASURED.isolatedMessageIdentified, 1 / (COVER_RATE + 1));
+  assert.ok(MEASURED.clusteredMessageIdentified < MEASURED.isolatedMessageIdentified,
+    "the clustered figure should be the better one; if not, the two are swapped");
   const text = render(s);
   assert.ok(text.includes(String(MIN_JITTER_BLOCKS)), "the jitter number is not in the output");
   assert.ok(text.includes(String(NOTE_FELTS)), "the on-chain footprint is not in the output");
@@ -75,8 +79,12 @@ test("the uncomfortable disclosures are present and unhedged", () => {
   const text = render(s).toLowerCase();
   assert.ok(text.includes("auditor can decrypt every message"),
     "the pool's escrow is not stated plainly");
-  assert.ok(/first message of a session/.test(text),
-    "the first-message leak is not stated");
+  // Was "first message of a session" — that framing came from the span-based cover design,
+  // where the leak was positional. Under per-event cover it is not about position at all: an
+  // isolated message is exposed wherever it sits in the conversation, and the statement has to
+  // say which case it is quoting.
+  assert.ok(/one in five/.test(text), "the isolated-message floor is not stated in plain words");
+  assert.ok(/quick succession/.test(text), "the statement does not say the figure depends on pace");
   assert.ok(/repeat within a conversation/.test(text),
     "deterministic encryption's repeat visibility is not stated");
 });
