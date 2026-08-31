@@ -59,12 +59,13 @@ test("a conversation runs end to end through the CLI's own operations", async ()
     const sent = await sendMessage(alice, chain, "with-bob", "meet me at the usual place", T0);
     assert.match(sent.txHash, /^0x[0-9a-f]+$/);
 
-    // At the moment of sending, the MESSAGE is not due — only cover is, because cover is
-    // scheduled to lead the event by the jitter window. So a flush now uploads decoys and
-    // leaves the message behind, and the recipient has nothing to read.
+    // At the moment of sending, the MESSAGE is not due: its upload is scheduled strictly after
+    // the event. Some of its cover usually is due, because cover leads the event — but "usually"
+    // is 15 in 16 (each of four decoys is before T0 with probability a half), and asserting a
+    // per-draw outcome of a random schedule is what made this file fail one run in sixteen.
+    // The lead is measured over many sessions further down; here only the certainty is claimed.
     const early = await flush(alice, T0);
     assert.ok(alice.pending.some((p) => p.real), "the message went up with its own cover");
-    assert.ok(early.uploaded >= 1, "no cover led the message at all");
     assert.deepEqual(await readChannel(bob, chain, "with-alice"), []);
 
     // Then time passes.
@@ -137,6 +138,7 @@ test("within a flush, cover USUALLY goes up before the message — and the resid
   try {
     const chain = memoryChain();
     let firstWasReal = 0;
+    const positions = new Set<number>();
     const TRIALS = 300;
     for (let t = 0; t < TRIALS; t++) {
       const alice = init({ vaultUrl: url, blockMs: BLOCK, invites: [...invites] });
@@ -146,16 +148,22 @@ test("within a flush, cover USUALLY goes up before the message — and the resid
       const realId = alice.pending.find((p) => p.real)!.id;
       const due = [...alice.pending].sort((a, b) => a.uploadAt - b.uploadAt);
       assert.ok(sent.uploadAt > T0);
+      positions.add(due.findIndex((p) => p.id === realId));
       if (due[0].id === realId) firstWasReal++;
     }
     const rate = firstWasReal / TRIALS;
     assert.ok(rate < 0.05,
       `the real message was the earliest upload ${(rate * 100).toFixed(1)}% of the time; `
       + "above a few percent means the lead has stopped working, not that this draw was unlucky");
-    // And it is genuinely not zero — if it were, the ordering would be deterministic and the
-    // operator would have a rule rather than a probability.
-    assert.ok(rate > 0,
-      "the real upload is never earliest, which would mean the schedule is not random");
+
+    // The randomness is asserted on the POSITIONS, not on the rare event. The first version
+    // required at least one occurrence of a 1-in-80 outcome across 300 trials, which is itself
+    // absent about 2% of the time — a test that fails one run in fifty because the thing it
+    // measures is rare. Measuring a distribution and then asserting a single draw from it is
+    // the same mistake this file's own comment warns about, made in the assertion below it.
+    assert.ok(positions.size > 3,
+      `the real upload landed in ${positions.size} distinct positions across ${TRIALS} sessions; `
+      + "if it is always in the same place the schedule has stopped being random");
   } finally {
     server.close();
   }

@@ -53,7 +53,16 @@ const channel = opening.channel;
 /** Bob's, computed from HIS root and the prekey message. Never copied from alice's. */
 const bobChannel = respond(bobRoot, opening.message).channel;
 
-const TEXTS = ["hello", "the second one, which is longer than the first", "ok"];
+/**
+ * Long enough to be searched for.
+ *
+ * The third was "ok" and this file failed about one run in twenty on it: the leak check greps
+ * the ciphertext for each plaintext, and a two-byte string turns up in a kilobyte of
+ * random-looking bytes by chance roughly 5% of the time. Nothing was leaking; the canary was
+ * too short to be a canary. Message LENGTHS are covered properly by the padding test below,
+ * which runs 0, 1, 17, 900 and 991 bytes, so nothing is lost by making these searchable.
+ */
+const TEXTS = ["hello there", "the second one, which is longer than the first", "ok, understood"];
 
 /** Alice's side: seal, point, commit, schedule — and the bytes that go to the vault. */
 const outgoing = TEXTS.map((t, seq) =>
@@ -174,6 +183,10 @@ test("a message never appears in the clear on the wire or at rest", async () => 
   await withVault(async (_url, vault) => {
     const stored = JSON.stringify(vault.observe());
     for (const t of TEXTS) assert.ok(!stored.includes(t), `the vault's record contains ${t}`);
+    // Each canary is long enough that a chance appearance in a kilobyte of ciphertext is
+    // vanishingly unlikely; see the note on TEXTS. Asserted so a future edit cannot quietly
+    // shorten one back into a coin flip.
+    for (const t of TEXTS) assert.ok(t.length >= 8, `"${t}" is too short to be a leak canary`);
     for (const m of outgoing) {
       const hay = Buffer.from(m.body).toString("latin1");
       for (const t of TEXTS) assert.ok(!hay.includes(t), `${t} is readable in the uploaded body`);
