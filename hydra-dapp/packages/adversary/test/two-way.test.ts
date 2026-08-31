@@ -126,14 +126,15 @@ test("each direction counts its own sequence numbers", async () => {
   } finally { server.close(); }
 });
 
-test("a channel with no role is refused rather than guessed", async () => {
+test("a channel from before the ratchet is refused rather than migrated", async () => {
   const { alice, server, chain } = await pair();
   try {
-    // What a state file written before this change looks like. Defaulting the role would give
-    // both ends the same direction, which is the original defect restored silently.
-    delete (alice.channels.bob as { role?: string }).role;
-    await assert.rejects(() => sendMessage(alice, chain, "bob", "x", T0), /predates two-way/);
-    await assert.rejects(() => readChannel(alice, chain, "bob"), /predates two-way/);
+    // What a state file written before the ratchet looks like: the agreed material and no
+    // stored keys. Migrating it would mean inventing chains the other end does not have, and a
+    // channel whose keys only one side knows is worse than one that refuses to open.
+    delete (alice.channels.bob as { addressSendHex?: string }).addressSendHex;
+    await assert.rejects(() => sendMessage(alice, chain, "bob", "x", T0), /predates the message ratchet/);
+    await assert.rejects(() => readChannel(alice, chain, "bob"), /predates the message ratchet/);
   } finally { server.close(); }
 });
 
@@ -151,17 +152,27 @@ test("KNOWN RESIDUAL: your counterparty can still forge as you", async () => {
     await sendMessage(alice, chain, "bob", "alice said this", T0);
     await flush(alice, LATER);
 
-    // Bob, holding the same material, mints a message in ALICE's direction by taking her role.
-    const forged = { ...bob.channels.alice, role: "initiator" as const, nextSeq: 1 };
-    bob.channels.forged = forged;
+    // Bob, who holds both addressing keys and both chains because that is what a shared secret
+    // is, mints a message in ALICE's direction by swapping the two round.
+    const his = bob.channels.alice;
+    bob.channels.forged = {
+      ...his,
+      addressSendHex: his.addressRecvHex,
+      addressRecvHex: his.addressSendHex,
+      send: JSON.parse(JSON.stringify(his.recv)),
+      recv: JSON.parse(JSON.stringify(his.send)),
+      nextSeq: 1,
+      history: [],
+    };
     await sendMessage(bob, chain, "forged", "alice did NOT say this", T0 + BLOCK);
     await flush(bob, LATER);
 
-    const read = await readChannel(alice, chain, "bob");
-    const forgedLine = read.find((m) => m.text === "alice did NOT say this");
-    assert.ok(forgedLine, "the forgery did not land — if this is now impossible, say what closed it");
-    assert.equal(forgedLine.mine, true,
-      "the forgery landed but was not attributed to alice, which would be a partial defence");
+    // Alice's own client counts it as a message in HER direction that she did not send, which
+    // is the same signal a second device raises — the two are indistinguishable from here, and
+    // that is the honest state of it.
+    await readChannel(alice, chain, "bob");
+    assert.equal(foreignSends(alice, "bob"), 1,
+      "the forgery did not land — if this is now impossible, say what closed it");
   } finally { server.close(); }
 });
 
@@ -201,16 +212,19 @@ test("and the client says so, because it cannot prevent it", async () => {
     await flush(alice, LATER);
     await flush(laptop, LATER);
 
-    // The phone sent one message and the channel holds two in its own direction.
+    // The phone sent one message and the channel holds two in its own direction. The second is
+    // COUNTED, not shown: its key came out of a sending chain on the other device, and this one
+    // destroyed its own copy of that sequence's key the moment it stepped past it. The words are
+    // unreachable from here, which is forward secrecy working — and it is still a signal.
     const read = await readChannel(alice, chain, "bob");
-    assert.equal(read.filter((m) => m.mine).length, 2);
+    assert.equal(read.filter((m) => m.mine).length, 1, "the transcript shows a message this client never sent");
     assert.equal(alice.channels.bob.nextSeq, 1);
-    assert.equal(foreignSends(alice, "bob", read), 1,
+    assert.equal(foreignSends(alice, "bob"), 1,
       "a second client on this identity went unnoticed");
 
     // And bob, who is genuinely a different party, triggers nothing.
-    const his = await readChannel(bob, chain, "alice");
-    assert.equal(foreignSends(bob, "alice", his), 0,
+    await readChannel(bob, chain, "alice");
+    assert.equal(foreignSends(bob, "alice"), 0,
       "the other END of the conversation was mistaken for another of your own devices");
   } finally { server.close(); }
 });

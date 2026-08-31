@@ -17,7 +17,7 @@
 
 import {
   init, publishBundle, openAndSend, collect, sendMessage, flush, readChannel, rotatePrekey,
-  fingerprint, nextOneTime, encodeWire, decodeWire, foreignSends,
+  fingerprint, nextOneTime, encodeWire, decodeWire, foreignSends, forget,
 } from "../../cli/src/commands.ts";
 import type { State } from "../../cli/src/state.ts";
 import type { Chain } from "../../cli/src/chain.ts";
@@ -70,7 +70,7 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
       const messages = await readChannel(state, deps.chain(state), effect.channel, deps.fetchImpl);
       return {
         t: "messages", channel: effect.channel, messages,
-        foreign: foreignSends(state, effect.channel, messages),
+        foreign: foreignSends(state, effect.channel),
       };
     }
     case "flush": {
@@ -105,6 +105,15 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
         // channel mean anything, and it has to be checked by some route that is not this one.
         text: `${effect.name} opened with ${fingerprint(bundle)} → slot ${slot} — check that `
           + "fingerprint with them by some other means",
+      };
+    }
+    case "forget": {
+      const gone = forget(state, effect.channel);
+      deps.save(state);
+      return {
+        t: "ok", state, clear: effect.channel,
+        text: `${gone} message(s) gone from this device — the vault keeps the ciphertext until `
+          + "it expires, and the other end keeps its own copy",
       };
     }
     case "export": {

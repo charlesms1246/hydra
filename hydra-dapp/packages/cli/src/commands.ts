@@ -20,6 +20,7 @@ import { initiate, respondWith } from "../../handshake/src/x3dh.ts";
 import { createStore, mintOneTime, rotate, bundleFrom, oneTimeRemaining }
   from "../../handshake/src/prekeys.ts";
 import { postPrekey, collectPrekeys, httpTransport } from "../../handshake/src/inbox.ts";
+import { newChain, keyFor, packChain, forgetOldSkipped } from "../../handshake/src/ratchet.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex } from "../../channel/src/cover.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
@@ -31,6 +32,7 @@ import {
   derive, rootSeed, entropyFrom, fromOsRandom, fromStoredSeed, fromChannelWrap, subKey, expose,
   VAULT_DOMAIN,
 } from "../../identity/src/domains.ts";
+import { STATE_FILE as WHERE } from "./state.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 import type { Chain } from "./chain.ts";
 import { STATE_FILE } from "./state.ts";
@@ -52,12 +54,6 @@ export const vaultRootOf = (state: State): Secret<typeof VAULT_DOMAIN> =>
  * and bob calling it "alice" produced two different secrets and a conversation that could not
  * happen. A name a user picks must never reach a key.
  */
-const channelOf = (state: State, name: string): Secret<typeof VAULT_DOMAIN> => {
-  const c = state.channels[name];
-  if (!c) throw new Error(`no channel called ${JSON.stringify(name)} — \`hydra open\` or \`hydra accept\` first`);
-  return derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromChannelWrap(unhex(c.materialHex), c.peer))));
-};
-
 /**
  * A CHANNEL IS TWO KEYS, ONE PER DIRECTION, and it was one until a reply was tried.
  *
@@ -71,9 +67,8 @@ const channelOf = (state: State, name: string): Secret<typeof VAULT_DOMAIN> => {
  * And the sequence spaces collided: both parties counted from zero, so a transcript held two
  * messages at seq 0 with no way to order them and no way to say who wrote which.
  *
- * So the handshake's material yields two sub-keys, and your ROLE decides which you send under.
- * Everything downstream — the pointer pad, the blob id, the cover bodies, the read set — is
- * per-direction, and a decoy of yours can no longer equal a decoy of theirs.
+ * These are the ADDRESSING keys only — pointer pads, blob ids, cover bodies, read sets. What
+ * seals a message is a ratchet key that is used once and destroyed (`handshake/src/ratchet.ts`).
  */
 const DIRECTION = {
   initiator: "direction initiator-to-responder",
@@ -83,25 +78,30 @@ const DIRECTION = {
 const opposite = (role: ChannelState["role"]) =>
   (role === "initiator" ? "responder" : "initiator") as ChannelState["role"];
 
-const roleOf = (state: State, name: string): ChannelState["role"] => {
-  const role = state.channels[name]?.role;
-  // Refused rather than defaulted. A state file written before this change has no role, and
-  // guessing one gives both ends the same direction — which is the exact bug, restored silently.
-  if (!role) {
+const channelKey = (hexKey: string): Secret<typeof VAULT_DOMAIN> =>
+  derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromStoredSeed(unhex(hexKey), STATE_FILE))));
+
+const channelAt = (state: State, name: string): ChannelState => {
+  const c = state.channels[name];
+  if (!c) throw new Error(`no channel called ${JSON.stringify(name)} — \`hydra open\` or \`hydra accept\` first`);
+  // Refused rather than migrated. A state file written before the ratchet holds the agreed
+  // material and no chains, and inventing chains from it would silently produce a channel whose
+  // keys the other end does not have. Nothing here can repair that; only a new handshake can.
+  if (!c.addressSendHex || !c.send) {
     throw new Error(
-      `the channel ${JSON.stringify(name)} predates two-way messaging and has no role. Open it `
-      + "again: a channel with no role cannot say which of its two keys is yours.");
+      `the channel ${JSON.stringify(name)} predates the message ratchet and cannot be migrated: `
+      + "its keys were derivable from material this client no longer keeps. Open it again.");
   }
-  return role;
+  return c;
 };
 
-/** The key this client SENDS under. */
+/** The addressing key this client SENDS under. */
 const sending = (state: State, name: string): Secret<typeof VAULT_DOMAIN> =>
-  subKey(channelOf(state, name), DIRECTION[roleOf(state, name)]);
+  channelKey(channelAt(state, name).addressSendHex);
 
-/** The key the other end sends under, which is the one this client READS. */
+/** The addressing key the other end sends under, which is the one this client READS. */
 const receiving = (state: State, name: string): Secret<typeof VAULT_DOMAIN> =>
-  subKey(channelOf(state, name), DIRECTION[opposite(roleOf(state, name))]);
+  channelKey(channelAt(state, name).addressRecvHex);
 
 /**
  * Bundles and prekey messages on their way to a file, and back.
@@ -192,13 +192,32 @@ export const fingerprint = (bundle: Bundle): string =>
 // The handshake
 // ---------------------------------------------------------------------------
 
+/**
+ * Turn the agreed material into what a channel is actually made of, and then let it go.
+ *
+ * Four keys and no material. Both ends run the identical derivation from the identical bytes, so
+ * a change here breaks both at once rather than quietly giving two people two different channels.
+ * The local name is nowhere in it — an earlier version folded it in, which meant alice calling
+ * the channel "bob" and bob calling it "alice" produced two different secrets and a conversation
+ * that could not happen. A name a user picks must never reach a key.
+ *
+ * The material is not stored, and that is the whole of the forward secrecy. Keeping it would
+ * regenerate every chain key and therefore every message key this client ever used.
+ */
 const remember = (
   state: State, name: string, material: Uint8Array, peer: string, role: ChannelState["role"],
 ): void => {
-  const entry: ChannelState = {
-    materialHex: hex(material), peer, role, nextSeq: 0, readTo: 0, history: [],
+  const agreed = derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromChannelWrap(material, peer))));
+  const mine = subKey(agreed, DIRECTION[role]);
+  const theirs = subKey(agreed, DIRECTION[opposite(role)]);
+  state.channels[name] = {
+    peer, role,
+    addressSendHex: hex(expose(subKey(mine, "addressing"), VAULT_DOMAIN)),
+    addressRecvHex: hex(expose(subKey(theirs, "addressing"), VAULT_DOMAIN)),
+    send: newChain(subKey(mine, "content chain")),
+    recv: newChain(subKey(theirs, "content chain")),
+    nextSeq: 0, readTo: 0, history: [], foreignSeen: 0,
   };
-  state.channels[name] = entry;
 };
 
 /** Alice's side. Produces the prekey message, which has to reach the other person somehow. */
@@ -317,9 +336,15 @@ export async function sendMessage(
   random?: () => number,
 ): Promise<{ txHash: string; uploadAt: number; decoys: number }> {
   const channel = sending(state, name);
-  const entry = state.channels[name];
+  const entry = channelAt(state, name);
   const seq = entry.nextSeq;
-  const config = { channel, nullifier: nullifierFor(state, name), blockMs: state.blockMs };
+  // The key for this sequence, taken out of the sending chain, which advances and destroys the
+  // one before it. A message this client has sent cannot be sealed again.
+  const content = keyFor(entry.send, seq, WHERE);
+  if (!content) throw new Error(`the sending chain is past sequence ${seq} — this is a bug`);
+  const config = {
+    channel, content, nullifier: nullifierFor(state, name), blockMs: state.blockMs,
+  };
   const outgoing = prepare(config, new TextEncoder().encode(text), seq, now, random);
 
   const txHash = await chain.publish(outgoing.calldata);
@@ -470,6 +495,9 @@ export type Received = ReceivedMessage;
  */
 export const RESCAN_EVENTS = 16;
 
+/** How many message keys to hold for blobs that have not arrived. See `ratchet.ts`. */
+export const SKIPPED_KEEP = 64;
+
 /**
  * Ask the vault for a set of ids, in as many requests as it takes.
  *
@@ -575,17 +603,54 @@ export async function readChannel(
     try {
       // A decoy or another channel's blob fails here, which is what GCM's tag is for. Silence is
       // correct: a reader that reported them would be reporting on traffic it cannot read.
+      // Their chain for their messages. Our own are already in `history` from send time, so a
+      // hit on our own direction with an id we do not hold is a second client on this identity.
+      // It is COUNTED, not opened: its key came out of a sending chain on another device and
+      // this one destroyed its own copy the moment it stepped past that sequence.
+      if (at.mine) {
+        entry.foreignSeen++;
+        continue;
+      }
+      const content = keyFor(entry.recv, at.seq, WHERE);
+      if (!content) continue;
       const text = new TextDecoder().decode(
-        plaintextOf(openForChannel(at.mine ? mine : theirs, new Uint8Array(Buffer.from(b64, "base64")))));
-      entry.history.push({ id, seq: at.seq, text, mine: at.mine, at: at.at });
+        plaintextOf(openForChannel(content, new Uint8Array(Buffer.from(b64, "base64")))));
+      entry.history.push({ id, seq: at.seq, text, mine: false, at: at.at });
       seen.add(id);
     } catch { /* not ours */ }
   }
   entry.readTo = events.length;
+  // A kept message key is a key not deleted, so the set of them is bounded. The recent ones are
+  // the ones worth keeping: a blob more than this many sequences late is a blob that is not
+  // coming, and holding its key forever would leak forward secrecy back one message at a time.
+  forgetOldSkipped(entry.recv, SKIPPED_KEEP);
 
   // Ordered by the chain, not by sequence: each direction counts from zero, so sequence alone
   // interleaves the two conversations wrongly. The event order is the one both ends see.
   return [...entry.history].sort((a, b) => a.at - b.at || Number(a.mine) - Number(b.mine) || a.seq - b.seq);
+}
+
+/**
+ * Delete messages from the transcript, which now actually deletes them.
+ *
+ * It did not use to. Every channel key descended from material in this file, so a "deleted"
+ * message could be re-derived and re-fetched from the vault by the same client that deleted it —
+ * deletion was a display preference. With the ratchet the key for a message this client has read
+ * is destroyed when it is used, so this transcript is the only copy that exists on this device.
+ *
+ * WHAT IT DOES NOT REACH, and none of it is small: the ciphertext is still in the vault until it
+ * expires, the other end still has its own copy, and this file has already been written to a disk
+ * that may keep the old blocks — the same `fs.deletedResidue` problem the vault's own table
+ * carries, applied to the client. What it does mean is that no key on this device opens it again.
+ *
+ * Returns how many entries went.
+ */
+export function forget(state: State, name: string, before?: number): number {
+  const entry = channelAt(state, name);
+  const keep = before === undefined ? [] : entry.history.filter((m) => m.at >= before);
+  const gone = entry.history.length - keep.length;
+  entry.history = keep;
+  return gone;
 }
 
 /**
@@ -610,8 +675,8 @@ export async function readChannel(
  * sent `nextSeq` messages; if the channel holds more than that in its own direction, something
  * else is sending as you.
  */
-export const foreignSends = (state: State, name: string, read: readonly Received[]): number =>
-  Math.max(0, read.filter((m) => m.mine).length - (state.channels[name]?.nextSeq ?? 0));
+export const foreignSends = (state: State, name: string): number =>
+  state.channels[name]?.foreignSeen ?? 0;
 
 /** Pad a batch that is somehow short. Exported so the test can assert the floor is respected. */
 export const readBatchFloor = MIN_READ_BATCH;

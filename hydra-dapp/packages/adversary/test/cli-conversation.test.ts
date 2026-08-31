@@ -223,7 +223,16 @@ test("both sides derive the same channel from names they chose separately", () =
   const bob = init({ invites: [] });
   const message = open(alice, "with-bob", publishBundle(bob, 0));
   accept(bob, "with-alice", message);
-  assert.equal(alice.channels["with-bob"].materialHex, bob.channels["with-alice"].materialHex);
+  // Compared on the KEYS rather than on the agreed material, because the material is no longer
+  // kept — that is what makes the ratchet's deletions mean anything. Alice's sending side must
+  // be bob's receiving side and vice versa, or they have two channels rather than one.
+  const a = alice.channels["with-bob"];
+  const b = bob.channels["with-alice"];
+  assert.equal(a.addressSendHex, b.addressRecvHex);
+  assert.equal(a.addressRecvHex, b.addressSendHex);
+  assert.equal(a.send.chainHex, b.recv.chainHex);
+  assert.equal(a.recv.chainHex, b.send.chainHex);
+  assert.notEqual(a.addressSendHex, a.addressRecvHex, "one key is doing both directions again");
   assert.notEqual(alice.seedHex, bob.seedHex);
 });
 

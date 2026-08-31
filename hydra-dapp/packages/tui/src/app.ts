@@ -70,13 +70,20 @@ export type Effect =
   | { readonly t: "collect" }
   | { readonly t: "rotate" }
   | { readonly t: "invite"; readonly name: string; readonly path: string }
-  | { readonly t: "export"; readonly path: string };
+  | { readonly t: "export"; readonly path: string }
+  | { readonly t: "forget"; readonly channel: string };
 
 export type Event =
   | { readonly t: "key"; readonly key: Key }
   | { readonly t: "tick"; readonly now: number }
   | { readonly t: "resize" }
-  | { readonly t: "ok"; readonly text: string; readonly state?: State }
+  | {
+    readonly t: "ok";
+    readonly text: string;
+    readonly state?: State;
+    /** A channel whose transcript is no longer true and must be dropped from the screen. */
+    readonly clear?: string;
+  }
   | {
     readonly t: "messages";
     readonly channel: string;
@@ -190,7 +197,12 @@ export function update(m: Model, event: Event): Step {
       const landed = next.page === "setup" && next.state
         ? { ...next, page: "chats" as const, field: 0, typing: false }
         : next;
-      return just(say(landed, event.text, "info"));
+      // A transcript the state no longer holds must leave the screen in the same step. Showing
+      // messages that have been deleted is the one thing a delete must not do.
+      const cleared = event.clear
+        ? { ...landed, transcript: { ...landed.transcript, [event.clear]: [] } }
+        : landed;
+      return just(say(cleared, event.text, "info"));
     }
     case "messages": {
       const next = {
@@ -327,6 +339,21 @@ function action(m: Model, ch: string): Step {
     case "chats": {
       const channel = selected(m);
       if (ch === "r" && channel) return run(m, "read", { t: "read", channel });
+      if (ch === "D" && channel) {
+        return just({
+          ...m,
+          confirm: {
+            // What it destroys, not what it tidies. This is the one delete in the product that
+            // is real — the keys are already gone, so the transcript is the only copy here.
+            question: `delete every message in ${channel} from this device? their keys were `
+              + "destroyed when they were read, so nothing here can fetch them again. the "
+              + "ciphertext stays in the vault until it expires and the other end keeps its own "
+              + "copy.",
+            label: "forget",
+            effect: { t: "forget", channel },
+          },
+        });
+      }
       return just(m);
     }
     case "connect":

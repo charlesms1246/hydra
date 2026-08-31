@@ -79,7 +79,7 @@ const activity = (m: Model): string => {
 
 const KEYS: Record<Page | "setup", string> = {
   setup: "i type · Tab field · Enter create identity · ctrl-c quit",
-  chats: "i type · Enter send · r read · j/k channel · f flush · 1-5 pages · q quit",
+  chats: "i type · Enter send · r read · D forget · j/k channel · f flush · 1-5 pages · q quit",
   connect: "i type · Tab field · Enter invite · e export bundle · c collect · q quit",
   identity: "R rotate prekey · 1-5 pages · q quit",
   disclosure: "c citations · j/k scroll · 1-5 pages · q quit",

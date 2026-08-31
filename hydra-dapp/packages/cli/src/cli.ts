@@ -2,10 +2,11 @@
 /**
  * `hydra` — the messaging client, as a command.
  *
- * A CLI first and a GUI later, deliberately. The desktop build's binding constraint is
- * reproducible builds from the first release, which decides the toolchain; nothing about that
- * decision changes what the client has to do, and doing it here first means the GUI is a
- * front-end to something already attacked rather than a place to reinvent the sequence.
+ * The scriptable front end. The one people use is the TUI (`packages/tui/`), which is a resident
+ * process and therefore the only one that can keep the upload schedule — see
+ * `decisions/0022-tui-and-the-resident-client.md`. This stays because the live suites drive it,
+ * because a shell script cannot drive a terminal interface, and because both call `commands.ts`,
+ * so the two cannot disagree about anything that matters.
  *
  * This file is argument parsing and printing. Everything it does lives in `commands.ts`, which
  * is what `cli-conversation.test.ts` drives — so the behaviour is tested and the parsing is
@@ -21,6 +22,7 @@
  *     hydra send NAME "text"                      publishes the pointer, queues the upload
  *     hydra flush                                 uploads what is due
  *     hydra read NAME
+ *     hydra forget NAME [--before EVENT]          delete messages; the key is already gone
  *     hydra disclose [--cite]                     what everyone involved can see
  *     hydra status
  *
@@ -31,7 +33,7 @@
 import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
-  fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends,
+  fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget,
   encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
 import { chainFor } from "./chain.ts";
@@ -48,7 +50,7 @@ const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.st
 
 const usage = () => {
   console.error(readFileSync(new URL(import.meta.url), "utf8")
-    .split("\n").slice(3, 25).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
+    .split("\n").slice(3, 26).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
   process.exit(2);
 };
 
@@ -199,7 +201,7 @@ switch (command) {
     for (const m of read) {
       console.log(`${m.mine ? "you " : "them"} ${String(m.seq).padStart(3)}  ${m.text}`);
     }
-    const foreign = foreignSends(state, name, read);
+    const foreign = foreignSends(state, name);
     if (foreign) {
       console.error("");
       console.error(`${foreign} message(s) in your own direction were not sent by this client.`);
@@ -207,6 +209,22 @@ switch (command) {
       console.error("identical cover, and an object uploaded twice is an object the storage");
       console.error("server knows is cover. use one client per identity.");
     }
+    break;
+  }
+
+  case "forget": {
+    const state = load();
+    const [name] = positional;
+    if (!name) usage();
+    const before = flag("before");
+    const gone = forget(state, name, before === "" ? undefined : Number(before));
+    save(state);
+    console.log(`${gone} message(s) removed from ${name}`);
+    console.log("");
+    console.log("their keys were destroyed when they were read, so this client cannot fetch");
+    console.log("them again. what this does NOT reach: the ciphertext is in the vault until it");
+    console.log("expires, the other end has its own copy, and this file has already been");
+    console.log("written to a disk that may keep the old blocks.");
     break;
   }
 

@@ -61,7 +61,22 @@ export type Outgoing = {
 export type SessionConfig = ScheduleConfig & {
   /** Decoys per message. Both sides must agree, or the recipient stops fetching some. */
   readonly coverRate?: number;
+  /**
+   * The ADDRESSING key: pointer pads, blob ids, cover bodies, read sets.
+   *
+   * Kept for the life of the channel by both ends, because a message that cannot be found is
+   * lost and a decoy that cannot be fetched is worthless (`decisions/0014`).
+   */
   readonly channel: Secret<typeof VAULT_DOMAIN>;
+  /**
+   * What SEALS the body, if it is not the addressing key.
+   *
+   * Separate so a client can ratchet content while addressing stays derivable — see
+   * `handshake/src/ratchet.ts`. Defaulting to `channel` keeps every harness that is about
+   * addressing free of a key it does not care about; the client that does ratchet is held to it
+   * by `adversary/test/ratchet.test.ts`, which fails if two messages seal under one key.
+   */
+  readonly content?: Secret<typeof VAULT_DOMAIN>;
   /** The pool nullifier for this note. Binds the commitment to an identity without naming it. */
   readonly nullifier: bigint;
 };
@@ -81,7 +96,7 @@ export function send(
   random?: () => number,
 ): Outgoing {
   assertSafeSchedule(config);
-  const blob = sealForChannel(config.channel, plaintext);
+  const blob = sealForChannel(config.content ?? config.channel, plaintext);
   const body = wireBytes(blob) as unknown as Uint8Array;
   const pointer = pointerFor(config.channel, blobIdFrom(body), seq);
   return {

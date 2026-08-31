@@ -73,6 +73,16 @@ const feed = async (m: Model, deps: Deps, keys: string): Promise<Model> => {
 
 const text = (m: Model, size = SIZE) => render(m, size).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
 
+/**
+ * The frame as readable prose: colours gone, box drawing gone, whitespace collapsed.
+ *
+ * For asserting that a sentence is on screen. A frame wraps at the terminal width and puts a
+ * border between the halves, so any sentence worth checking will straddle one sooner or later —
+ * matching against the raw frame passes until the wording changes length by a word.
+ */
+const prose = (m: Model, size = SIZE) =>
+  text(m, size).replace(/[\u2500-\u257f]/g, " ").replace(/\s+/g, " ");
+
 async function vault(n = 400) {
   const invites = Array.from({ length: n }, (_, i) => `tui-${i}`);
   const v = new Vault({ invites: [...invites], buckets: BUCKETS });
@@ -118,15 +128,15 @@ test("the costs are on the page that performs the act, not in a help screen", as
     const m = await created(h);
     // Sending: the chain names the author. Every published guarantee in this repo is about
     // WHICH upload holds the text, never about whether you sent one.
-    assert.match(text({ ...m, page: "chats" }), /chain shows that YOU published/);
+    assert.match(prose({ ...m, page: "chats" }), /chain shows that YOU published/);
     // Inviting: the vault operator learns the recipient is reachable, and can count what is
     // waiting. `observations.ts` DERIVABLE carries the rows.
-    assert.match(text({ ...m, page: "connect" }), /reachable/);
-    assert.match(text({ ...m, page: "connect" }), /90%/);
+    assert.match(prose({ ...m, page: "connect" }), /reachable/);
+    assert.match(prose({ ...m, page: "connect" }), /90%/);
     // The identity page says where the root key is and what protects it, which is `0600`.
-    assert.match(text({ ...m, page: "identity" }), /in the clear/);
+    assert.match(prose({ ...m, page: "identity" }), /in the clear/);
     // And the disclosure page is the generated statement, not prose.
-    assert.match(text({ ...m, page: "disclosure" }), /generated from the code/);
+    assert.match(prose({ ...m, page: "disclosure" }), /generated from the code/);
   } finally { server.close(); }
 });
 
@@ -200,7 +210,7 @@ test("a whole conversation, typed", async () => {
     assert.equal(selected(bob), name);
     bob = await feed(bob, hb.deps, "1r");
     assert.deepEqual(bob.transcript[name]!.map((x) => x.text), ["meet me at the usual place"]);
-    assert.match(text(bob), /meet me at the usual place/);
+    assert.match(prose(bob), /meet me at the usual place/);
   } finally { server.close(); }
 });
 
@@ -232,7 +242,7 @@ test("rotation asks first, and says what it destroys", async () => {
 
     m = await feed(m, h.deps, "3R");
     assert.ok(m.confirm, "R rotated without asking");
-    assert.match(text(m), /can no longer reach you/);
+    assert.match(prose(m), /can no longer reach you/);
     assert.equal(m.state!.prekeys.epoch, epoch, "the prekey was destroyed before the answer");
 
     m = await feed(m, h.deps, "n");
@@ -255,5 +265,40 @@ test("an effect that fails becomes a log line, not an exit", async () => {
     assert.equal(m.busy, null, "a failed effect left the interface busy forever");
     assert.deepEqual(Object.keys(m.state!.channels), [],
       "a failed invite left a channel the other side will never know about");
+  } finally { server.close(); }
+});
+
+test("forgetting asks first, and takes the messages off the screen as well as out of the file", async () => {
+  const { url, server, invites } = await vault();
+  try {
+    const chain = memoryChain();
+    const ha = harness(url, invites, chain);
+    const hb = harness(url, invites, chain);
+    let alice = await created(ha);
+    let bob = await created(hb);
+
+    bob = await feed(bob, hb.deps, "2e");
+    ha.files.set("bob.json", hb.files.get("bundle.json")!);
+    alice = await feed(alice, ha.deps, "2i");
+    alice = await feed(alice, ha.deps, "bob\t");
+    alice = await feed(alice, ha.deps, "bob.json\r");
+    alice = await feed(alice, ha.deps, "1i");
+    alice = await feed(alice, ha.deps, "something regrettable\r");
+
+    // It is in the transcript from send time — a client knows what it said.
+    alice = await feed(alice, ha.deps, "r");
+    assert.match(prose(alice), /something regrettable/);
+
+    alice = await feed(alice, ha.deps, "D");
+    assert.ok(alice.confirm, "D deleted without asking");
+    const flat = prose(alice);
+    assert.match(flat, /keys were destroyed when they were read/);
+    assert.match(flat, /the other end keeps its own copy/);
+    assert.equal(alice.state!.channels.bob.history.length, 1, "it was deleted before the answer");
+
+    alice = await feed(alice, ha.deps, "y");
+    assert.equal(alice.state!.channels.bob.history.length, 0);
+    assert.doesNotMatch(prose(alice), /something regrettable/,
+      "the message is off the disk and still on the screen");
   } finally { server.close(); }
 });
