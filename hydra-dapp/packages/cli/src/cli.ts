@@ -14,7 +14,9 @@
  *     hydra init --vault URL --rpc URL --contract 0x… --account NAME --accounts-file PATH
  *     hydra bundle [--epoch N] [--one-time N]     > bundle.json   (give this to people)
  *     hydra open NAME bundle.json                 > prekey.json   (give this to them)
+ *     hydra invite NAME bundle.json               same, delivered through the vault
  *     hydra accept NAME prekey.json
+ *     hydra collect                               accept whatever is waiting for you
  *     hydra send NAME "text"                      publishes the pointer, queues the upload
  *     hydra flush                                 uploads what is due
  *     hydra read NAME
@@ -26,7 +28,8 @@
 
 import { readFileSync } from "node:fs";
 import {
-  init, publishBundle, open, accept, sendMessage, flush, readChannel, fingerprint, vaultRootOf,
+  init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
+  fingerprint, vaultRootOf,
 } from "./commands.ts";
 import { starknet, poolChain } from "./chain.ts";
 import { load, save, exists, STATE_FILE } from "./state.ts";
@@ -110,6 +113,7 @@ switch (command) {
   }
 
   case "open": {
+    // Prints the prekey message. Use `hydra invite` to deliver it through the vault instead.
     const state = load();
     const [name, file] = positional;
     if (!name || !file) usage();
@@ -119,6 +123,32 @@ switch (command) {
     console.error(`channel ${name} opened with ${fingerprint(bundle)}`);
     console.error("check that fingerprint with them by some other means. nothing here can.");
     console.log(encode(message));
+    break;
+  }
+
+  case "invite": {
+    const state = load();
+    const [name, file] = positional;
+    if (!name || !file) usage();
+    const bundle = decode(readFileSync(file, "utf8"));
+    const { slot } = await openAndSend(state, name, bundle);
+    save(state);
+    console.log(`channel ${name} opened with ${fingerprint(bundle)}, delivered to slot ${slot}`);
+    console.log("check that fingerprint with them by some other means. nothing here can.");
+    console.log("");
+    console.log("the storage server can now see that they are reachable and count what is");
+    console.log("waiting for them. that is unavoidable without accounts, and accounts would");
+    console.log("disclose more. see claude-docs/decisions/0013-prekey-delivery.md.");
+    break;
+  }
+
+  case "collect": {
+    const state = load();
+    const { accepted, rejected } = await collect(state);
+    save(state);
+    for (const n of accepted) console.log(`accepted ${n}`);
+    if (rejected) console.log(`${rejected} slot(s) held something that did not open — discarded`);
+    if (!accepted.length && !rejected) console.log("nothing waiting");
     break;
   }
 

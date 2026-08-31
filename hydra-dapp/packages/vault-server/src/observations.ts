@@ -47,7 +47,8 @@ export type Guarantee = Observation & {
     | "no-channel-field"
     | "min-read-batch"
     | "invite-destroyed"
-    | "pad-before-seal";
+    | "pad-before-seal"
+    | "inbox-not-content-addressed";
 };
 
 /**
@@ -135,6 +136,46 @@ export const OBSERVABLE: readonly Observation[] = [
 export const OBSERVABLE_IDS: readonly string[] = OBSERVABLE.map((o) => o.id);
 
 /**
+ * A third category, and the reason it exists is a hole this table had.
+ *
+ * `OBSERVABLE` answers "what does the vault's own record show", and `operator-view.test.ts`
+ * compares it against a capture of exactly that. Both were right and both were narrow: an
+ * operator is not limited to the record. They can combine it with information the PROTOCOL
+ * publishes, and get answers the record does not contain.
+ *
+ * The prekey inbox is the first thing that made this visible. Its slot ids are derived from a
+ * recipient's public identity key, because a stranger must be able to write to you before you
+ * share any secret. The vault stores those slots as ordinary objects and knows nothing about
+ * them — so nothing in the record says "inbox" and the row would have been unproducible. But
+ * an operator holding a published identity key computes the same ids anyone else does, and
+ * reads the answer straight off the store.
+ *
+ * `given` names what the observer must already hold. A derivation with no `given` is just an
+ * observation, and it belongs in the list above.
+ */
+export type Derivation = Observation & {
+  /** Public information the observer must already have. Never a secret. */
+  readonly given: string;
+};
+
+export const DERIVABLE: readonly Derivation[] = [
+  {
+    id: "inbox.exists",
+    given: "a person's published identity key",
+    what: "that this person is reachable for a first message, and how many are waiting for them",
+    why: "the slot ids are a public function of the identity key, because a stranger must be able to write to you before you share any secret. Anyone who can start a conversation with you can compute them, and the operator can too. There is no version of this without accounts, and accounts would disclose more. It does NOT show who wrote, what they wrote, or which conversation it becomes",
+  },
+  {
+    id: "inbox.activity",
+    given: "a person's published identity key",
+    what: "when that person's mailbox is written to, and when they collect from it",
+    why: "the slots are ordinary objects, so arrival and read times are as visible as any other object's. Over time this is a usage pattern attached to one named identity, which is the sharpest thing anywhere on this table",
+  },
+];
+
+export const DERIVABLE_IDS: readonly string[] = DERIVABLE.map((d) => d.id);
+
+/**
  * Things the operator explicitly cannot see, asserted by the same test.
  *
  * A disclosure table that lists only what leaks reads as a confession. What makes it useful is
@@ -171,5 +212,11 @@ export const NOT_OBSERVABLE: readonly Guarantee[] = [
     what: "the exact byte length of a message",
     why: "padding to a bucket happens before encryption, so the true length never reaches the wire",
       mechanism: "pad-before-seal",
+  },
+  {
+    id: "inbox.sender",
+    what: "who put a prekey message in someone's mailbox",
+    why: "a slot is addressed by its RECIPIENT, so nothing about the sender determines where it lands; and the message that arrives is authenticated by X3DH rather than by the vault, so a stranger writing into a slot produces something the recipient discards rather than something the operator can attribute",
+      mechanism: "inbox-not-content-addressed",
   },
 ];

@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { statement, render, MEASURED } from "../../claims/src/statement.ts";
-import { OBSERVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
+import { OBSERVABLE, DERIVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import { COVER_RATE } from "../../channel/src/cover.ts";
 import { NOTE_FELTS } from "../../channel/src/note.ts";
@@ -48,13 +48,21 @@ test("the statement covers every row of the disclosure table, both columns", () 
   for (const o of OBSERVABLE) {
     assert.ok(s.whoCanSeeWhat.some((c) => c.says.includes(o.what)), `${o.id} is not stated`);
   }
+  // The third table too, and it is the one most likely to be forgotten: nothing in the vault's
+  // record produces these, so no capture test would notice their absence either.
+  for (const d of DERIVABLE) {
+    const said = s.whoCanSeeWhat.find((c) => c.says.includes(d.what));
+    assert.ok(said, `${d.id} is derivable and not stated`);
+    assert.ok(said!.says.includes(d.given),
+      `${d.id} is stated without saying what an observer needs to hold to work it out`);
+  }
   for (const o of NOT_OBSERVABLE) {
     assert.ok(s.whatWeCannotSee.some((c) => c.says.includes(o.what)), `${o.id} is not stated`);
   }
   assert.equal(s.whatWeCannotSee.length, NOT_OBSERVABLE.length);
   // The chain and the pool's auditor are disclosures the vault's table does not cover, and
   // they are the two most consequential ones. They must be stated on top of it.
-  assert.ok(s.whoCanSeeWhat.length >= OBSERVABLE.length + 2,
+  assert.ok(s.whoCanSeeWhat.length >= OBSERVABLE.length + DERIVABLE.length + 2,
     "the chain and the auditor are not stated beyond the vault's own table");
 });
 

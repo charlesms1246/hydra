@@ -17,6 +17,7 @@ import { randomBytes } from "node:crypto";
 import { send as prepare, receive } from "../../client/src/session.ts";
 import { readSet, select, MIN_READ_BATCH } from "../../client/src/read.ts";
 import { initiate, respond, bundleFor } from "../../handshake/src/x3dh.ts";
+import { postPrekey, collectPrekeys, httpTransport } from "../../handshake/src/inbox.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId } from "../../channel/src/cover.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
@@ -104,6 +105,63 @@ export function open(state: State, name: string, bundle: Bundle): PrekeyMessage 
   const result = initiate(vaultRootOf(state), bundle);
   remember(state, name, result.material, fingerprint(bundle));
   return result.message;
+}
+
+/**
+ * Open a channel AND deliver the prekey message, so a conversation starts without a file
+ * changing hands.
+ *
+ * The delivery costs a disclosure and it is not a small one: the mailbox slots are a public
+ * function of the recipient's identity key, so the vault operator can see that this person is
+ * reachable and count what is waiting for them. `observations.ts` `DERIVABLE` carries the rows
+ * and `inbox-derivations.test.ts` performs the derivation. There is no version of this without
+ * accounts, and accounts would disclose more.
+ */
+export async function openAndSend(
+  state: State,
+  name: string,
+  bundle: Bundle,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ slot: number }> {
+  const message = open(state, name, bundle);
+  const transport = httpTransport(state.vaultUrl, state.invites, fetchImpl);
+  try {
+    return { slot: await postPrekey(transport, bundle.identityKey, message) };
+  } catch (e) {
+    // The channel was remembered before the post; undo it, or the caller holds a channel the
+    // other side will never know about and every message into it vanishes.
+    delete state.channels[name];
+    throw e;
+  }
+}
+
+/**
+ * Collect every pending handshake and accept the ones that open.
+ *
+ * A slot is writable by anyone, so a message that fails to open is expected rather than
+ * exceptional — it is reported and skipped. Naming is the caller's problem: channels are named
+ * after the sender's fingerprint, because at this point that is genuinely all we know about
+ * them, and inventing a friendlier name would be inventing a claim about who they are.
+ */
+export async function collect(
+  state: State,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ accepted: string[]; rejected: number }> {
+  const transport = httpTransport(state.vaultUrl, state.invites, fetchImpl);
+  const waiting = await collectPrekeys(transport, publishBundle(state).identityKey);
+  const accepted: string[] = [];
+  let rejected = 0;
+  for (const { message } of waiting) {
+    const name = `from-${hex(message.identityKey).slice(0, 12)}`;
+    if (state.channels[name]) continue;
+    try {
+      accept(state, name, message);
+      accepted.push(name);
+    } catch {
+      rejected++;
+    }
+  }
+  return { accepted, rejected };
 }
 
 /** Bob's side. */

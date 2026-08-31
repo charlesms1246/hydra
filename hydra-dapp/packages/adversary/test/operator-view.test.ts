@@ -26,6 +26,8 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OBSERVABLE, OBSERVABLE_IDS, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
+import { inboxSlot, encodePrekey } from "../../handshake/src/inbox.ts";
+import { initiate, bundleFor } from "../../handshake/src/x3dh.ts";
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
 import { padTo, unpad, bucketFor, BUCKETS, SEAL_OVERHEAD } from "../../vault-client/src/buckets.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
@@ -189,10 +191,31 @@ test("the capture confirms each NOT_OBSERVABLE claim", () => {
     `a read asked for ${reads[0].ids.length} ids; ${MIN_READ_BATCH} is the floor that makes the claim true`);
   assert.ok(reads[0].ids.length > uploaded.length, "the batch was not padded beyond what exists");
 
+  // Inbox sender: a prekey message is addressed by its RECIPIENT, so the capture carries
+  // nothing that says who wrote it. Its own vault, because this session's counts are asserted
+  // exactly above and an extra object would move them.
+  const mail = new Vault({ invites: ["m"], buckets: BUCKETS });
+  const bobRoot = derive(VAULT_DOMAIN,
+    rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(41), "operator-view inbox"))));
+  const senderRoot = derive(VAULT_DOMAIN,
+    rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(42), "operator-view sender"))));
+  const bobKey = bundleFor(bobRoot, 0, 0).identityKey;
+  const opening = initiate(senderRoot, bundleFor(bobRoot, 0, 0));
+  mail.handle({
+    op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: inboxSlot(bobKey, 0),
+    body: encodePrekey(opening.message), invite: "m",
+  });
+  const mailView = JSON.stringify(mail.observe(), (_k, v) =>
+    v instanceof Uint8Array ? [...v] : v instanceof Map ? [...v] : v);
+  const senderKeyHex = Buffer.from(opening.message.identityKey).toString("hex");
+  assert.ok(!mailView.includes(senderKeyHex),
+    "the sender's identity key is in the operator's record of a mailbox slot");
+
   // Every NOT_OBSERVABLE row is one of the cases above; this keeps the two lists in step.
   assert.deepEqual(
     NOT_OBSERVABLE.map((o) => o.id).sort(),
-    ["blob.trueLength", "channel.membership", "content.plaintext", "read.target", "uploader.identity"],
+    ["blob.trueLength", "channel.membership", "content.plaintext", "inbox.sender", "read.target",
+      "uploader.identity"],
   );
 });
 

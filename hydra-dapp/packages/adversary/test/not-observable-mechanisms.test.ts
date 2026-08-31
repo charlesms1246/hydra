@@ -27,6 +27,8 @@ import { MIN_READ_BATCH } from "../../client/src/read.ts";
 import { sealForChannel, wireBytes } from "../../vault-client/src/blobs.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
+import { inboxSlots, encodePrekey, decodePrekey } from "../../handshake/src/inbox.ts";
+import { initiate, bundleFor } from "../../handshake/src/x3dh.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
 
@@ -137,6 +139,39 @@ const MECHANISMS: Record<Guarantee["mechanism"], () => void> = {
     // And the stored shape has no field an uploader could be recorded in.
     const src = readFileSync(join(SERVER_SRC, "server.ts"), "utf8");
     assert.ok(!/type Stored = \{[^}]*(invite|uploader|peer)/s.test(src));
+  },
+
+  "inbox-not-content-addressed": () => {
+    // A channel blob's id is the hash of its bytes and `select` refuses a mismatch. An inbox
+    // slot is addressed by its RECIPIENT, so that check cannot apply and anyone may write
+    // anything into a slot — which is exactly what makes delivery to a stranger possible.
+    //
+    // The claim is that this does not let the operator attribute a message to a sender. Two
+    // parts: the slot id does not depend on the sender at all, and the message that arrives is
+    // authenticated by X3DH rather than by the vault.
+    const alice = derive(VAULT_DOMAIN,
+      rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(21), "inbox-alice"))));
+    const carol = derive(VAULT_DOMAIN,
+      rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(22), "inbox-carol"))));
+    const bob = derive(VAULT_DOMAIN,
+      rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(23), "inbox-bob"))));
+    const bobKey = bundleFor(bob, 0, 0).identityKey;
+
+    // Two different senders, same recipient: the slots they may use are identical, so where a
+    // message lands carries nothing about who wrote it.
+    const fromAlice = initiate(alice, bundleFor(bob, 0, 0));
+    const fromCarol = initiate(carol, bundleFor(bob, 0, 0));
+    assert.deepEqual(inboxSlots(bobKey), inboxSlots(bobKey));
+    for (const m of [fromAlice.message, fromCarol.message]) {
+      const encoded = encodePrekey(m);
+      assert.ok(BUCKETS.includes(encoded.length), "a prekey message is not padded to a bucket");
+      // And nothing in the slot id is a function of the message or its sender.
+      assert.ok(!inboxSlots(bobKey).some((id) => id.includes(
+        Buffer.from(m.identityKey).toString("hex").slice(0, 16))));
+    }
+    // A stranger writing junk into a slot produces something the recipient discards, not
+    // something the operator can attribute.
+    assert.throws(() => decodePrekey(new Uint8Array(1024)), /too short|exceeds/);
   },
 
   "pad-before-seal": () => {

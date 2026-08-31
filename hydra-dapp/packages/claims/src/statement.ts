@@ -24,7 +24,7 @@
  * because the first is uncomfortable is exactly the failure this file exists to prevent.
  */
 
-import { OBSERVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
+import { OBSERVABLE, DERIVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import { COVER_RATE, coverLeadMs } from "../../channel/src/cover.ts";
 import { NOTE_FELTS } from "../../channel/src/note.ts";
@@ -109,7 +109,12 @@ export function statement(): Statement {
       says: `Whoever runs the storage server can see ${o.what}.`,
       from: `vault-server/src/observations.ts (${o.id})`,
       complete: true,
-    })).concat([
+    })).concat(DERIVABLE.map((d) => ({
+      says: `Given ${d.given} — which is public — whoever runs the storage server can work out `
+        + `${d.what}. The server does not record it; they compute it.`,
+      from: `vault-server/src/observations.ts (${d.id})`,
+      complete: true,
+    }))).concat([
       {
         says: `Anyone reading the blockchain sees that a message happened, and when — ${MEASURED.noteFelts} `
           + "values, neither of which says who it is for or what it says.",
