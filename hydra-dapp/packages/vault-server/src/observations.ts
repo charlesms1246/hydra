@@ -127,6 +127,11 @@ export const OBSERVABLE: readonly Observation[] = [
     why: "unlink is not erasure. A TTL that has passed removes the object from service, not from the device, and any snapshot or backup of the host keeps it for as long as the backup exists",
   },
   {
+    id: "read.channelSet",
+    what: "which blobs form one conversation — the ids in a single read batch that exist are exactly one channel's objects",
+    why: "a reader has to name what it wants, and what it wants is its channel's whole set. The uploads disclose no grouping; the READER supplies it, grouped, in one request. Padding widens the question and not the answer, because a padding id does not exist and is dropped for free. This was published as something the operator could NOT see until adversary/test/i3-batch-membership.test.ts recovered both channels of a two-channel session exactly",
+  },
+  {
     id: "store.totals",
     what: "the number of objects and total bytes held, per class",
     why: "it is a filesystem; anyone with the disk can count",
@@ -190,9 +195,9 @@ export const NOT_OBSERVABLE: readonly Guarantee[] = [
       mechanism: "no-key-in-server",
   },
   {
-    id: "channel.membership",
-    what: "which blobs belong to the same channel",
-    why: "nothing in an upload names a channel, and reads arrive as batches over a client's whole set",
+    id: "upload.channel",
+    what: "which channel a blob belongs to, at the moment it is uploaded",
+    why: "nothing in an upload request or in the stored record names a channel, so an operator holding the whole store and no request log cannot group it. That is the true half of what this row used to claim: it also said reads arrive as batches over a client's whole set, as though that were the protection. It is the disclosure — see read.channelSet",
       mechanism: "no-channel-field",
   },
   {

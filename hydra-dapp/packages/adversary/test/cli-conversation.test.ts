@@ -120,27 +120,42 @@ test("cover goes up by the same route as a message, in the same size bucket", as
   }
 });
 
-test("within a flush, cover goes up before the message it covers", async () => {
+test("within a flush, cover USUALLY goes up before the message — and the residual is measured", async () => {
   // Queue order would put the message first every time, because that is the order `send`
   // creates them in. Scheduled order is what matters, and the cover for a message is scheduled
   // to start before that message's own chain event.
-  const { url, server, invites } = await vault();
+  //
+  // USUALLY, not always, and this test asserted "always" until it failed one run in ten. The
+  // real upload is uniform over [event, event + W); a decoy is uniform over [event - W,
+  // event + W). Every decoy landing after the real one is a real event with probability
+  // (1/2)^rate * 1/(rate + 1) — about 1 in 80 at the shipped defaults — and on those messages
+  // the cheapest possible attack, "the earliest upload is the first message", is right.
+  //
+  // Asserting a distribution as a certainty is how a residual gets hidden. The number is small
+  // and it is not zero, so it is measured here and stated rather than asserted away.
+  const { url, server, invites } = await vault(4000);
   try {
-    const { alice } = pair(url, invites);
     const chain = memoryChain();
-    const sent = await sendMessage(alice, chain, "with-bob", "x", T0);
-    const realId = alice.pending.find((p) => p.real)!.id;
-
-    const order: string[] = [];
-    const spy: typeof fetch = async (input, opts) => {
-      order.push(String(input).split("/").pop()!);
-      return fetch(input as string, opts);
-    };
-    await flush(alice, sent.uploadAt + MIN_JITTER_BLOCKS * BLOCK, spy);
-
-    const at = order.indexOf(realId);
-    assert.ok(at >= 0, "the message was never uploaded");
-    assert.ok(at > 0, "the message was the first object the operator saw — cover did not lead it");
+    let firstWasReal = 0;
+    const TRIALS = 300;
+    for (let t = 0; t < TRIALS; t++) {
+      const alice = init({ vaultUrl: url, blockMs: BLOCK, invites: [...invites] });
+      const message = open(alice, "with-bob", publishBundle(init({ invites: [] }), 0, 0));
+      void message;
+      const sent = await sendMessage(alice, chain, "with-bob", "x", T0);
+      const realId = alice.pending.find((p) => p.real)!.id;
+      const due = [...alice.pending].sort((a, b) => a.uploadAt - b.uploadAt);
+      assert.ok(sent.uploadAt > T0);
+      if (due[0].id === realId) firstWasReal++;
+    }
+    const rate = firstWasReal / TRIALS;
+    assert.ok(rate < 0.05,
+      `the real message was the earliest upload ${(rate * 100).toFixed(1)}% of the time; `
+      + "above a few percent means the lead has stopped working, not that this draw was unlucky");
+    // And it is genuinely not zero — if it were, the ordering would be deterministic and the
+    // operator would have a rule rather than a probability.
+    assert.ok(rate > 0,
+      "the real upload is never earliest, which would mean the schedule is not random");
   } finally {
     server.close();
   }

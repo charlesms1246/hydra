@@ -173,8 +173,9 @@ test("the capture confirms each NOT_OBSERVABLE claim", () => {
   // capture either — the bytes live in storage, and the capture is what is recorded about them.
   assert.ok(!view.includes("a public post"), "blob content leaked into the metadata capture");
 
-  // Channel membership: two of the three encrypted blobs share a channel, and nothing in the
-  // capture says which. The only way to tell would be a field naming the channel.
+  // Upload channel: two of the three encrypted blobs share a channel, and nothing in the STORED
+  // record says which. That is all this claims now — a read batch groups them exactly, which is
+  // `read.channelSet` on the observable table and `i3-batch-membership.test.ts` measures it.
   assert.ok(!view.includes("alice"), "a channel label reached the server");
   assert.ok(!view.includes("bob"), "a channel label reached the server");
 
@@ -214,7 +215,7 @@ test("the capture confirms each NOT_OBSERVABLE claim", () => {
   // Every NOT_OBSERVABLE row is one of the cases above; this keeps the two lists in step.
   assert.deepEqual(
     NOT_OBSERVABLE.map((o) => o.id).sort(),
-    ["blob.trueLength", "channel.membership", "content.plaintext", "inbox.sender", "read.target",
+    ["blob.trueLength", "content.plaintext", "inbox.sender", "read.target", "upload.channel",
       "uploader.identity"],
   );
 });

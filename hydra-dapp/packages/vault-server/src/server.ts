@@ -361,7 +361,13 @@ export class Vault {
     // Arrival is not stored, but a TTL deadline minus a published constant is an arrival time.
     // Pinned objects carry no deadline, so for those it is genuinely absent.
     if (o.rows.some((r) => r["blob.expiry"] !== null)) seen.add("blob.arrival");
-    if (o.reads.length) { seen.add("read.ids"); seen.add("read.hit"); }
+    // `read.channelSet` comes with the other two rather than being a separate capability: the
+    // ids and their hits ARE the grouping, and an operator who has one has it.
+    if (o.reads.length) {
+      seen.add("read.ids");
+      seen.add("read.hit");
+      seen.add("read.channelSet");
+    }
     if (o.invitesRedeemed) seen.add("invite.redeemed");
     if (o.transport.length) {
       seen.add("transport.peer");
