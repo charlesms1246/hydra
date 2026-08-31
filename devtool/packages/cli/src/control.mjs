@@ -130,6 +130,52 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
       return { from, to, amount, token, txHash: receipt.transaction_hash ?? null };
     },
 
+    /**
+     * Publish two felts through the POOL, so the pool is the caller on chain.
+     *
+     * The whole point. `sncast invoke` on the target contract works and puts the user's own
+     * account in `sender_address`, which identifies the author of every message they send —
+     * measured at 1.000 in hydra-dapp's `chain-sender-disclosure.test.ts`. The pool's
+     * `Invoke` action calls the target at `selector!("privacy_invoke")` with the calldata
+     * verbatim (`privacy.cairo:997-999`), so routed this way the transaction is the pool's.
+     *
+     * `.invoke()` is the SDK's builder method for it (`sdk/src/interfaces.ts:708`). No token
+     * operations are attached: publishing a pointer moves no value, and adding a transfer to
+     * carry it would be inventing an economic cost the design does not have.
+     */
+    async publish({ who = "alice", contract, calldata = [], attach = "none", amount = "1", build }) {
+      if (!contract) throw new Error("publish needs a contract address");
+      note(`publish ${calldata.length} felts via pool for ${who} (attach=${attach})`);
+      // No autoRegister and no autoSetup, and that is the finding rather than a preference.
+      // With them, the FIRST publish carries the account's registration — so its address is in
+      // the calldata and in a pool event, which is exactly the disclosure this route exists to
+      // remove. The SECOND fails outright, because re-registering reverts during proof
+      // compilation with the nameless error `explain()` translates. Registration is its own
+      // step; publishing is not the place to do it implicitly.
+      // `attach` is here because an invoke-only transaction does not compile: the pool
+      // simulation emits no server message when there are no private actions to compile. Kept
+      // as a parameter rather than a guess so the variants can be measured on one stack.
+      // `build` comes straight from the request so the variants can be swept on ONE stack. A
+      // restart costs five minutes here, and finding which builder option puts the author's
+      // address in the calldata took more variants than that budget allows.
+      const builder = transfers[who].build(build ?? (
+        attach === "none" ? {} : { autoSetup: true, autoDiscover: { notes: "refresh", channels: "refresh" } }
+      ));
+      if (attach === "deposit") {
+        await approve(who, env.strk, amount);
+        builder.with(env.strk, (t) => t.deposit({ amount: BigInt(amount) }));
+        builder.surplusTo(accounts[who].address);
+      }
+      const { callAndProof } = await builder
+        .invoke(() => ({
+          contractAddress: contract,
+          calldata: calldata.map((f) => BigInt(f)),
+        }))
+        .execute();
+      const receipt = await devnet.executeOutside(callAndProof);
+      return { who, contract, txHash: receipt.transaction_hash ?? null };
+    },
+
     async notes({ who = "alice" }) {
       const { notes } = await transfers[who].discoverNotes();
       const out = [];
@@ -170,7 +216,11 @@ export async function startControl({ devnet, env, upstream, indexerUrl }) {
       send(200, { ok: true, ms: Date.now() - started, ...result });
     } catch (e) {
       note(`error: ${e.message}`);
-      send(500, { ok: false, error: String(e.message).slice(0, 400) });
+      // 1200, not 400: the pool's revert reasons nest one contract inside another and the
+      // interesting part — the felt-encoded error string — is at the END. A 400-character
+      // truncation cut off `INVALID_INVOKE_RETURN_DATA` and cost a round trip through the
+      // block explorer to recover.
+      send(500, { ok: false, error: String(e.message).slice(0, 1200) });
     }
   });
 

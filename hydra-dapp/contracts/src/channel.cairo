@@ -16,11 +16,29 @@
 //! no length-prefixed array, no `Span<felt252>`, and no variant that carries bytes — so there
 //! is no argument a caller could smuggle a message into, and no code path that would have to
 //! be reviewed for one. A payload cannot be too large if there is nowhere to put it.
+//!
+//! It RETURNS an array, and that is not a hole in the above. The pool deserialises the return
+//! value as its open-note deposits and reverts if it cannot, so a contract that returned nothing
+//! could not be published through the pool at all — which was the state of this one until a
+//! live pool-routed call failed with `INVALID_INVOKE_RETURN_DATA`. Nothing emits the return
+//! value; it goes back to the pool, which reads deposits from it and discards the rest.
 
 #[starknet::interface]
 pub trait IChannel<TContractState> {
-    /// Publish a pointer and its content commitment. Two felts, and deliberately nothing else.
-    fn privacy_invoke(ref self: TContractState, pointer: felt252, commitment: felt252);
+    /// Publish a pointer and its content commitment. Two felts in, and deliberately nothing else.
+    ///
+    /// Returns the pool's open-note deposits, which for this contract is always empty. The pool
+    /// deserialises whatever comes back as `Span<OpenNoteDeposit>`
+    /// (`.upstream/packages/privacy/src/utils.cairo:590-594`) and reverts with
+    /// `INVALID_INVOKE_RETURN_DATA` if it cannot — so a contract returning nothing at all makes
+    /// every pool-routed publish fail. An empty `Array<felt252>` serialises to the single felt
+    /// `0`, which is the same wire form as an empty span of anything.
+    ///
+    /// This is not a payload channel. The return value goes back to the pool and is never
+    /// emitted; `_apply_invoke_and_deposits` reads deposits from it and nothing else.
+    fn privacy_invoke(
+        ref self: TContractState, pointer: felt252, commitment: felt252,
+    ) -> Array<felt252>;
     /// How many pointers this contract has published. Public by construction — the events are.
     fn published(self: @TContractState) -> u64;
 }
@@ -57,7 +75,9 @@ pub mod Channel {
 
     #[abi(embed_v0)]
     impl ChannelImpl of super::IChannel<ContractState> {
-        fn privacy_invoke(ref self: ContractState, pointer: felt252, commitment: felt252) {
+        fn privacy_invoke(
+            ref self: ContractState, pointer: felt252, commitment: felt252,
+        ) -> Array<felt252> {
             // No access control, and that is the design rather than an omission. The pool
             // invokes this on a user's behalf and the caller is the pool, so gating on the
             // caller would let the pool's address be used to filter our events. Anyone may
@@ -65,6 +85,9 @@ pub mod Channel {
             // is what the anonymity set is made of.
             self.published.write(self.published.read() + 1);
             self.emit(PointerPublished { pointer, commitment });
+            // No deposits. Publishing a pointer moves no value, and an empty array is how the
+            // pool is told so — see the interface.
+            array![]
         }
 
         fn published(self: @ContractState) -> u64 {

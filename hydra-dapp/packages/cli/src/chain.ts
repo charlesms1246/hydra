@@ -81,6 +81,66 @@ export function starknet(config: ChainConfig): Chain {
   };
 }
 
+/**
+ * Publish through the POOL rather than from your own account.
+ *
+ * The pool's `Invoke` action calls the target at `selector!("privacy_invoke")` with the calldata
+ * verbatim (`.upstream/packages/privacy/src/privacy.cairo:997-999`), and the transaction is
+ * submitted by a relayer through `executeOutside`. So `sender_address` is the relayer's and the
+ * `nonce` is the relayer's — the author is no longer the submitter and their messages are no
+ * longer ordered by their own nonce.
+ *
+ * IT DOES NOT REMOVE THE AUTHOR, and `live-authorship.test.ts` measures that on a real chain.
+ *
+ * A pool transaction carrying only an invoke does not compile: the simulation emits no server
+ * message, because there are no private actions to compile. Swept across every builder option
+ * on one stack, exactly one combination worked without moving value — `autoSetup` plus
+ * `autoDiscover` — and it worked **once per account**, because what it contributed was an
+ * `OpenChannel`, and the second time the channel already exists so there is again nothing to
+ * compile. `OpenChannel` names an address, and measured across two publishers it is the
+ * PUBLISHER'S own: alice publishing writes alice, bob publishing writes bob.
+ *
+ * So a repeatable pool-routed publish has to attach an action that moves value. That is a
+ * deposit, a deposit is an ERC20 pull from the author's account, and an ERC20 pull is public.
+ *
+ * **There is no route that publishes a pointer without naming a real address on chain.** The
+ * design's premise — the pool invokes on the user's behalf, so the caller is the pool — is true
+ * about the caller and false about the transaction. What routing through the pool buys is real
+ * but smaller than it sounds: `sender_address` becomes the relayer's, and the author's messages
+ * stop being ordered by their own nonce. The disclosure moved and shrank; it did not close.
+ *
+ * AND IT COSTS. Every message carries a token deposit, because that is the cheapest repeatable
+ * private action. Devnet only: this goes through the Devtool's control API, which holds the
+ * proving loop and the relayer's key. A real client needs the SDK in process.
+ */
+export function poolChain(
+  config: ChainConfig & { controlUrl: string; who: string; attach?: "none" | "deposit" },
+): Chain {
+  const direct = starknet(config);
+  return {
+    async publish(calldata) {
+      const res = await fetch(`${config.controlUrl}/publish`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          who: config.who,
+          contract: config.contract,
+          calldata: calldata.map(String),
+          // `deposit` by default, because `none` works exactly once per account. See the header.
+          attach: config.attach ?? "deposit",
+          amount: "1000",
+          build: { autoSetup: true, autoDiscover: { notes: "refresh", channels: "refresh" } },
+        }),
+      });
+      const body = await res.json() as { ok: boolean; txHash?: string; error?: string };
+      if (!body.ok || !body.txHash) throw new Error(`pool publish failed: ${body.error}`);
+      return body.txHash;
+    },
+    // Reading is identical: the event is the event, whoever put it there.
+    events: direct.events,
+  };
+}
+
 /** For tests, and for anyone who wants to see what the client does before it costs gas. */
 export function memoryChain(): Chain & { readonly published: [bigint, bigint][] } {
   const published: [bigint, bigint][] = [];

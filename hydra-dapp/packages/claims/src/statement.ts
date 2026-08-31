@@ -83,9 +83,13 @@ export const MEASURED = {
    * the account and `nonce` orders that account's messages.
    *
    * `note.ts` guarantees the EVENT carries two felts and nothing else, and that is true. The
-   * event is inside a transaction. `adversary/test/chain-sender-disclosure.test.ts` measures
-   * it, and `claude-docs/decisions/0011-cli-client.md` says what routing through the pool would
-   * cost to build.
+   * event is inside a transaction.
+   *
+   * ONE for BOTH routes. Publishing through the pool was expected to fix this and does not —
+   * `live-authorship.test.ts` measures it against a real chain. It moves the author out of
+   * `sender_address` and out of the nonce ordering, and leaves them in the calldata, because a
+   * pool transaction carrying only an invoke does not compile and every action that makes it
+   * compile names an address. See `claude-docs/decisions/0012-publishing-through-the-pool.md`.
    */
   senderIdentifiedOnChain: 1,
 } as const;
@@ -113,12 +117,21 @@ export function statement(): Statement {
         complete: true,
       },
       {
-        says: "With the current client, anyone reading the blockchain also sees WHICH ACCOUNT "
-          + "published each of those messages, and in what order, every time. The two values "
-          + "themselves do not say — but they travel inside a signed transaction, and the "
-          + "transaction does. Removing this needs the message to be published by the pool on "
-          + "your behalf rather than by you, which is how it is meant to work and is not built.",
-        from: "adversary/test/chain-sender-disclosure.test.ts, cli/src/chain.ts",
+        says: "Anyone reading the blockchain also sees WHICH ACCOUNT published each of those "
+          + "messages, every time. The two values themselves do not say — but they travel "
+          + "inside a signed transaction, and the transaction does. Publishing through the pool "
+          + "instead of from your own account moves this and does not remove it: the submitter "
+          + "becomes a relayer and your messages stop being ordered by your own counter, but "
+          + "your address is still in the transaction, because the pool will not carry a "
+          + "message on its own and every action that can carry it names an address.",
+        from: "adversary/test/live-authorship.test.ts, cli/src/chain.ts",
+        complete: true,
+      },
+      {
+        says: "Sending a message through the pool also moves a small amount of your money, "
+          + "every time. Not because a message costs anything, but because the pool needs a "
+          + "real private action to carry it and a deposit is the cheapest repeatable one.",
+        from: "cli/src/chain.ts (poolChain), adversary/test/live-authorship.test.ts",
         complete: true,
       },
       {

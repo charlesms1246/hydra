@@ -16,12 +16,12 @@
  * pointer and in what order, without correlating anything. The measured 0.2 is about which
  * upload holds the content. Authorship was never in question, because it was never hidden.
  *
- * THE DESIGN INTENDS OTHERWISE. `note.ts` explains the route: the pool invokes an external
- * contract at `selector!("privacy_invoke")` as part of a private action
+ * THE DESIGN INTENDS OTHERWISE, AND IT IS NOT ENOUGH. `note.ts` explains the route: the pool
+ * invokes an external contract at `selector!("privacy_invoke")` as part of a private action
  * (`.upstream/packages/privacy/src/utils.cairo:84`, dispatched at `privacy.cairo:878-886`), so
- * the caller on chain is THE POOL. `cli/src/chain.ts` does not do that — it invokes the
- * contract directly from the user's own account, because routing through the pool needs the
- * SDK's proving loop and that is unbuilt.
+ * the caller on chain is THE POOL. That route now exists — `cli/src/chain.ts` `poolChain` — and
+ * `live-authorship.test.ts` measures what it buys against a real chain: the author leaves
+ * `sender_address` and the nonce ordering, and stays in the calldata.
  *
  * This file measures the gap rather than describing it, and fails if anyone closes it in prose.
  */
@@ -80,15 +80,19 @@ test("with a direct invoke, authorship is identified every time", () => {
   assert.ok(MEASURED.isolatedMessageIdentified < 0.25);
 });
 
-test("routing through the pool is what removes the sender, and the CLI does not do it", () => {
-  // Structural, because the fix is structural. `chain.ts` submits an INVOKE from the user's own
-  // account; the intended path has the pool as the caller. This test exists to go red on the
-  // day someone changes that, so the claim below can change in the same commit.
+test("routing through the pool does NOT remove the sender, which is the expensive part", () => {
+  // The correction to this file's own first draft. It said routing through the pool was the
+  // fix; `live-authorship.test.ts` measured it on a real chain and it is not. The pool route
+  // moves the author out of `sender_address` and out of the nonce ordering — real, and worth
+  // having — and leaves the address in the calldata, because a pool transaction carrying only
+  // an invoke does not compile and every action that makes it compile names an address.
+  //
+  // Structural here, measured there: both routes exist in `chain.ts`, and both are disclosed.
   const chain = readFileSync(join(HERE, "..", "..", "cli", "src", "chain.ts"), "utf8");
-  assert.ok(/sncast/.test(chain) && /"--account"/.test(chain),
-    "chain.ts no longer submits from the user's own account — recheck this whole file");
-  assert.ok(!/executeOutside|callAndProof/.test(chain),
-    "chain.ts appears to route through the pool now; if so, update the claim and delete this");
+  assert.ok(/export function starknet\b/.test(chain), "the direct route is gone");
+  assert.ok(/export function poolChain\b/.test(chain), "the pool route is gone");
+  assert.ok(/does not remove the author|DOES NOT REMOVE THE AUTHOR/i.test(chain),
+    "chain.ts no longer says that the pool route leaves the author in the transaction");
 });
 
 test("the disclosure statement does not claim the chain hides the sender", () => {

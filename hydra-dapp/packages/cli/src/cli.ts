@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, sendMessage, flush, readChannel, fingerprint, vaultRootOf,
 } from "./commands.ts";
-import { starknet } from "./chain.ts";
+import { starknet, poolChain } from "./chain.ts";
 import { load, save, exists, STATE_FILE } from "./state.ts";
 import type { State } from "./state.ts";
 
@@ -51,10 +51,23 @@ const decodeKeys = new Set([
 const decode = (text: string): any => JSON.parse(text, (k, v) =>
   decodeKeys.has(k) && typeof v === "string" ? new Uint8Array(Buffer.from(v, "hex")) : v);
 
-const chainFor = (state: State) => starknet({
-  rpcUrl: state.rpcUrl, contract: state.contract, fromBlock: state.fromBlock,
-  accountsFile: state.accountsFile, account: state.account, network: state.network,
-});
+/**
+ * Which route puts a pointer on chain.
+ *
+ * `pool` is the better one and neither is good: it moves the author out of `sender_address` and
+ * out of the nonce ordering, leaves their address in the calldata, and costs a small deposit
+ * per message. `live-authorship.test.ts` measures both. Direct is the default because `pool`
+ * needs a control API that only the devnet stack provides.
+ */
+const chainFor = (state: State) => {
+  const base = {
+    rpcUrl: state.rpcUrl, contract: state.contract, fromBlock: state.fromBlock,
+    accountsFile: state.accountsFile, account: state.account, network: state.network,
+  };
+  return state.controlUrl
+    ? poolChain({ ...base, controlUrl: state.controlUrl, who: state.poolAccount || "alice" })
+    : starknet(base);
+};
 
 const usage = () => {
   console.error(readFileSync(new URL(import.meta.url), "utf8")
@@ -77,6 +90,8 @@ switch (command) {
       accountsFile: flag("accounts-file"),
       account: flag("account"),
       network: flag("network") || undefined,
+      controlUrl: flag("control") || undefined,
+      poolAccount: flag("pool-account") || undefined,
       invites: flag("invites").split(",").filter(Boolean),
     });
     save(state);
@@ -161,6 +176,7 @@ switch (command) {
     console.log(`state      ${STATE_FILE}`);
     console.log(`vault      ${state.vaultUrl}`);
     console.log(`chain      ${state.contract || "(unset)"} via ${state.rpcUrl}`);
+    console.log(`route      ${state.controlUrl ? `pool (${state.poolAccount || "alice"})` : "direct from your own account"}`);
     console.log(`fingerprint ${fingerprint(publishBundle(state))}`);
     console.log(`channels   ${Object.keys(state.channels).join(", ") || "(none)"}`);
     console.log(`pending    ${state.pending.length} uploads, ${state.invites.length} invites left`);
@@ -168,8 +184,11 @@ switch (command) {
     console.log("what this client does NOT do:");
     console.log("  - it keeps your root key in a plaintext file (mode 0600, nothing else)");
     console.log("  - prekeys are derived, so that key opens every past conversation too");
-    console.log("  - it publishes pointers from your own account, so the chain shows that YOU");
-    console.log("    sent each message and in what order. every time.");
+    console.log(state.controlUrl
+      ? "  - the pool route hides your account from sender_address and leaves it in the\n"
+        + "    calldata, and spends a little of your money per message"
+      : "  - it publishes pointers from your own account, so the chain shows that YOU\n"
+        + "    sent each message and in what order. every time.");
     console.log("it is for a devnet and a testnet. see claude-docs/decisions/0009 and 0011.");
     // Touch the root so a corrupt seed fails here rather than at the first send.
     vaultRootOf(state);

@@ -51,6 +51,9 @@ export type State = {
   accountsFile: string;
   account: string;
   network?: string;
+  /** Set to publish through the pool instead of directly. See `cli.ts` `chainFor`. */
+  controlUrl?: string;
+  poolAccount?: string;
   blockMs: number;
   /** The vault root. See the header. */
   seedHex: string;
