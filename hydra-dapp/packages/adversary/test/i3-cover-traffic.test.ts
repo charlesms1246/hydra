@@ -94,6 +94,11 @@ test("the documented rate/accuracy table still holds", () => {
   }
   assert.ok(Math.abs(firsts[0] - 0.46) < 0.06, `baseline moved to ${firsts[0].toFixed(2)}`);
   assert.ok(Math.abs(firsts[3] - 0.11) < 0.05, `rate 4 moved to ${firsts[3].toFixed(2)}`);
+  // These figures are the GREEDY matcher's, which is what this file measures. The strongest
+  // adversary is the max over four strategies — see `i3-matchers.test.ts`, which is where the
+  // number the product publishes comes from. Greedy happens to win the first-message metric
+  // under cover, so the two agree here; on an undefended session they do not, and the
+  // order-preserving matcher scores nearly twice this file's mean.
 });
 
 test("the default does not push the operator far below chance either", () => {

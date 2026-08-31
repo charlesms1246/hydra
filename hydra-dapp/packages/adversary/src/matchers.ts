@@ -1,0 +1,158 @@
+/**
+ * The timing adversary, as a set of strategies rather than one.
+ *
+ * Every I3 harness here measured a single matcher: for each chain event, the upload nearest it
+ * in time. That is one thing an operator might try, and it is not the best one. Measured over
+ * the same sessions, an order-preserving matcher — sort the uploads, call the k-th one the k-th
+ * message — scores **0.227** against greedy's 0.138 on an undefended session. Every number
+ * this project published for the undefended case was therefore too kind to the defence.
+ *
+ * The mistake is the same shape as the jitter one: I measured what I thought of first and wrote
+ * the result down as *the* result. An adversary is not a strategy. It is whoever is attacking
+ * you, using whichever strategy works, so a harness has to take the **maximum** over the ones
+ * it knows and stay honest that the real maximum is over strategies nobody here thought of.
+ *
+ * Taking the max also stops a defence looking good by accident. Cover traffic drives the
+ * order-preserving matcher to 0.001 — far *below* chance — and a harness reporting only that
+ * would be claiming a defence far stronger than the 0.128 the greedy matcher still achieves.
+ * Below chance is not safety; it is a different signal, and it is not the number to publish.
+ */
+
+/** An upload as the operator sees it: when it arrived, and (for scoring) what it really was. */
+export type Arrival = { readonly t: number; readonly real: boolean; readonly seq: number };
+
+/** Per-message hits, 1 where the operator correctly identified message i. */
+export type Hits = number[];
+
+export type Matcher = {
+  readonly name: string;
+  readonly why: string;
+  readonly run: (events: readonly number[], uploads: readonly Arrival[]) => Hits;
+};
+
+/** For each event independently, the nearest upload. Collisions allowed. */
+const greedy: Matcher = {
+  name: "greedy",
+  why: "for each event, the upload nearest it in time — the obvious attack, and the one every harness used to measure alone",
+  run: (events, uploads) => {
+    const hits = new Array(events.length).fill(0);
+    for (let i = 0; i < events.length; i++) {
+      let best = -1;
+      let gap = Infinity;
+      for (let j = 0; j < uploads.length; j++) {
+        const d = Math.abs(uploads[j].t - events[i]);
+        if (d < gap) { gap = d; best = j; }
+      }
+      if (uploads[best]?.real && uploads[best].seq === i) hits[i] = 1;
+    }
+    return hits;
+  },
+};
+
+/**
+ * A one-to-one assignment: all pairs sorted by distance, taken without reuse.
+ *
+ * Strictly more disciplined than greedy and, counter-intuitively, usually worse at this — two
+ * events genuinely can be nearest the same upload, and forbidding that costs more than the
+ * discipline gains. Kept because it is the version a thoughtful operator would reach for, and
+ * because "we tried the smarter one and it did worse" is a fact worth having measured.
+ */
+const unique: Matcher = {
+  name: "unique",
+  why: "a one-to-one assignment by nearest distance, which is more disciplined and usually does worse",
+  run: (events, uploads) => {
+    const pairs: [number, number, number][] = [];
+    events.forEach((e, i) => uploads.forEach((u, j) => pairs.push([Math.abs(u.t - e), i, j])));
+    pairs.sort((a, b) => a[0] - b[0]);
+    const takenEvent = new Set<number>();
+    const takenUpload = new Set<number>();
+    const hits = new Array(events.length).fill(0);
+    for (const [, i, j] of pairs) {
+      if (takenEvent.has(i) || takenUpload.has(j)) continue;
+      takenEvent.add(i);
+      takenUpload.add(j);
+      if (uploads[j].real && uploads[j].seq === i) hits[i] = 1;
+    }
+    return hits;
+  },
+};
+
+/**
+ * Ignore distance entirely: sort the uploads and call the k-th one the k-th message.
+ *
+ * The strongest of these on an undefended session, by a wide margin, because jitter narrower
+ * than the gap between messages preserves order even when it obscures distance. It is also the
+ * one cover traffic destroys most completely, since decoys shift every position.
+ */
+const ordered: Matcher = {
+  name: "ordered",
+  why: "sort the uploads and call the k-th the k-th message — jitter obscures distance long before it disturbs order",
+  run: (events, uploads) => {
+    const sorted = [...uploads].sort((a, b) => a.t - b.t);
+    const hits = new Array(events.length).fill(0);
+    for (let i = 0; i < events.length; i++) {
+      if (sorted[i]?.real && sorted[i].seq === i) hits[i] = 1;
+    }
+    return hits;
+  },
+};
+
+/**
+ * The cheapest attack there is: the session's earliest upload is its first message.
+ *
+ * It answers one question and no others, which is why its mean is near zero and its
+ * first-message score is the same as everything else's. It exists to keep the structural leak
+ * visible on its own terms — no jitter width defeats it, only cover does.
+ */
+const firstIsFirst: Matcher = {
+  name: "first-is-first",
+  why: "the earliest upload of a session is its first message, since an upload cannot precede its own event",
+  run: (events, uploads) => {
+    const sorted = [...uploads].sort((a, b) => a.t - b.t);
+    const hits = new Array(events.length).fill(0);
+    if (sorted[0]?.real && sorted[0].seq === 0) hits[0] = 1;
+    return hits;
+  },
+};
+
+export const MATCHERS: readonly Matcher[] = [greedy, unique, ordered, firstIsFirst];
+
+export type Score = {
+  /** How often message 0 was identified — the structural leak. */
+  readonly first: number;
+  /** Mean per-message accuracy across the session. */
+  readonly mean: number;
+  /** Which matcher achieved it. Different metrics can have different winners. */
+  readonly by: string;
+};
+
+/**
+ * The best an operator does, taken per metric.
+ *
+ * Per metric rather than picking one overall winner, because they genuinely differ: on a
+ * defended session `greedy` is best at the first message while `unique` is best on the mean.
+ * An adversary chooses its strategy after deciding what it wants to know.
+ */
+export function best(
+  sessions: Iterable<{ events: readonly number[]; uploads: readonly Arrival[] }>,
+): { first: Score; mean: Score } {
+  const runs = [...sessions];
+  const totals = MATCHERS.map((m) => {
+    let first = 0;
+    let mean = 0;
+    for (const s of runs) {
+      const hits = m.run(s.events, s.uploads);
+      first += hits[0];
+      mean += hits.reduce((a, b) => a + b, 0) / hits.length;
+    }
+    return { name: m.name, first: first / runs.length, mean: mean / runs.length };
+  });
+  const bestBy = (key: "first" | "mean") =>
+    totals.reduce((a, b) => (b[key] > a[key] ? b : a));
+  const f = bestBy("first");
+  const m = bestBy("mean");
+  return {
+    first: { first: f.first, mean: f.mean, by: f.name },
+    mean: { first: m.first, mean: m.mean, by: m.name },
+  };
+}

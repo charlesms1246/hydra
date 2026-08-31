@@ -58,10 +58,15 @@ export const MEASURED = {
   buckets: BUCKETS,
   /**
    * How often a vault operator identifies the first message of a session, at the shipped
-   * defaults, against a chance of 1/12. Measured in `i3-cover-traffic.test.ts`, which fails if
-   * it moves — so this constant cannot drift away from the thing it describes.
+   * defaults, against a chance of 1/12.
+   *
+   * 0.128, not the 0.11 published first. The earlier figure came from a single matcher — the
+   * nearest upload to each event — and an adversary is not a strategy. `adversary/src/matchers.ts`
+   * takes the maximum over four, and `i3-matchers.test.ts` fails if this drifts from it.
+   * Corrected upward, which is the direction that matters: the first number understated what
+   * an operator achieves.
    */
-  firstMessageIdentified: 0.11,
+  firstMessageIdentified: 0.128,
   chance: 1 / 12,
 } as const;
 
