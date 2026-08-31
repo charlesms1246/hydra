@@ -53,6 +53,46 @@ export type ChannelState = {
    */
   readonly role: "initiator" | "responder";
   nextSeq: number;
+  /**
+   * How many chain events this client has already looked at.
+   *
+   * Reading replays the chain from block zero and asks the vault for a candidate id per
+   * (event, sequence, direction) triple, because a pointer names no channel — that is I3 and
+   * the cost is the feature. Replaying it EVERY time is not. Measured: a conversation stopped
+   * working at **35 messages**, with the client asking for 4800 ids in a 323 KiB request against
+   * a vault that accepts 257 KiB. Not slow — dead, with a clear error message and no way past it.
+   */
+  readTo: number;
+  /**
+   * Every message this client has opened, plus everything it has sent.
+   *
+   * THE COST IS A PLAINTEXT TRANSCRIPT AT REST, and it is the same protection as the seed above:
+   * a 0600 file, nothing else. Anyone who can read this file could already derive every channel
+   * key from `seedHex` and fetch the conversation themselves, so this does not widen who can
+   * read it — but it does mean the words are there without any work, and it means deleting a
+   * message from this file is the only way to not have it.
+   */
+  history: ReceivedMessage[];
+};
+
+/** One message in a transcript, from either end. */
+export type ReceivedMessage = {
+  /**
+   * The blob id, which is what makes a message unique.
+   *
+   * Not `(direction, sequence)`, which was the first key and which HID the condition
+   * `foreignSends` exists to report: a second client on the same identity sends at the same
+   * sequence in the same direction, so keying on that pair silently discarded its messages as
+   * duplicates of your own. A blob id is a hash of the ciphertext, so two different messages
+   * cannot share one.
+   */
+  readonly id: string;
+  readonly seq: number;
+  readonly text: string;
+  /** True for messages this client sent. */
+  readonly mine: boolean;
+  /** The index of the chain event that carried it — the ordering both ends agree on. */
+  readonly at: number;
 };
 
 export type State = {

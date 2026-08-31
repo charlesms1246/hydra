@@ -37,6 +37,13 @@ export const SITE = {
     + "depends on it.",
     "Your root key is a plaintext file with mode 0600 and no passphrase, no keychain and no "
     + "hardware token. Anyone who reads that file reads every past and future conversation.",
+    "That same file holds every message you have sent or read, as text. Anyone with the key "
+    + "could fetch and open them anyway, so this does not widen who can read them — but the "
+    + "words are on the disk without any work, and deleting them there is the only way not to "
+    + "have them.",
+    "One client per identity. Two copies of the same key file mint identical cover traffic, "
+    + "which is how a storage server tells cover from messages. The client detects the common "
+    + "case and says so; it cannot prevent it.",
     "The chain shows that you published a message and in what order. The timing defence hides "
     + "which stored object holds the text; it does not hide that you sent one.",
     "The pool's auditor holds an escrowed viewing key you did not choose and cannot replace. "

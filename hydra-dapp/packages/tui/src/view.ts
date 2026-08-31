@@ -212,6 +212,11 @@ function identity(m: Model, size: Size, height: number): string[] {
       + "no passphrase, no keychain, no hardware token. anyone who reads that file reads every "
       + "past and future conversation. this is a client for a devnet and a testnet.",
       size.cols - 4),
+    "",
+    ...note("that file also holds every message you have sent or read, as text. it does not "
+      + "widen who can read them — anyone with the seed could fetch and open them anyway — but "
+      + "it means the words are there without any work, and deleting them from that file is the "
+      + "only way not to have them.", size.cols - 4),
   ];
   return box(lines, { width: size.cols, height, title: "identity" });
 }

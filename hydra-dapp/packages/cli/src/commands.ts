@@ -34,7 +34,7 @@ import {
 import type { Secret } from "../../identity/src/domains.ts";
 import type { Chain } from "./chain.ts";
 import { STATE_FILE } from "./state.ts";
-import type { State, ChannelState } from "./state.ts";
+import type { State, ChannelState, ReceivedMessage } from "./state.ts";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 const unhex = (s: string) => new Uint8Array(Buffer.from(s, "hex"));
@@ -195,7 +195,9 @@ export const fingerprint = (bundle: Bundle): string =>
 const remember = (
   state: State, name: string, material: Uint8Array, peer: string, role: ChannelState["role"],
 ): void => {
-  const entry: ChannelState = { materialHex: hex(material), peer, role, nextSeq: 0 };
+  const entry: ChannelState = {
+    materialHex: hex(material), peer, role, nextSeq: 0, readTo: 0, history: [],
+  };
   state.channels[name] = entry;
 };
 
@@ -322,6 +324,13 @@ export async function sendMessage(
 
   const txHash = await chain.publish(outgoing.calldata);
   entry.nextSeq = seq + 1;
+  // Recorded here rather than read back later: a client already knows what it sent, and asking
+  // the vault for its own words costs a whole direction's worth of candidate ids for something
+  // it has in hand. The event index is read back from the chain so it matches what the reader
+  // will compute — `readChannel` orders by it, and each direction counts sequences from zero.
+  entry.history.push({
+    id: outgoing.blobId, seq, text, mine: true, at: (await chain.events()).length - 1,
+  });
 
   state.pending.push({
     channel: name, id: outgoing.blobId,
@@ -423,29 +432,78 @@ export async function flush(
 // ---------------------------------------------------------------------------
 
 /**
- * Read a channel: every event on chain, every plausible sequence number, one batched fetch, in
- * BOTH directions.
+ * Read a channel: what is new since last time, merged into what is already known.
  *
- * THE COST OF UNLINKABILITY IS QUADRATIC, and it is worth naming rather than hiding. A pointer
- * carries no channel and no sequence — that is the whole point, and `i3-timeline-join.test.ts`
- * is about it — so a reader cannot tell which events are theirs. `recoverBlobId` is an
- * unmasking, not a test: it returns a plausible id for any pointer and any seq. So the reader
- * computes a candidate id for every (event, seq, direction) triple and asks the vault for all of
- * them; the ones that exist and then open under one of the two channel keys are the messages.
+ * THE COST OF UNLINKABILITY IS QUADRATIC, and that is the feature. A pointer carries no channel
+ * and no sequence number — `i3-timeline-join.test.ts` is about exactly that — so a reader cannot
+ * tell which chain events are theirs. `recoverBlobId` is an unmasking, not a test: it returns a
+ * plausible id for any pointer and any sequence. So the reader computes a candidate id per
+ * (event, sequence, direction) triple and asks for all of them at once, and the ones that exist
+ * and then open are the messages. That batch is ALSO the padded read the `read.target` guarantee
+ * requires, so the work and the defence are the same work.
  *
- * That is `events × seq × 2` ids for one conversation. A channel hint in the event would collapse
- * it to linear and would be exactly the linkage the design refuses, so the cost is the feature.
- * What makes it affordable in practice is that the candidate set is ALSO the padded read batch
- * `read.target` requires — the work and the defence are the same work.
+ * REPLAYING THE WHOLE CHAIN EVERY TIME IS NOT THE FEATURE, and it killed conversations. Measured
+ * before this changed: at 35 messages the client asked for 4800 ids in a 323 KiB request against
+ * a vault that accepts 257 KiB, and every read after that failed. The product had a message
+ * limit and nobody had counted it.
+ *
+ * So three things bound the work, and none of them is the length of the conversation:
+ *
+ *   - **events**: only those after `readTo`, plus a fixed tail. The tail is not optional — an
+ *     upload is scheduled up to eight block intervals AFTER its own chain event, so an event
+ *     seen on one read may have nothing behind it until the next.
+ *   - **sequences**: only the ones not already in `history`. A sequence already opened is a
+ *     sequence there is no reason to ask about again.
+ *   - **directions**: still both, so that a second client running on this identity is visible
+ *     (`foreignSends`). Our own messages are recorded at send time, so this is a cross-check
+ *     rather than the source of the transcript.
  */
-export type Received = {
-  readonly seq: number;
-  readonly text: string;
-  /** True for messages this client sent. A transcript that cannot say who spoke is not one. */
-  readonly mine: boolean;
-  /** The index of the chain event that carried it — the one ordering both ends agree on. */
-  readonly at: number;
-};
+export type Received = ReceivedMessage;
+
+/**
+ * How many events back to look again on every read.
+ *
+ * Because an upload lands after its event by design. Too small and a message is missed until
+ * something else provokes a read; too large and every read pays for the whole tail. Sixteen is
+ * two jitter windows' worth of this channel's own events and it is a guess — the honest fix
+ * would re-scan by BLOCK NUMBER, which needs the chain interface to return one.
+ */
+export const RESCAN_EVENTS = 16;
+
+/**
+ * Ask the vault for a set of ids, in as many requests as it takes.
+ *
+ * One request was the design and it has a hard limit: the vault accepts 257 KiB and an incremental
+ * read still exceeds it when a client is CATCHING UP. A client that has been offline for a
+ * hundred events asks about all hundred at once, and the request is refused — so "do not read for
+ * a while" was a way to lose a conversation permanently, which is worse than the ceiling this
+ * replaced.
+ *
+ * WHAT SPLITTING COSTS. The operator sees several read batches where it saw one. Each is still at
+ * least `MIN_READ_BATCH` wide and each still holds a channel's candidate set, so the disclosure
+ * is the one already published as `read.channelSet` — a batch is a channel — arriving in pieces
+ * rather than a new one. What it does add is a count: several batches back to back say "this
+ * client has been away", which a single batch did not.
+ */
+async function fetchIds(
+  state: State,
+  ids: readonly string[],
+  fetchImpl: typeof fetch,
+): Promise<Record<string, string>> {
+  // Sized by the encoded length rather than by a count, because that is what the vault limits.
+  // A margin, since JSON adds punctuation this does not model exactly.
+  const perId = ids.length ? JSON.stringify(ids).length / ids.length : 1;
+  const chunk = Math.max(MIN_READ_BATCH, Math.floor((MAX_BODY * 0.9) / perId));
+  const out: Record<string, string> = {};
+  for (let i = 0; i < ids.length; i += chunk) {
+    const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}`, {
+      method: "POST", body: JSON.stringify(ids.slice(i, i + chunk)),
+    });
+    if (!res.ok) throw new Error(`the vault refused the read: ${await res.text()}`);
+    Object.assign(out, (await res.json() as { found: Record<string, string> }).found);
+  }
+  return out;
+}
 
 export async function readChannel(
   state: State,
@@ -453,62 +511,81 @@ export async function readChannel(
   name: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Received[]> {
+  const entry = state.channels[name];
   const mine = sending(state, name);
   const theirs = receiving(state, name);
   const events = await chain.events();
-  const seqs = Array.from({ length: Math.max(events.length, MIN_READ_BATCH) }, (_, i) => i);
 
-  const candidates = events.flatMap((e, at) =>
-    seqs.map((seq) => ({ seq, at, pointer: feltToPointer(e.data[0]) })));
+  const from = Math.max(0, entry.readTo - RESCAN_EVENTS);
+  const fresh = events.slice(from);
 
-  // Both directions, because a conversation is two of them and the ids do not overlap. It
-  // doubles the batch, which is the read defence paying for itself: the padding a lone reader
-  // would have had to invent is now other people's real traffic.
-  const ids = [...new Set([...readSet(mine, candidates), ...readSet(theirs, candidates)])];
+  /**
+   * The sequence numbers still worth asking about, per direction.
+   *
+   * Bounded by the BACKLOG, not by a constant, and that distinction cost a silent data loss. The
+   * first version added a fixed sixteen to the highest sequence already known, which is right for
+   * a client that keeps up and wrong for one catching up: across a hundred unread events the
+   * other end may have sent a hundred messages, and the sequences past the bound were never asked
+   * for and never asked for again, because `readTo` had moved past their events. Measured: a
+   * hundred messages sent, **seventy-four** read, no error anywhere.
+   *
+   * One event can carry at most one message, so the number of fresh events IS the bound on how
+   * many either end can have sent since the last read. Catching up is therefore expensive and
+   * keeping up is cheap, which is the right way round.
+   */
+  const wanted = (isMine: boolean): number[] => {
+    const known = new Set(entry.history.filter((h) => h.mine === isMine).map((h) => h.seq));
+    const top = Math.max(MIN_READ_BATCH, ...[...known].map((n) => n + 1)) + fresh.length;
+    // THEIR direction: only what is missing. A sequence already opened is one there is no reason
+    // to ask about again, and this is what keeps a steady-state read flat.
+    if (!isMine) return Array.from({ length: top }, (_, i) => i).filter((n) => !known.has(n));
 
-  const found = new Map<string, { seq: number; at: number; mine: boolean }>();
-  for (const c of candidates) {
-    found.set(receive(mine, c.pointer, c.seq), { seq: c.seq, at: c.at, mine: true });
-    found.set(receive(theirs, c.pointer, c.seq), { seq: c.seq, at: c.at, mine: false });
-  }
+    // OUR direction: a window around where this client is, INCLUDING sequences it already holds.
+    // That is the whole of the second-client check (`foreignSends`) — another client on the same
+    // identity sends at sequences you have used, so "already known" and "already asked" are
+    // different questions. It is a window rather than the whole history because asking about
+    // every past sequence on every read makes the batch grow with the conversation again.
+    //
+    // WHAT THE WINDOW MISSES, said plainly: a second client that forked long ago and has sent
+    // many more messages than this one has drifted outside it and will not be noticed. Both
+    // clients start from one state file and count up, so in practice they stay close; a client
+    // that has been used heavily on one device and lightly on another is the case that escapes.
+    const low = Math.max(0, entry.nextSeq - RESCAN_EVENTS);
+    return Array.from({ length: top - low }, (_, i) => low + i);
+  };
 
-  const body = JSON.stringify(ids);
-  // Checked here so the failure names its own cause. The vault answers "body too large", which
-  // is true and unhelpful: what actually happened is that a channel grew until its candidate
-  // set times its decoy set times its two directions stopped fitting in one request.
-  if (body.length > MAX_BODY) {
-    throw new Error(
-      `this channel now needs ${ids.length} ids in one read (${Math.round(body.length / 1024)} KiB), `
-      + `and the vault accepts ${Math.round(MAX_BODY / 1024)} KiB. Reading is quadratic in the `
-      + "number of chain events because a pointer names no channel; a client that keeps up with "
-      + "a conversation rather than replaying it from block zero does not hit this.");
-  }
-  const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}`, {
-    method: "POST", body,
-  });
-  if (!res.ok) throw new Error(`the vault refused the read: ${await res.text()}`);
-  const { found: blobs } = await res.json() as { found: Record<string, string> };
+  const build = (isMine: boolean) =>
+    fresh.flatMap((e, i) =>
+      wanted(isMine).map((seq) => ({ seq, at: from + i, pointer: feltToPointer(e.data[0]) })));
 
-  const out: Received[] = [];
-  for (const [id, b64] of Object.entries(blobs)) {
-    const bytes = new Uint8Array(Buffer.from(b64, "base64"));
-    const where = found.get(id);
-    if (!where) continue;
+  const forMine = build(true);
+  const forTheirs = build(false);
+  const ids = [...new Set([...readSet(mine, forMine), ...readSet(theirs, forTheirs)])];
+
+  const where = new Map<string, { seq: number; at: number; mine: boolean }>();
+  for (const c of forMine) where.set(receive(mine, c.pointer, c.seq), { ...c, mine: true });
+  for (const c of forTheirs) where.set(receive(theirs, c.pointer, c.seq), { ...c, mine: false });
+
+  const found = await fetchIds(state, ids, fetchImpl);
+
+  const seen = new Set(entry.history.map((h) => h.id));
+  for (const [id, b64] of Object.entries(found)) {
+    const at = where.get(id);
+    if (!at || seen.has(id)) continue;
     try {
-      // A decoy or another channel's blob fails here, which is what GCM's tag is for. Silence
-      // is correct: a reader that reported them would be reporting on traffic it cannot read.
-      const channel = where.mine ? mine : theirs;
-      out.push({
-        seq: where.seq,
-        at: where.at,
-        mine: where.mine,
-        text: new TextDecoder().decode(plaintextOf(openForChannel(channel, bytes))),
-      });
+      // A decoy or another channel's blob fails here, which is what GCM's tag is for. Silence is
+      // correct: a reader that reported them would be reporting on traffic it cannot read.
+      const text = new TextDecoder().decode(
+        plaintextOf(openForChannel(at.mine ? mine : theirs, new Uint8Array(Buffer.from(b64, "base64")))));
+      entry.history.push({ id, seq: at.seq, text, mine: at.mine, at: at.at });
+      seen.add(id);
     } catch { /* not ours */ }
   }
-  // Ordered by the chain, not by sequence number: each direction counts from zero, so sequence
-  // alone interleaves two conversations wrongly. The event order is the one both ends see.
-  return out.sort((a, b) => a.at - b.at || Number(a.mine) - Number(b.mine) || a.seq - b.seq);
+  entry.readTo = events.length;
+
+  // Ordered by the chain, not by sequence: each direction counts from zero, so sequence alone
+  // interleaves the two conversations wrongly. The event order is the one both ends see.
+  return [...entry.history].sort((a, b) => a.at - b.at || Number(a.mine) - Number(b.mine) || a.seq - b.seq);
 }
 
 /**
