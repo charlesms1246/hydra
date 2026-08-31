@@ -1,0 +1,14 @@
+{
+  "name": "@hydra/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "The marketing site. Static, no dependencies, and it ships no JavaScript — see build.ts.",
+  "scripts": {
+    "build": "node build.ts",
+    "test": "node --test test/*.test.ts"
+  }
+}
