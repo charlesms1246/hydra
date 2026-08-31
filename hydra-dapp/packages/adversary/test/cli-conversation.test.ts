@@ -121,19 +121,19 @@ test("cover goes up by the same route as a message, in the same size bucket", as
   }
 });
 
-test("within a flush, cover USUALLY goes up before the message — and the residual is measured", async () => {
-  // Queue order would put the message first every time, because that is the order `send`
-  // creates them in. Scheduled order is what matters, and the cover for a message is scheduled
-  // to start before that message's own chain event.
+test("the real message is the earliest upload about a fifth of the time, and that is chance", async () => {
+  // THIS TEST USED TO CLAIM THE OPPOSITE, and the claim was about a schedule rather than about a
+  // client. `coverPlan` puts half of a message's decoys BEFORE that message's own chain event, so
+  // "the earliest upload is the message" was wrong about 98% of the time — on paper. No client
+  // can perform it: a client learns the message exists when the user sends it, and by then those
+  // slots are in the past. `commands.ts` now redraws a past-due decoy from the same window the
+  // message's own upload is drawn from, because the alternative — uploading them all at once —
+  // is a burst that `adversary/src/matchers.ts` `after-the-burst` reads at 0.467.
   //
-  // USUALLY, not always, and this test asserted "always" until it failed one run in ten. The
-  // real upload is uniform over [event, event + W); a decoy is uniform over [event - W,
-  // event + W). Every decoy landing after the real one is a real event with probability
-  // (1/2)^rate * 1/(rate + 1) — about 1 in 80 at the shipped defaults — and on those messages
-  // the cheapest possible attack, "the earliest upload is the first message", is right.
-  //
-  // Asserting a distribution as a certainty is how a residual gets hidden. The number is small
-  // and it is not zero, so it is measured here and stated rather than asserted away.
+  // So the honest figure is chance among the objects that share the window: about a fifth to a
+  // third, depending on how many of the message's decoys the plan put later. It is measured here
+  // rather than asserted, and `adversary/test/resident-flush.test.ts` is where the comparison
+  // lives.
   const { url, server, invites } = await vault(4000);
   try {
     const chain = memoryChain();
@@ -142,25 +142,26 @@ test("within a flush, cover USUALLY goes up before the message — and the resid
     const TRIALS = 300;
     for (let t = 0; t < TRIALS; t++) {
       const alice = init({ vaultUrl: url, blockMs: BLOCK, invites: [...invites] });
-      const message = open(alice, "with-bob", publishBundle(init({ invites: [] }), 0));
-      void message;
+      open(alice, "with-bob", publishBundle(init({ invites: [] }), 0));
       const sent = await sendMessage(alice, chain, "with-bob", "x", T0);
       const realId = alice.pending.find((p) => p.real)!.id;
       const due = [...alice.pending].sort((a, b) => a.uploadAt - b.uploadAt);
       assert.ok(sent.uploadAt > T0);
+      // Nothing is queued in the past any more. A single past-due object is a burst of one; four
+      // of them, on every message, is the burst.
+      assert.ok(due.every((p) => p.uploadAt >= T0),
+        "an upload is queued for a moment that has already gone");
       positions.add(due.findIndex((p) => p.id === realId));
       if (due[0].id === realId) firstWasReal++;
     }
     const rate = firstWasReal / TRIALS;
-    assert.ok(rate < 0.05,
-      `the real message was the earliest upload ${(rate * 100).toFixed(1)}% of the time; `
-      + "above a few percent means the lead has stopped working, not that this draw was unlucky");
+    assert.ok(rate > 0.1 && rate < 0.45,
+      `the real message was the earliest upload ${(rate * 100).toFixed(1)}% of the time; outside `
+      + "0.1–0.45 means the redraw is no longer putting cover in the message's own window");
 
-    // The randomness is asserted on the POSITIONS, not on the rare event. The first version
-    // required at least one occurrence of a 1-in-80 outcome across 300 trials, which is itself
-    // absent about 2% of the time — a test that fails one run in fifty because the thing it
-    // measures is rare. Measuring a distribution and then asserting a single draw from it is
-    // the same mistake this file's own comment warns about, made in the assertion below it.
+    // The randomness is asserted on the POSITIONS, not on a rare event: requiring at least one
+    // occurrence of a 1-in-80 outcome across 300 trials is itself absent about 2% of the time,
+    // which is a test that fails one run in fifty because the thing it measures is rare.
     assert.ok(positions.size > 3,
       `the real upload landed in ${positions.size} distinct positions across ${TRIALS} sessions; `
       + "if it is always in the same place the schedule has stopped being random");

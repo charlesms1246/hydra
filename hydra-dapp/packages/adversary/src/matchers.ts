@@ -115,7 +115,62 @@ const firstIsFirst: Matcher = {
   },
 };
 
-export const MATCHERS: readonly Matcher[] = [greedy, unique, ordered, firstIsFirst];
+/**
+ * Throw away everything that arrived in a crowd, then take the nearest of what is left.
+ *
+ * Written for the resident client and it belongs here rather than in that test, because a
+ * strategy an operator can use against one client is a strategy they can use against all of
+ * them, and `best` is a maximum over strategies.
+ *
+ * What it exploits: a client only learns a message exists when the user sends it, so every decoy
+ * the schedule wanted to put BEFORE the chain event is already past due, and a client that
+ * honours the schedule promptly uploads all of them back to back. The message itself still waits
+ * for its own slot. So the crowd is cover and whatever went up alone is the message — measured
+ * at **0.347** against a one-second-tick client, versus **0.240** for the schedule as written.
+ * The client that tried hardest to obey was half again as easy to read.
+ *
+ * A CROWD IS PROXIMITY, NOT EQUALITY, and the first version of this got that wrong. Uploads are
+ * sequential HTTP requests, so a burst is a run of arrivals milliseconds apart rather than a set
+ * sharing one timestamp; grouping on exact equality found no crowd at all and reported the
+ * defence intact. The threshold is taken from the session itself — a tenth of the median gap —
+ * so nothing here needs to know the block interval or the jitter window.
+ */
+const afterTheBurst: Matcher = {
+  name: "after-the-burst",
+  why: "discard runs of uploads that arrive far closer together than the session's own rhythm, then take the nearest — a burst is a client catching up, not a message",
+  run: (events, uploads) => {
+    const sorted = [...uploads].map((u, i) => ({ u, i })).sort((a, b) => a.u.t - b.u.t);
+    const gaps = sorted.slice(1).map((x, i) => x.u.t - sorted[i].u.t).sort((a, b) => a - b);
+    const median = gaps[Math.floor(gaps.length / 2)] ?? 0;
+    const close = median / 10;
+
+    const solo: Arrival[] = [];
+    let run: typeof sorted = [];
+    const flush = () => {
+      if (run.length === 1) solo.push(run[0].u);
+      run = [];
+    };
+    for (const entry of sorted) {
+      if (run.length && entry.u.t - run[run.length - 1].u.t > close) flush();
+      run.push(entry);
+    }
+    flush();
+
+    const hits = new Array(events.length).fill(0);
+    for (let i = 0; i < events.length; i++) {
+      let best = -1;
+      let gap = Infinity;
+      for (let j = 0; j < solo.length; j++) {
+        const d = Math.abs(solo[j].t - events[i]);
+        if (d < gap) { gap = d; best = j; }
+      }
+      if (solo[best]?.real && solo[best].seq === i) hits[i] = 1;
+    }
+    return hits;
+  },
+};
+
+export const MATCHERS: readonly Matcher[] = [greedy, unique, ordered, firstIsFirst, afterTheBurst];
 
 export type Score = {
   /** How often message 0 was identified — the structural leak. */

@@ -88,15 +88,27 @@ test("cover defeats every strategy, and the max is what says so", () => {
     `the best first-message attack against cover is ${defended.first.first.toFixed(3)}`);
 });
 
-test("the max is taken per metric, and today one strategy happens to win both", () => {
-  // The max is per metric because the winners CAN differ, not because they currently do. On
-  // these sessions greedy wins both, which I asserted the opposite of on a misread of an
-  // earlier ad-hoc run — recorded here so the next person does not have to re-derive it.
+test("the max is taken per metric, and the winner can change under a new strategy", () => {
+  // The max is per metric because the winners CAN differ, not because they currently do — and
+  // this is now the second time the answer has moved. Greedy won both until `after-the-burst`
+  // was added for the resident client, and it edges greedy on the first message here by about
+  // **0.002**: cover outnumbers messages four to one, so discarding dense runs of arrivals
+  // removes decoys slightly more often than it removes messages. A hair, on a model with no
+  // bursts in it at all — which is exactly why the harness reports a maximum instead of a
+  // strategy.
   const defended = best(sessions(true));
-  assert.equal(defended.first.by, "greedy");
-  assert.equal(defended.mean.by, "greedy");
-  // What must hold regardless: the reported max is at least every individual strategy's score.
   const each = perMatcher(sessions(true));
+  for (const metric of ["first", "mean"] as const) {
+    const by = defended[metric].by;
+    assert.ok(["greedy", "after-the-burst"].includes(by),
+      `${by} now wins the ${metric}; if that is a new strategy, say what it exploits`);
+    // And it wins by nothing. Naming a winner without the margin is how a 0.002 difference gets
+    // read as a strategy being better, which is the mistake this whole file is about.
+    const margin = Math.abs(each.greedy[metric] - each["after-the-burst"][metric]);
+    assert.ok(margin < 0.01,
+      `${by} leads by ${margin.toFixed(3)} on the ${metric} — that is a finding, not a tie`);
+  }
+  // What must hold regardless: the reported max is at least every individual strategy's score.
   for (const [name, score] of Object.entries(each)) {
     assert.ok(defended.first.first >= score.first - 1e-9, `${name} beat the reported first-message max`);
     assert.ok(defended.mean.mean >= score.mean - 1e-9, `${name} beat the reported mean max`);

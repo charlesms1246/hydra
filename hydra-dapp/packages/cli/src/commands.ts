@@ -22,6 +22,7 @@ import { createStore, mintOneTime, rotate, bundleFrom, oneTimeRemaining }
 import { postPrekey, collectPrekeys, httpTransport } from "../../handshake/src/inbox.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex } from "../../channel/src/cover.ts";
+import { jitterWindowMs } from "../../channel/src/schedule.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
 import { openForChannel, plaintextOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
 import { MAX_BODY } from "../../vault-server/src/http.ts";
@@ -264,6 +265,7 @@ export async function sendMessage(
   });
 
   const decoys = coverPlan([{ at: now, bucket: outgoing.body.length }], config, random);
+  const draw = random ?? Math.random;
   for (const d of decoys) {
     // Global index, from the message's sequence — `coverPlan` numbers within its own call and
     // this client calls it once per message. The recipient derives the same number from the
@@ -272,7 +274,27 @@ export async function sendMessage(
     state.pending.push({
       channel: name, id: coverId(body),
       bodyB64: Buffer.from(body).toString("base64"),
-      uploadAt: d.at, real: false,
+      // A DECOY WHOSE SLOT HAS ALREADY PASSED GETS A NEW ONE, and this is not tidiness.
+      //
+      // `coverPlan` schedules half of a message's cover BEFORE that message's own chain event,
+      // which is what makes a decoy indistinguishable from the real upload by distance from the
+      // event. No client can execute that: it learns the message exists when the user sends it,
+      // and the slot is already in the past. Leaving `d.at` there means every past-due decoy is
+      // due at once, so they all go up at the same instant — and `adversary/src/matchers.ts`
+      // `after-the-burst` reads that straight off: discard the crowd, and what went up alone is
+      // the message. Measured at **0.347** against a resident client, versus 0.240 for the
+      // schedule as written — honouring the schedule promptly was half again as bad as the
+      // schedule itself.
+      //
+      // So it is redrawn from the window the MESSAGE's own upload is drawn from. The lead is
+      // gone — it was never executable — and what replaces it is cover drawn from the same
+      // distribution as the thing it covers. What that buys is the anonymity set the rate was
+      // always supposed to give: every decoy now lands in its own message's window, so the set
+      // is exactly `coverRate + 1` and the operator is right **one time in five** — the floor
+      // `claims/src/statement.ts` publishes, achieved by a client rather than by a plan.
+      // `adversary/test/resident-flush.test.ts` measures it.
+      uploadAt: d.at < now ? now + draw() * jitterWindowMs(config) : d.at,
+      real: false,
     });
   }
   return { txHash, uploadAt: outgoing.uploadAt, decoys: decoys.length };
