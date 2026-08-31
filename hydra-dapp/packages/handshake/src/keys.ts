@@ -23,10 +23,19 @@
  * do — so the signing key is separate and the bundle carries both. The cost is one more 32-byte
  * value to publish and to fingerprint.
  *
- * EVERYTHING IS DERIVED, not stored. A prekey is `subKey(vaultRoot, label)`, so a recipient
- * regenerates any of them from the root alone and there is no private key file to lose, leak or
- * fail to erase. The exception is the initiator's ephemeral key, which is random by definition:
- * derived ephemerals are not ephemeral, and forward secrecy is exactly what it buys.
+ * IDENTITY IS DERIVED; PREKEYS ARE NOT, AND THAT CHANGED FOR A REASON. Deriving everything from
+ * the root was operationally lovely — nothing to lose, nothing to erase, republish from a backup
+ * of one seed — and it meant `signedPrekey(root, epoch)` regenerated forever, so rotation had
+ * nothing to delete. Measured: a compromised root plus a recorded transcript recovered every
+ * past channel secret. **Deleting a private is what forward secrecy is.**
+ *
+ * So prekeys are minted from randomness and kept in `prekeys.ts`, which destroys them on
+ * rotation and on use. The derived `signedPrekey` and `oneTimePrekey` below remain for test
+ * vectors and for the parity checks that need a deterministic bundle; production paths go
+ * through the store. The identity keys stay derived, because they ARE the identity and erasing
+ * them is not rotation.
+ *
+ * The initiator's ephemeral is random by definition: derived ephemerals are not ephemeral.
  */
 
 import { createPrivateKey, createPublicKey, diffieHellman, sign, verify } from "node:crypto";
@@ -42,6 +51,18 @@ export const KEY_BYTES = 32;
 
 const privateFrom = (prefix: Buffer, seed: Uint8Array): KeyObject =>
   createPrivateKey({ key: Buffer.concat([prefix, Buffer.from(seed)]), format: "der", type: "pkcs8" });
+
+/**
+ * A key from raw bytes somebody else is keeping.
+ *
+ * `prekeys.ts` mints prekey privates from randomness and stores them so rotation can DELETE
+ * them, which is what forward secrecy is. Deriving them from the root, as the functions below
+ * still do for identity, leaves nothing to delete.
+ */
+export const privateFromSeed = (seed: Uint8Array, kind: "x25519" | "ed25519"): KeyObject => {
+  if (seed.length !== KEY_BYTES) throw new Error(`a key seed is ${KEY_BYTES} bytes`);
+  return privateFrom(kind === "x25519" ? X25519_PKCS8 : ED25519_PKCS8, seed);
+};
 
 /** The raw 32 bytes of a public key, which is what a bundle publishes. */
 export function rawPublic(key: KeyObject): Uint8Array {

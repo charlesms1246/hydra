@@ -16,7 +16,9 @@ import { randomBytes } from "node:crypto";
 
 import { send as prepare, receive } from "../../client/src/session.ts";
 import { readSet, select, MIN_READ_BATCH } from "../../client/src/read.ts";
-import { initiate, respond, bundleFor } from "../../handshake/src/x3dh.ts";
+import { initiate, respondWith } from "../../handshake/src/x3dh.ts";
+import { createStore, mintOneTime, rotate, bundleFrom, oneTimeRemaining }
+  from "../../handshake/src/prekeys.ts";
 import { postPrekey, collectPrekeys, httpTransport } from "../../handshake/src/inbox.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex } from "../../channel/src/cover.ts";
@@ -68,6 +70,9 @@ export function init(overrides: Partial<State> = {}): State {
     account: "",
     blockMs: 30_000,
     seedHex: hex(entropyFrom(fromOsRandom(32))),
+    // Twenty one-time keys, so twenty strangers can open a conversation before replay
+    // resistance degrades. Minting more is `hydra rotate`.
+    prekeys: (() => { const s = createStore(); mintOneTime(s, 20); return s; })(),
     invites: [],
     channels: {},
     pending: [],
@@ -75,9 +80,34 @@ export function init(overrides: Partial<State> = {}): State {
   };
 }
 
-/** Everything a stranger needs to open a conversation with you while you are offline. */
-export function publishBundle(state: State, epoch = 0, oneTimeIndex?: number): Bundle {
-  return bundleFor(vaultRootOf(state), epoch, oneTimeIndex);
+/**
+ * Everything a stranger needs to open a conversation with you while you are offline.
+ *
+ * The epoch comes from the store rather than the caller: publishing an epoch whose private you
+ * have deleted would advertise a prekey you cannot answer.
+ */
+export function publishBundle(state: State, oneTimeIndex?: number): Bundle {
+  return bundleFrom(vaultRootOf(state), state.prekeys, oneTimeIndex);
+}
+
+/** The next unused one-time prekey, or undefined once they run out. */
+export const nextOneTime = (state: State): number | undefined => {
+  const keys = Object.keys(state.prekeys.oneTime).map(Number).sort((a, b) => a - b);
+  return keys[0];
+};
+
+/**
+ * Rotate the signed prekey, destroying the old private.
+ *
+ * Returns what it made unanswerable: anyone who fetched the old bundle and has not yet had
+ * their prekey message collected is now permanently unable to reach you on it. That is the
+ * cost of forward secrecy and the client says it out loud rather than letting it look like a
+ * delivery failure.
+ */
+export function rotatePrekey(state: State): { retired: number; oneTimeLeft: number } {
+  const retired = rotate(state.prekeys);
+  if (oneTimeRemaining(state.prekeys) < 5) mintOneTime(state.prekeys, 20);
+  return { retired, oneTimeLeft: oneTimeRemaining(state.prekeys) };
 }
 
 /**
@@ -168,7 +198,7 @@ export async function collect(
 /** Bob's side. */
 export function accept(state: State, name: string, message: PrekeyMessage): { usedOneTimePrekey: boolean } {
   if (state.channels[name]) throw new Error(`${name} already exists — pick another name`);
-  const result = respond(vaultRootOf(state), message);
+  const result = respondWith(vaultRootOf(state), state.prekeys, message);
   remember(state, name, result.material, hex(message.identityKey).slice(0, 32));
   return { usedOneTimePrekey: result.agreed.usedOneTimePrekey };
 }

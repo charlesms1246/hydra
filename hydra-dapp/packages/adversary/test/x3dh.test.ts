@@ -19,7 +19,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { initiate, respond, bundleFor, verifyBundle } from "../../handshake/src/x3dh.ts";
+import { initiate, respond, respondWith, bundleFor, verifyBundle } from "../../handshake/src/x3dh.ts";
+import { createStore, mintOneTime, rotate, bundleFrom, oneTimeRemaining }
+  from "../../handshake/src/prekeys.ts";
 import type { PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { identityDh, rawPublic, signedPrekey, prekeyStatement, LABELS }
   from "../../handshake/src/keys.ts";
@@ -178,10 +180,58 @@ test("bundles regenerate from the root, so there is no private key at rest", () 
   assert.notDeepEqual(bundleFor(bob, 0).identityKey, bundleFor(bob, 0).signingKey);
 });
 
-test("THE COST: root compromise retroactively opens every past handshake", () => {
-  // Signal deletes a signed prekey's private half when the epoch rotates, and that deletion is
-  // what forward secrecy is. Here prekeys are DERIVED, so `signedPrekey(root, 0)` regenerates
-  // for as long as the root exists — there is nothing to delete.
+test("FIXED: a rotated epoch cannot be reopened, even holding the root", () => {
+  // The correction to the test below. Prekeys used to be derived, so `signedPrekey(root, 0)`
+  // regenerated forever and rotation had nothing to delete; the measurement under it is what
+  // that cost. `prekeys.ts` mints them from randomness and destroys them, so the root alone is
+  // no longer enough.
+  const store = createStore();
+  mintOneTime(store, 2);
+  const bundle = bundleFrom(bob, store, 0);
+  const opening = initiate(alice, bundle);
+
+  // Answerable now.
+  const before = respondWith(bob, store, opening.message);
+  assert.equal(key(before.channel), key(opening.channel));
+
+  // Rotate, and the same message is dead — with the root in hand, and the transcript in hand.
+  const fresh = createStore();
+  mintOneTime(fresh, 2);
+  const again = initiate(alice, bundleFrom(bob, fresh, 0));
+  rotate(fresh);
+  assert.throws(() => respondWith(bob, fresh, again.message), /no private key left for epoch 0/);
+});
+
+test("a one-time prekey is spent, so a replayed first message dies", () => {
+  // Replay resistance moves from "the caller should track it" to "the key is gone". `respond`
+  // deliberately left this to the caller because consumption is state; the store IS that state,
+  // so the module that owns it can enforce it.
+  const store = createStore();
+  mintOneTime(store, 1);
+  const opening = initiate(alice, bundleFrom(bob, store, 0));
+  assert.equal(key(respondWith(bob, store, opening.message).channel), key(opening.channel));
+  assert.throws(() => respondWith(bob, store, opening.message), /one-time 0/);
+});
+
+test("the identity keys are NOT deleted, because they are the identity", () => {
+  // The split that makes the rest workable. Rotating a prekey is routine; erasing the identity
+  // would mean nobody could ever reach you again under the name they know.
+  const store = createStore();
+  const first = bundleFrom(bob, store, undefined);
+  rotate(store);
+  const second = bundleFrom(bob, store, undefined);
+  assert.deepEqual(second.identityKey, first.identityKey);
+  assert.deepEqual(second.signingKey, first.signingKey);
+  assert.notDeepEqual(second.signedPrekey, first.signedPrekey);
+  assert.equal(second.epoch, first.epoch + 1);
+  // And a rotated bundle still verifies, so contacts can keep using the published identity.
+  assert.doesNotThrow(() => verifyBundle(second));
+});
+
+test("THE COST it replaced: with DERIVED prekeys, root compromise opened everything", () => {
+  // Kept as the measurement that forced `prekeys.ts` into existence, and still true of the
+  // DERIVED path this exercises: `signedPrekey(root, 0)` regenerates for as long as the root
+  // exists, so there is nothing to delete. Production no longer uses it.
   //
   // Measured, not argued: an adversary who obtains bob's vault root long after the fact, plus
   // the prekey messages the vault operator saw go past, recovers every channel secret.

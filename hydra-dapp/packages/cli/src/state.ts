@@ -21,6 +21,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { PrekeyStore } from "../../handshake/src/prekeys.ts";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -57,6 +58,14 @@ export type State = {
   blockMs: number;
   /** The vault root. See the header. */
   seedHex: string;
+  /**
+   * Prekey privates, which are DELETED on rotation and on use.
+   *
+   * The one part of this file whose contents are supposed to disappear. Everything else here can
+   * be regenerated from the seed; these cannot, deliberately — see `handshake/src/prekeys.ts`,
+   * including what "deleted" honestly means when the file has already been written once.
+   */
+  prekeys: PrekeyStore;
   /**
    * Upload tokens, consumed one per object.
    *

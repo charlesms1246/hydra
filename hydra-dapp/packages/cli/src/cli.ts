@@ -17,6 +17,7 @@
  *     hydra invite NAME bundle.json               same, delivered through the vault
  *     hydra accept NAME prekey.json
  *     hydra collect                               accept whatever is waiting for you
+ *     hydra rotate                                destroy the old prekey; mint fresh ones
  *     hydra send NAME "text"                      publishes the pointer, queues the upload
  *     hydra flush                                 uploads what is due
  *     hydra read NAME
@@ -30,7 +31,7 @@
 import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
-  fingerprint, vaultRootOf,
+  fingerprint, vaultRootOf, rotatePrekey, nextOneTime,
 } from "./commands.ts";
 import { starknet, poolChain } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
@@ -107,10 +108,30 @@ switch (command) {
   }
 
   case "bundle": {
+    // The epoch is the store's, not the caller's: publishing one whose private you have deleted
+    // would advertise a prekey you cannot answer. A one-time key is picked automatically unless
+    // you name one, because a bundle without one has no replay resistance.
     const state = load();
-    const oneTime = flag("one-time");
-    console.log(encode(publishBundle(state, Number(flag("epoch", "0")),
-      oneTime === "" ? undefined : Number(oneTime))));
+    const named = flag("one-time");
+    const index = named === "" ? nextOneTime(state) : Number(named);
+    console.log(encode(publishBundle(state, index)));
+    if (index === undefined) {
+      console.error("no one-time prekeys left — this bundle has no replay resistance.");
+      console.error("run `hydra rotate` to mint more.");
+    }
+    break;
+  }
+
+  case "rotate": {
+    const state = load();
+    const { retired, oneTimeLeft } = rotatePrekey(state);
+    save(state);
+    console.log(`retired epoch ${retired}; the private for it is gone`);
+    console.log(`${oneTimeLeft} one-time prekeys available`);
+    console.log("");
+    console.log("anyone who fetched your old bundle and has not had their prekey message");
+    console.log("collected can no longer reach you on it. that is the point: the key that");
+    console.log("would have opened those conversations does not exist any more.");
     break;
   }
 
@@ -245,7 +266,8 @@ switch (command) {
     console.log("");
     console.log("what this client does NOT do:");
     console.log("  - it keeps your root key in a plaintext file (mode 0600, nothing else)");
-    console.log("  - prekeys are derived, so that key opens every past conversation too");
+    console.log(`  - ${nextOneTime(state) === undefined ? "no" : "some"} one-time prekeys left; `
+      + "a bundle without one has no replay resistance");
     console.log(state.controlUrl
       ? "  - the pool route hides your account from sender_address and leaves it in the\n"
         + "    calldata, and spends a little of your money per message"

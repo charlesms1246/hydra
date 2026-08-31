@@ -33,8 +33,12 @@
  */
 
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
-import { bundleFor, dh, ephemeral, identityDh, oneTimePrekey, rawPublic, signedPrekey, verifyBundle, KEY_BYTES }
-  from "./keys.ts";
+import {
+  bundleFor, dh, ephemeral, identityDh, oneTimePrekey, privateFromSeed, rawPublic, signedPrekey,
+  verifyBundle, KEY_BYTES,
+} from "./keys.ts";
+import { take } from "./prekeys.ts";
+import type { PrekeyStore } from "./prekeys.ts";
 import type { Bundle } from "./keys.ts";
 import { derive, rootSeed, entropyFrom, fromChannelWrap, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
@@ -167,6 +171,62 @@ export function initiate(
  * quietly tracked it would put the replay defence somewhere a second instance of the client
  * would not see. `respond` reports which index was used; refusing a repeat is the caller's job
  * and `x3dh.test.ts` asserts the shape of that.
+ */
+export function respondWith(
+  myVaultRoot: Secret<typeof VAULT_DOMAIN>,
+  store: PrekeyStore,
+  message: PrekeyMessage,
+): ReturnType<typeof respond> {
+  // The private halves come from the store, which DELETES them: a rotated epoch and a spent
+  // one-time key are both gone, and a message built against either can no longer be answered.
+  // That silence is forward secrecy working and is indistinguishable from a bug unless the
+  // client says so — `cli.ts` does.
+  const held = take(store, message.epoch, message.oneTimeIndex);
+  if (!held) {
+    throw new Error(
+      `no private key left for epoch ${message.epoch}`
+      + (message.oneTimeIndex === null ? "" : ` / one-time ${message.oneTimeIndex}`)
+      + ". It was rotated or already used, so this handshake can never be completed — which is "
+      + "what deleting the key was for.");
+  }
+  return respondUsing(myVaultRoot, held.signed, held.oneTime, message);
+}
+
+/**
+ * The arithmetic, given the privates.
+ *
+ * Split from the lookup so the store's deletion is the only way to lose a key: a caller cannot
+ * reach this with material the store has destroyed, because it has to pass the bytes in.
+ */
+export function respondUsing(
+  myVaultRoot: Secret<typeof VAULT_DOMAIN>,
+  signedSeed: Uint8Array,
+  oneTimeSeed: Uint8Array | null,
+  message: PrekeyMessage,
+): ReturnType<typeof respond> {
+  const spk = privateFromSeed(signedSeed, "x25519");
+  const ik = identityDh(myVaultRoot);
+  const parts = [
+    dh(spk, message.identityKey),
+    dh(ik, message.ephemeralKey),
+    dh(spk, message.ephemeralKey),
+  ];
+  if (oneTimeSeed) parts.push(dh(privateFromSeed(oneTimeSeed, "x25519"), message.ephemeralKey));
+  const agreed = agree(parts, oneTimeSeed !== null);
+  const material = open(agreed.secret, message.wrapped);
+  return {
+    channel: channelFrom(material, hex(message.identityKey)),
+    agreed,
+    oneTimeIndex: message.oneTimeIndex,
+    material,
+  };
+}
+
+/**
+ * The derived-prekey path, kept for test vectors and parity checks.
+ *
+ * Production goes through `respondWith`, because a key derived from the root is a key nobody
+ * can delete — see `prekeys.ts`.
  */
 export function respond(
   myVaultRoot: Secret<typeof VAULT_DOMAIN>,

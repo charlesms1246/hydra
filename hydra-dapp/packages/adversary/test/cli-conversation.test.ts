@@ -45,7 +45,7 @@ function pair(url: string, invites: string[]) {
   const alice = init({ vaultUrl: url, blockMs: BLOCK, invites: [...invites] });
   const bob = init({ vaultUrl: url, blockMs: BLOCK, invites: [...invites] });
   // Bob publishes a bundle while offline; alice never speaks to him to start the conversation.
-  const message = open(alice, "with-bob", publishBundle(bob, 0, 0));
+  const message = open(alice, "with-bob", publishBundle(bob, 0));
   accept(bob, "with-alice", message);
   return { alice, bob };
 }
@@ -142,7 +142,7 @@ test("within a flush, cover USUALLY goes up before the message — and the resid
     const TRIALS = 300;
     for (let t = 0; t < TRIALS; t++) {
       const alice = init({ vaultUrl: url, blockMs: BLOCK, invites: [...invites] });
-      const message = open(alice, "with-bob", publishBundle(init({ invites: [] }), 0, 0));
+      const message = open(alice, "with-bob", publishBundle(init({ invites: [] }), 0));
       void message;
       const sent = await sendMessage(alice, chain, "with-bob", "x", T0);
       const realId = alice.pending.find((p) => p.real)!.id;
@@ -220,7 +220,7 @@ test("both sides derive the same channel from names they chose separately", () =
   // key, and the two sides here deliberately pick different ones.
   const alice = init({ invites: [] });
   const bob = init({ invites: [] });
-  const message = open(alice, "with-bob", publishBundle(bob, 0, 0));
+  const message = open(alice, "with-bob", publishBundle(bob, 0));
   accept(bob, "with-alice", message);
   assert.equal(alice.channels["with-bob"].materialHex, bob.channels["with-alice"].materialHex);
   assert.notEqual(alice.seedHex, bob.seedHex);
@@ -231,12 +231,12 @@ test("a fingerprint covers both long-term keys", () => {
   // detectable, so a fingerprint that omitted it would match while an attacker chose which
   // prekeys the victim's contacts accepted.
   const bob = init({ invites: [] });
-  const bundle = publishBundle(bob, 0, 0);
+  const bundle = publishBundle(bob, 0);
   const fp = fingerprint(bundle);
   assert.equal(fp.length, 32);
   assert.ok(fp.includes(Buffer.from(bundle.identityKey).toString("hex").slice(0, 16)));
   assert.ok(fp.includes(Buffer.from(bundle.signingKey).toString("hex").slice(0, 16)));
-  assert.notEqual(fingerprint(publishBundle(init({ invites: [] }), 0, 0)), fp);
+  assert.notEqual(fingerprint(publishBundle(init({ invites: [] }), 0)), fp);
 });
 
 test("the seed is fresh every time, so two clients are two people", () => {
