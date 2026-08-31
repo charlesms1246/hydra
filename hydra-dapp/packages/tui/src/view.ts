@@ -100,6 +100,17 @@ const fieldBlock = (m: Model, cols: number): string[] =>
 const note = (text: string, cols: number): string[] =>
   wrap(text, cols).map((l) => paint(l, "gray"));
 
+/**
+ * A list item with a hanging indent.
+ *
+ * Only visible once the thing is on a terminal, which is why it was missing: rendered into a
+ * string array the disclosure list reads fine, and drawn at eighty columns every continuation
+ * line starts hard against the left border and the list stops looking like a list.
+ */
+const bullet = (text: string, cols: number, marker = "- "): string[] =>
+  wrap(text, cols - marker.length)
+    .map((l, i) => (i === 0 ? marker : " ".repeat(marker.length)) + l);
+
 // ---------------------------------------------------------------------------
 // Pages
 // ---------------------------------------------------------------------------
@@ -120,7 +131,8 @@ function chats(m: Model, size: Size, height: number): string[] {
 
   const messages = current ? m.transcript[current] ?? [] : [];
   const body = messages.length
-    ? messages.flatMap((msg) => wrap(`${String(msg.seq).padStart(3)}  ${msg.text}`, size.cols - listWidth - 4))
+    ? messages.flatMap((msg) =>
+      bullet(msg.text, size.cols - listWidth - 4, `${String(msg.seq).padStart(3)}  `))
     : note(current
       ? "nothing read yet. `r` fetches every chain event and asks the vault for every "
         + "candidate id at once — that batch IS the read defence, and it is why reading is "
@@ -197,8 +209,8 @@ function disclosure(m: Model, size: Size, height: number): string[] {
   const section = (title: string, claims: readonly { says: string; from: string }[]) => [
     paint(title, "bold"),
     ...claims.flatMap((c) => [
-      ...wrap(`- ${c.says}`, inner),
-      ...(m.cite ? wrap(`  ${c.from}`, inner).map((l) => paint(l, "gray")) : []),
+      ...bullet(c.says, inner),
+      ...(m.cite ? bullet(c.from, inner, "  ").map((l) => paint(l, "gray")) : []),
     ]),
     "",
   ];
