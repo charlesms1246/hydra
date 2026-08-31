@@ -29,10 +29,9 @@ const BLOCK = 30_000;
 const MESSAGES = 12;
 const CHANCE = 1 / MESSAGES;
 const cfg = { blockMs: BLOCK };
-const chan = channelSecret(
-  derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(6), "cover vector")))),
-  "alice→bob",
-);
+const vaultRoot = derive(VAULT_DOMAIN,
+  rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(6), "cover vector"))));
+const chan = channelSecret(vaultRoot, "alice→bob");
 
 /** Per-message accuracy for a nearest-in-time operator, with `coverRate` decoys per window. */
 function accuracy(coverRate: number, trials = 2000) {
@@ -90,7 +89,7 @@ test("a decoy is indistinguishable from a real upload on the wire", () => {
   // Cover only covers if it looks the same. Same bucket length, and an id minted by the very
   // same function — not a second copy of it.
   for (const bucket of BUCKETS.slice(0, 3)) {
-    const body = coverBody(chan, bucket);
+    const body = coverBody(chan, bucket, 0);
     assert.equal(body.length, bucket);
     assert.equal(coverId(body), encryptedIdFor(body));
     assert.ok(coverId(body).startsWith("enc:"));
@@ -98,21 +97,30 @@ test("a decoy is indistinguishable from a real upload on the wire", () => {
   // A real upload in the same bucket has the same length, so length cannot separate them.
   const real = wireBytes(sealForChannel(chan, new Uint8Array(100))) as unknown as Uint8Array;
   assert.equal(real.length, BUCKETS[0]);
-  assert.equal(coverBody(chan, BUCKETS[0]).length, real.length);
-  // Two decoys never repeat, or a repeated id would mark them.
-  assert.notEqual(coverId(coverBody(chan, BUCKETS[0])), coverId(coverBody(chan, BUCKETS[0])));
+  assert.equal(coverBody(chan, BUCKETS[0], 0).length, real.length);
+  // Two decoys never repeat, or a repeated id would mark them — but they are DERIVED now, so
+  // "never repeat" is a property of the index rather than of randomness. The same index gives
+  // the same body deliberately: that is what lets the recipient ask for it, which is what stops
+  // an operator identifying every decoy by the fact that nobody ever does.
+  assert.deepEqual(coverBody(chan, BUCKETS[0], 3), coverBody(chan, BUCKETS[0], 3));
+  const ids = new Set(Array.from({ length: 64 }, (_, i) => coverId(coverBody(chan, BUCKETS[0], i))));
+  assert.equal(ids.size, 64, "two decoy indices collided");
+  // And a different channel's decoys are unrelated, or one conversation's cover would mark
+  // another's — the bodies come from the channel's own cover key.
+  const other = channelSecret(vaultRoot, "alice→carol");
+  assert.notDeepEqual(coverBody(other, BUCKETS[0], 3), coverBody(chan, BUCKETS[0], 3));
 });
 
 test("cover is per bucket, and mixing sizes is not covered", () => {
   // The limitation, asserted so it is not forgotten: a decoy in the 1 KiB bucket does nothing
   // for a 64 KiB message. An operator filters by size first and the cover evaporates.
-  const small = coverBody(chan, BUCKETS[0]);
+  const small = coverBody(chan, BUCKETS[0], 0);
   const large = wireBytes(sealForChannel(chan, new Uint8Array(20_000))) as unknown as Uint8Array;
   assert.notEqual(small.length, large.length,
     "if these were equal the per-bucket caveat would be unnecessary");
   assert.equal(large.length, BUCKETS[3]);
   // Which is why coverBody takes a bucket rather than choosing one.
-  assert.equal(coverBody(chan, BUCKETS[3]).length, large.length);
+  assert.equal(coverBody(chan, BUCKETS[3], 0).length, large.length);
 });
 
 test("a cover rate of zero is refused rather than silently meaning none", () => {

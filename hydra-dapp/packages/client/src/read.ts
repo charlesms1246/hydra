@@ -25,6 +25,8 @@ import { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 import { recoverBlobId, ID_BYTES } from "../../channel/src/pointer.ts";
 import { encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { coverBody, coverId, coverIndex, COVER_RATE } from "../../channel/src/cover.ts";
+import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 
 /**
@@ -54,13 +56,42 @@ export function readSet(
   channel: Secret<typeof VAULT_DOMAIN>,
   seen: readonly SeenPointer[],
   pad: (n: number) => Uint8Array = randomBytes,
+  coverRate: number = COVER_RATE,
 ): string[] {
   const real = seen.map((s) => `enc:${Buffer.from(recoverBlobId(channel, s.pointer, s.seq)).toString("hex")}`);
+
+  // THE CHANNEL'S OWN DECOYS, and this is not politeness toward the cover traffic.
+  //
+  // A vault operator serves reads as well as writes. A real message is fetched — that is why it
+  // was sent — and a decoy nobody can name is fetched by nobody, so "was this object ever asked
+  // for" separated the two perfectly. `i3-read-pattern.test.ts` measured it at 1.000 before
+  // this line existed: the anonymity set was not small, it was empty, and every decoy's storage
+  // was spent buying nothing.
+  //
+  // Every bucket for every index, because a reader does not know a message's size band until it
+  // has read it, and waiting to find out would mean two rounds of requests with the real ones
+  // in the first. The extra ids miss, and a miss is indistinguishable from a message not yet
+  // sent — the same reason the random padding below is free.
+  //
+  // DEDUPED BY SEQUENCE, which is not an optimisation. A caller may pass the same seq many
+  // times — `cli/src/commands.ts` pairs every chain event with every plausible sequence number,
+  // because a pointer says which channel it belongs to only to whoever holds the key. A decoy's
+  // index depends on the sequence alone, so generating them per candidate PAIR multiplied the
+  // request by the number of events and pushed it past the vault's body limit. The failure was
+  // "body too large", which names the symptom.
+  const decoyIds: string[] = [];
+  for (const seq of new Set(seen.map((s) => s.seq))) {
+    for (let k = 0; k < coverRate; k++) {
+      const index = coverIndex(seq, k, coverRate);
+      for (const bucket of BUCKETS) decoyIds.push(coverId(coverBody(channel, bucket, index)));
+    }
+  }
+
   const decoys: string[] = [];
-  while (real.length + decoys.length < MIN_READ_BATCH) {
+  while (real.length + decoyIds.length + decoys.length < MIN_READ_BATCH) {
     decoys.push(`enc:${Buffer.from(pad(ID_BYTES)).toString("hex")}`);
   }
-  return [...real, ...decoys].sort();
+  return [...new Set([...real, ...decoyIds, ...decoys])].sort();
 }
 
 /**

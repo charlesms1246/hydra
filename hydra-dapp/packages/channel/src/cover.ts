@@ -37,9 +37,9 @@
  * longer a way to ask for cover without saying what size it has to look like.
  */
 
-import { randomBytes, randomInt } from "node:crypto";
+import { createCipheriv, randomInt } from "node:crypto";
 import { encryptedIdFor } from "../../vault-client/src/blobs.ts";
-import { VAULT_DOMAIN, subKey } from "../../identity/src/domains.ts";
+import { VAULT_DOMAIN, subKey, expose } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 import { assertSafeSchedule, jitterWindowMs } from "./schedule.ts";
 import type { ScheduleConfig } from "./schedule.ts";
@@ -83,7 +83,17 @@ export type CoverConfig = ScheduleConfig & {
 export type CoverEvent = { readonly at: number; readonly bucket: number };
 
 /** A decoy to send: when, and at what size so it is indistinguishable from what it hides. */
-export type Decoy = { readonly at: number; readonly bucket: number };
+export type Decoy = {
+  readonly at: number;
+  readonly bucket: number;
+  /**
+   * Which decoy this is, counting from zero across the session.
+   *
+   * It exists so the RECIPIENT can regenerate the same bodies and ask for them. A decoy nobody
+   * ever fetches is a decoy the operator identifies by that alone — see `coverBody`.
+   */
+  readonly index: number;
+};
 
 /**
  * When to send decoys: `coverRate` of them around each chain event.
@@ -127,6 +137,7 @@ export function coverPlan(
   const window = jitterWindowMs(config);
   const lead = coverLeadMs(config);
   const out: Decoy[] = [];
+  let index = 0;
   for (const event of events) {
     // Spanning [event - lead, event + window): the lead is what stops the session's earliest
     // upload being its first message, and the window is where the real upload will land.
@@ -134,11 +145,26 @@ export function coverPlan(
     // The bucket is the covered message's own. A decoy of a different size is not cover; an
     // operator filters by size before it does anything else.
     for (let k = 0; k < rate; k++) {
-      out.push({ at: event.at - lead + random() * (lead + window), bucket: event.bucket });
+      out.push({
+        at: event.at - lead + random() * (lead + window),
+        bucket: event.bucket,
+        index: index++,
+      });
     }
   }
   return out.sort((a, b) => a.at - b.at);
 }
+
+/**
+ * The global index of one decoy: message `seq`, decoy `k`.
+ *
+ * ONE definition, used by the sender when it mints a decoy and by the recipient when it asks
+ * for one. Two copies of this arithmetic would drift, the recipient would stop fetching some
+ * decoys, and those decoys would go back to being identifiable by never being read — with
+ * nothing failing. That is the same shape as the bug this indexing exists to fix.
+ */
+export const coverIndex = (seq: number, k: number, rate: number = COVER_RATE): number =>
+  seq * rate + k;
 
 /** The floor this rate buys: an operator's accuracy against an isolated message. */
 export function anonymitySetFloor(config: CoverConfig): number {
@@ -146,20 +172,40 @@ export function anonymitySetFloor(config: CoverConfig): number {
 }
 
 /**
- * A decoy body for one bucket.
+ * A decoy body for one bucket, DERIVED so the recipient can ask for it.
  *
- * Random bytes, sealed length. It is not encrypted under the channel key and does not need to
- * be: AES-GCM ciphertext is indistinguishable from random to anyone without the key, and the
- * operator is by construction without the key. Using the real key would be worse — it would
- * mean the decoys decrypt to something, and a client that ever tried to read one would find it.
+ * It used to be `randomBytes(bucket)`, with the `channel` argument taken and deliberately
+ * unused under a comment reserving it for "a future version which does need the channel". This
+ * is that version, and the reason is not a refinement — it is a hole that made cover worth
+ * nothing against an operator who reads their own request log.
  *
- * The `channel` argument is taken and used only to derive nothing, deliberately: it is here so
- * that a future version which *does* need the channel (say, to make decoys recognisable to the
- * recipient so they can be skipped) has the parameter already, and so that call sites read as
- * per-channel cover rather than global noise.
+ * A vault operator serves the READS as well as the writes; `observations.ts` lists `read.ids`
+ * and `read.hit` because seeing a request is forced even though recording it is a choice. A real
+ * message is fetched — that is why it was sent. A random decoy is fetched by nobody, because
+ * nobody can compute its id. So "was this object ever asked for" is one bit that separates the
+ * two perfectly, and `i3-read-pattern.test.ts` measured the old design at **1.000**: not a
+ * weakened anonymity set, an empty one.
+ *
+ * Deriving the body from `coverKey(channel)` gives the recipient the ids, so a decoy is fetched
+ * in the same batch as everything else and the bit disappears.
+ *
+ * AES-CTR over zeros rather than HKDF: HKDF-SHA256 tops out at 8160 bytes and the largest
+ * bucket is 262144. A keystream is indistinguishable from random without the key, which is the
+ * property the old random bytes had and the only one this needs.
  */
-export function coverBody(_channel: Secret<typeof VAULT_DOMAIN>, bucket: number): Uint8Array {
-  return new Uint8Array(randomBytes(bucket));
+export function coverBody(
+  channel: Secret<typeof VAULT_DOMAIN>,
+  bucket: number,
+  index: number,
+): Uint8Array {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error("a decoy index is a non-negative integer");
+  }
+  const key = expose(subKey(coverKey(channel), `body/${bucket}`), VAULT_DOMAIN);
+  const iv = Buffer.alloc(16);
+  iv.writeUInt32BE(index, 12);
+  const c = createCipheriv("aes-256-ctr", key, iv);
+  return new Uint8Array(Buffer.concat([c.update(Buffer.alloc(bucket)), c.final()]));
 }
 
 /**

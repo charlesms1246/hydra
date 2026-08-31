@@ -30,7 +30,7 @@ import { noteCalldata } from "../../channel/src/note.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import { scheduleUpload, assertSafeSchedule } from "../../channel/src/schedule.ts";
 import type { ScheduleConfig } from "../../channel/src/schedule.ts";
-import { coverPlan } from "../../channel/src/cover.ts";
+import { coverPlan, coverIndex, COVER_RATE } from "../../channel/src/cover.ts";
 import type { Decoy } from "../../channel/src/cover.ts";
 import { sealForChannel, wireBytes, uploadPathFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
@@ -47,10 +47,20 @@ export type Outgoing = {
   readonly uploadAt: number;
   /** When the chain event was published. Carried so cover can be derived from the messages. */
   readonly publishedAt: number;
+  /**
+   * The message's position in its channel.
+   *
+   * Carried because the recipient derives a decoy's index from it — see `cover`. It was already
+   * an argument to `send`; not returning it meant the caller had to keep it alongside, and a
+   * caller that kept the wrong one would mint decoys nobody fetches.
+   */
+  readonly seq: number;
   readonly pointer: Pointer<typeof VAULT_DOMAIN>;
 };
 
 export type SessionConfig = ScheduleConfig & {
+  /** Decoys per message. Both sides must agree, or the recipient stops fetching some. */
+  readonly coverRate?: number;
   readonly channel: Secret<typeof VAULT_DOMAIN>;
   /** The pool nullifier for this note. Binds the commitment to an identity without naming it. */
   readonly nullifier: bigint;
@@ -81,6 +91,7 @@ export function send(
     calldata: noteCalldata(pointer, commit(config.nullifier, contentHashFor(plaintext))),
     uploadAt: scheduleUpload(publishedAt, config, random),
     publishedAt,
+    seq,
     pointer,
   };
 }
@@ -108,14 +119,23 @@ export function receive(
  */
 export function cover(
   config: SessionConfig,
-  messages: readonly { readonly publishedAt: number; readonly body: Uint8Array }[],
+  messages: readonly { readonly publishedAt: number; readonly body: Uint8Array; readonly seq: number }[],
   random?: () => number,
 ): Decoy[] {
-  return coverPlan(
+  const rate = config.coverRate ?? COVER_RATE;
+  const plan = coverPlan(
     messages.map((m) => ({ at: m.publishedAt, bucket: m.body.length })),
     config,
     random,
   );
+  // Renumbered from the message's own SEQUENCE rather than its position in this array. The
+  // recipient derives a decoy's index from the sequence numbers it read off the chain, and a
+  // caller that passed a subset of its messages here would otherwise mint decoys the recipient
+  // never asks for — which is exactly the never-fetched signal this indexing removes.
+  return plan.map((d) => {
+    const message = messages[Math.floor(d.index / rate)];
+    return { ...d, index: coverIndex(message.seq, d.index % rate, rate) };
+  });
 }
 
 /** Open a channel. Named so a caller cannot accidentally pass a pool or sandbox root. */

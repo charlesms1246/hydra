@@ -151,6 +151,14 @@ export function statement(): Statement {
     // would round up to a guarantee.
     whatIsPartial: [
       {
+        says: "Decoy uploads are fetched by the recipient exactly like real messages are, which "
+          + "is what makes the number below true. It does NOT hold otherwise: when decoys were "
+          + "not fetched, a storage server told every decoy from every message by asking which "
+          + "objects nobody ever came back for — and it was right about all of them, not most.",
+        from: "channel/src/cover.ts (coverBody), adversary/test/i3-read-pattern.test.ts",
+        complete: false,
+      },
+      {
         says: `Uploads are delayed by up to ${MEASURED.jitterBlocks} blocks and mixed with `
           + `${MEASURED.coverRate} decoy uploads each, so the storage server usually cannot tell `
           + `which upload belongs to which on-chain message. How well that works depends on how `

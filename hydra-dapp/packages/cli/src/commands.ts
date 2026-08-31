@@ -19,9 +19,10 @@ import { readSet, select, MIN_READ_BATCH } from "../../client/src/read.ts";
 import { initiate, respond, bundleFor } from "../../handshake/src/x3dh.ts";
 import { postPrekey, collectPrekeys, httpTransport } from "../../handshake/src/inbox.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
-import { coverPlan, coverBody, coverId } from "../../channel/src/cover.ts";
+import { coverPlan, coverBody, coverId, coverIndex } from "../../channel/src/cover.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
 import { openForChannel, plaintextOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
+import { MAX_BODY } from "../../vault-server/src/http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import {
   derive, rootSeed, entropyFrom, fromOsRandom, fromStoredSeed, fromChannelWrap, VAULT_DOMAIN,
@@ -214,7 +215,10 @@ export async function sendMessage(
 
   const decoys = coverPlan([{ at: now, bucket: outgoing.body.length }], config, random);
   for (const d of decoys) {
-    const body = coverBody(channel, d.bucket);
+    // Global index, from the message's sequence — `coverPlan` numbers within its own call and
+    // this client calls it once per message. The recipient derives the same number from the
+    // sequence it read off the chain.
+    const body = coverBody(channel, d.bucket, coverIndex(seq, d.index));
     state.pending.push({
       channel: name, id: coverId(body),
       bodyB64: Buffer.from(body).toString("base64"),
@@ -311,8 +315,19 @@ export async function readChannel(
   const ids = readSet(channel, candidates);
   const bySeq = new Map(candidates.map((c) => [receive(channel, c.pointer, c.seq), c.seq]));
 
+  const body = JSON.stringify(ids);
+  // Checked here so the failure names its own cause. The vault answers "body too large", which
+  // is true and unhelpful: what actually happened is that a channel grew until its candidate
+  // set times its decoy set stopped fitting in one request.
+  if (body.length > MAX_BODY) {
+    throw new Error(
+      `this channel now needs ${ids.length} ids in one read (${Math.round(body.length / 1024)} KiB), `
+      + `and the vault accepts ${Math.round(MAX_BODY / 1024)} KiB. Reading is quadratic in the `
+      + "number of chain events because a pointer names no channel; a client that keeps up with "
+      + "a conversation rather than replaying it from block zero does not hit this.");
+  }
   const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}`, {
-    method: "POST", body: JSON.stringify(ids),
+    method: "POST", body,
   });
   if (!res.ok) throw new Error(`the vault refused the read: ${await res.text()}`);
   const { found } = await res.json() as { found: Record<string, string> };

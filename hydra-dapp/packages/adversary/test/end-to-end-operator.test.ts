@@ -63,7 +63,7 @@ function conversation(random: () => number, withCover: boolean) {
   if (withCover) {
     // Derived from the messages, so each decoy is the size of something it could be hiding.
     for (const decoy of cover(config, sent, random)) {
-      const body = coverBody(channel, decoy.bucket);
+      const body = coverBody(channel, decoy.bucket, decoy.index);
       arrivals.push({ at: decoy.at, id: coverId(body), bytes: body.length, real: false, seq: -1 });
     }
   }
@@ -154,7 +154,7 @@ test("the vault, served over HTTP, accepts the whole session and reveals nothing
     for (const a of arrivals) {
       const body = a.real
         ? send(config, new TextEncoder().encode(`message number ${a.seq}`), a.seq, a.seq * BLOCK, lcg(1)).body
-        : coverBody(channel, BUCKETS[0]);
+        : coverBody(channel, BUCKETS[0], a.seq >= 0 ? a.seq : i);
       const res = await fetch(`${url}${ENCRYPTED_ENDPOINT}/${a.real ? a.id : coverId(body)}`, {
         method: "PUT",
         headers: { "x-hydra-invite": `inv-${i++}` },
@@ -210,7 +210,7 @@ function mixedConversation(random: () => number, withCover: boolean) {
   }));
   if (withCover) {
     for (const decoy of cover(config, sent, random)) {
-      const body = coverBody(channel, decoy.bucket);
+      const body = coverBody(channel, decoy.bucket, decoy.index);
       arrivals.push({ at: decoy.at, id: coverId(body), bytes: body.length, real: false, seq: -1 });
     }
   }
@@ -260,7 +260,7 @@ test("without the bucket carried, the same attack succeeds every time", () => {
   const channel = openChannel(vaultRoot, "alice→bob");
   // Cover, but all of it in the wrong band.
   for (let i = 0; i < COVER_RATE * sent.length; i++) {
-    const body = coverBody(channel, BUCKETS[0]);
+    const body = coverBody(channel, BUCKETS[0], 0);
     arrivals.push({ at: random() * 8 * BLOCK, id: coverId(body), bytes: body.length, real: false, seq: -1 });
   }
   const large = sent[2].body.length;
