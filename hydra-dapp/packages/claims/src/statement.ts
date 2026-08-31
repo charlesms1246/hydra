@@ -145,6 +145,22 @@ export function statement(): Statement {
         from: "identity/src/linkage.ts, claude-docs/decisions/0002-fresh-identity-funding.md",
         complete: true,
       },
+      {
+        says: "The pool's auditor working with whoever runs the storage server can name who was "
+          + "talking to whom. Three steps, each of them already on this page: a read batch is "
+          + "one conversation, a conversation's object count identifies the account that "
+          + "published it, and the auditor decrypts who funded that account. You cannot pick a "
+          + "different auditor — the key is written once, at registration, encrypted to them.",
+        from: "adversary/test/auditor-and-operator.test.ts",
+        complete: true,
+      },
+      {
+        says: "Those two together still cannot read a message. The auditor's key opens the pool, "
+          + "and a conversation is sealed under a secret agreed separately that neither the pool "
+          + "nor the storage server ever holds. What they get is who, not what.",
+        from: "handshake/src/x3dh.ts, claude-docs/decisions/0009-key-agreement.md",
+        complete: true,
+      },
     ]),
 
     // The partial ones, with the number attached. These are the lines a hand-written statement
