@@ -22,7 +22,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { DERIVABLE, DERIVABLE_IDS, OBSERVABLE_IDS } from "../../vault-server/src/observations.ts";
-import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
+import { Vault, ENCRYPTED_ENDPOINT, DEFAULT_TTL_MS } from "../../vault-server/src/server.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { inboxSlot, inboxSlots, postPrekey, collectPrekeys, encodePrekey, INBOX_SLOTS }
   from "../../handshake/src/inbox.ts";
@@ -33,6 +33,21 @@ import { coverBody, coverId, COVER_RATE } from "../../channel/src/cover.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, expose, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
 import { ephemeral } from "../../handshake/src/authorship.ts";
+import { init, open, publishBundle, sendMessage } from "../../cli/src/commands.ts";
+import { memoryChain } from "../../cli/src/chain.ts";
+import { jitterWindowMs } from "../../channel/src/schedule.ts";
+
+/** splitmix32, as everywhere else here — see the note in `resident-flush.test.ts`. */
+const prng = (seed: number) => {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x9e3779b9) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 16), 0x21f0aaad);
+    t = Math.imul(t ^ (t >>> 15), 0x735a2d97);
+    return ((t ^ (t >>> 15)) >>> 0) / 2 ** 32;
+  };
+};
 
 const rootOf = (n: number, label: string) =>
   derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(n), label))));
@@ -90,6 +105,66 @@ const DERIVATIONS: Record<string, () => Promise<void>> = {
     // person and not a fact about the vault being busy.
     const carolKey = bundleFor(carol, 0, 0).identityKey;
     assert.equal(inboxSlots(carolKey).filter((id) => stored().has(id)).length, 0);
+  },
+
+  "channel.activeAccount": async () => {
+    // Driven through `cli/src/commands.ts` rather than through the plan, because the claim is
+    // about what a CLIENT does. `sendMessage` is the only thing in this system that queues an
+    // object, and every object it queues is scheduled into the window of the chain event it
+    // just published — so the derivation is a property of the code path, and the harness has to
+    // walk that path rather than a model of it.
+    const BLOCK = 30_000;
+    const GAP = 8 * 60_000;
+    const T0 = 1_800_000_000_000;
+    const window = jitterWindowMs({ blockMs: BLOCK });
+    const rnd = prng(7);
+    const client = init({ blockMs: BLOCK, invites: [] });
+    open(client, "with-bob", publishBundle(init({ invites: [] }), 0));
+    const chain = memoryChain();
+    const events: number[] = [];
+    for (let seq = 0; seq < 6; seq++) {
+      const at = T0 + seq * GAP;
+      await sendMessage(client, chain, "with-bob", "ephemeral", `message ${seq}`, at, rnd);
+      events.push(at);
+    }
+
+    // Uploaded at the moment each object was scheduled for, so the vault's own arrival times
+    // ARE the client's schedule. Uploading them all now would make this a test of an array.
+    let tick = T0;
+    // One invite per object, because cover spends them at the cover rate per message — the
+    // same accounting `flush` refuses to start without.
+    const invites = Array.from({ length: client.pending.length }, (_, i) => `w-${i}`);
+    const vault = new Vault({ invites: [...invites], buckets: BUCKETS, now: () => tick });
+    for (const p of [...client.pending].sort((a, b) => a.uploadAt - b.uploadAt)) {
+      tick = p.uploadAt;
+      const body = new Uint8Array(Buffer.from(p.bodyB64, "base64"));
+      const res = vault.handle({
+        op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: p.id, body, invite: invites.shift(),
+      });
+      assert.equal(res.ok, true, `upload failed: ${JSON.stringify(res)}`);
+    }
+
+    // The operator's side. Arrival is the deadline minus the published TTL — `blob.arrival`,
+    // nothing more — and the events are the chain's, which names the account that published
+    // each one.
+    const arrivals = vault.observe().rows.map((r) => Number(r["blob.expiry"]) - DEFAULT_TTL_MS);
+    assert.equal(arrivals.length, client.pending.length);
+    const coveredBy = (times: readonly number[]) =>
+      arrivals.filter((a) => times.some((e) => a >= e && a < e + window)).length;
+
+    // Every object, without exception. Not "most" and not a distribution — the client cannot
+    // upload outside the window, so this is the shape of the disclosure rather than a measure
+    // of it, and a fraction below one would mean the client had changed.
+    assert.equal(coveredBy(events), arrivals.length,
+      "an upload landed outside every window of the account that caused it");
+
+    // And a stranger publishing as often over the same span covers only what coincides. The
+    // gap between the two is the whole derivation.
+    const other = Array.from({ length: events.length }, () => T0 + rnd() * (6 * GAP))
+      .sort((a, b) => a - b);
+    assert.ok(coveredBy(other) < arrivals.length,
+      `a stranger's windows covered all ${arrivals.length} uploads too — with a four-minute `
+      + "window and six events this is possible by chance, so reseed rather than believing it");
   },
 
   "channel.author": async () => {

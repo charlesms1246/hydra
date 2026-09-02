@@ -222,6 +222,12 @@ export const DERIVABLE: readonly Derivation[] = [
     why: "the vault's side gives a set of blobs per channel (read.channelSet) and the chain's side gives a set of events per account, and matching SETS is a different problem from matching items. Cover does not blunt it: cover is a fixed number of decoys per event, so a channel's object count is the message count times a published constant and divides back out exactly. The 0.2 figure elsewhere on this table is about matching an upload to an event, which this attack never attempts",
   },
   {
+    id: "channel.activeAccount",
+    given: "the blockchain, which is public",
+    what: "which account a conversation belongs to — by asking whose published events have upload windows containing this channel's objects, which for the right account is every single one of them",
+    why: "SHARPER THAN `channel.author` AND IT NEEDS NO ARITHMETIC. That row matches a channel's object COUNT against an account's message count, so it needs the counts to be distinct. This one needs neither: every object a client uploads is uploaded because a message caused it, and I3 puts it in `[event, event + window)` of that message's own chain event. So the true account's windows contain 100% of the channel's uploads and a stranger's contain only what coincides — a certainty rather than a score. COVER DOES NOT BLUNT IT, and neither does cover that runs on the client's own clock: the operator's statistic is how many of the channel's uploads an account covers, and an idle decoy cannot lower that number, it only adds an object nobody covers. Measured in `adversary/test/standing-cover.test.ts` at 1.000 for every cover policy including one costing thirteen objects a message. What it does depend on is how busy the chain is — an account's window is four minutes wide, so once enough accounts publish often enough for their windows to tile the span, coverage saturates for everybody and the maximum stops naming anyone: 1.000 at six events per account against 0.058 at a hundred and twenty. That is a property of the chain rather than of this software, which is why it is disclosed rather than fixed",
+  },
+  {
     id: "handshake.opener",
     given: "the blockchain, which is public, and a person's published identity key",
     what: "which account opened a conversation with that person — by taking the chain publish nearest after a write to their mailbox",
