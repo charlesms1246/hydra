@@ -31,8 +31,10 @@ export type ChainConfig = {
   readonly network?: string;
 };
 
-async function rpc(url: string, method: string, params: unknown): Promise<any> {
-  const res = await fetch(url, {
+async function rpc(
+  url: string, method: string, params: unknown, fetchImpl: typeof fetch = fetch,
+): Promise<any> {
+  const res = await fetchImpl(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
@@ -42,7 +44,12 @@ async function rpc(url: string, method: string, params: unknown): Promise<any> {
   return body.result;
 }
 
-export function starknet(config: ChainConfig): Chain {
+/**
+ * `fetchImpl` is injected for the same reason `flush` takes one: the node is a party with its
+ * own disclosure table (`node-view.ts`), and a table is only honest if something captures what
+ * that party actually receives. `adversary/test/node-view.test.ts` is that capture.
+ */
+export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): Chain {
   const target = config.network ? ["--network", config.network] : ["--url", config.rpcUrl];
   return {
     async publish(calldata) {
@@ -73,7 +80,7 @@ export function starknet(config: ChainConfig): Chain {
             chunk_size: 100,
             ...(token ? { continuation_token: token } : {}),
           },
-        }) as { events: { data: string[] }[]; continuation_token?: string };
+        }, fetchImpl) as { events: { data: string[] }[]; continuation_token?: string };
         for (const e of page.events) out.push({ data: e.data.map((d) => BigInt(d)) });
         token = page.continuation_token;
       } while (token);

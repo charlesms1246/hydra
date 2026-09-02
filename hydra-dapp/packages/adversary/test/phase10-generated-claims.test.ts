@@ -22,6 +22,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 import { statement, render, MEASURED } from "../../claims/src/statement.ts";
 import { OBSERVABLE, DERIVABLE, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
+import { NODE_OBSERVABLE, NODE_NOT_OBSERVABLE } from "../../cli/src/node-view.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import { COVER_RATE } from "../../channel/src/cover.ts";
 import { NOTE_FELTS } from "../../channel/src/note.ts";
@@ -59,10 +60,19 @@ test("the statement covers every row of the disclosure table, both columns", () 
     assert.ok(said!.says.includes(d.given),
       `${d.id} is stated without saying what an observer needs to hold to work it out`);
   }
+  // THE NODE IS A SECOND OPERATOR and its table is separate because the parties are: a user who
+  // runs their own vault has not thereby stopped telling a node where they are. It was missing
+  // from this file entirely until `decisions/0029` needed one row out of it.
+  for (const o of NODE_OBSERVABLE) {
+    assert.ok(s.whoCanSeeWhat.some((c) => c.says.includes(o.what)), `${o.id} is not stated`);
+  }
   for (const o of NOT_OBSERVABLE) {
     assert.ok(s.whatWeCannotSee.some((c) => c.says.includes(o.what)), `${o.id} is not stated`);
   }
-  assert.equal(s.whatWeCannotSee.length, NOT_OBSERVABLE.length);
+  for (const o of NODE_NOT_OBSERVABLE) {
+    assert.ok(s.whatWeCannotSee.some((c) => c.says.includes(o.what)), `${o.id} is not stated`);
+  }
+  assert.equal(s.whatWeCannotSee.length, NOT_OBSERVABLE.length + NODE_NOT_OBSERVABLE.length);
   // The chain and the pool's auditor are disclosures the vault's table does not cover, and
   // they are the two most consequential ones. They must be stated on top of it.
   assert.ok(s.whoCanSeeWhat.length >= OBSERVABLE.length + DERIVABLE.length + 2,

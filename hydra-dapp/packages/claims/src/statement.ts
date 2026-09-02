@@ -25,6 +25,7 @@
  */
 
 import { OBSERVABLE, DERIVABLE, NOT_OBSERVABLE, whyOf } from "../../vault-server/src/observations.ts";
+import { NODE_OBSERVABLE, NODE_NOT_OBSERVABLE, nodeWhyOf } from "../../cli/src/node-view.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import { COVER_RATE, coverLeadMs } from "../../channel/src/cover.ts";
 import { NOTE_FELTS } from "../../channel/src/note.ts";
@@ -109,7 +110,12 @@ export function statement(): Statement {
       says: `Whoever runs the storage server can see ${o.what}.`,
       from: `vault-server/src/observations.ts (${o.id})`,
       complete: true,
-    })).concat(DERIVABLE.map((d) => ({
+    })).concat(NODE_OBSERVABLE.map((o) => ({
+      says: `Whoever runs the Starknet node you read and publish through — a different party `
+        + `from the storage server — can see ${o.what}.`,
+      from: `cli/src/node-view.ts (${o.id})`,
+      complete: true,
+    }))).concat(DERIVABLE.map((d) => ({
       says: `Given ${d.given} — which is public — whoever runs the storage server can work out `
         + `${d.what}. The server does not record it; they compute it.`,
       from: `vault-server/src/observations.ts (${d.id})`,
@@ -245,7 +251,11 @@ export function statement(): Statement {
       says: `Whoever runs the storage server cannot see ${o.what} — ${whyOf(o)}.`,
       from: `vault-server/src/observations.ts (${o.id})`,
       complete: true,
-    })),
+    })).concat(NODE_NOT_OBSERVABLE.map((o) => ({
+      says: `Whoever runs the Starknet node cannot see ${o.what} — ${nodeWhyOf(o)}.`,
+      from: `cli/src/node-view.ts (${o.id})`,
+      complete: true,
+    }))),
   };
 }
 
