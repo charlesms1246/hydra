@@ -32,6 +32,8 @@ import { initiate, bundleFor } from "../../handshake/src/x3dh.ts";
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
 import { padTo, unpad, bucketFor, BUCKETS, SEAL_OVERHEAD } from "../../vault-client/src/buckets.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
+import { COVER_RATE, coverBody, coverId } from "../../channel/src/cover.ts";
+import { jitterWindowMs, MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 
 const seed = rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(5), "operator-view vector")));
@@ -128,15 +130,29 @@ test("everything the table claims is observable actually is", async () => {
   // A full session also means a vault configured the way one would actually be run. The `fs.*`
   // rows are only producible on disk, and adding them without this is what made this check
   // fail — twice now, for the transport rows and again for these.
+  const burstInvites = Array.from({ length: COVER_RATE + 1 }, (_, i) => `d${i}`);
   const dir = await mkdtemp(join(tmpdir(), "hydra-vault-"));
   try {
-    const onDisk = new Vault({ invites: ["d1"], buckets: BUCKETS, dir });
-    const blob = sealForChannel(channelSecret(vaultRoot, "on-disk"), new TextEncoder().encode("x"));
+    // And a client flushing a queue by hand, because `upload.burst` is producible only from a
+    // batch. It is a message WITH ITS OWN COVER rather than five arbitrary objects: the row
+    // claims the operator sees `coverRate + 1` objects arrive as a run, so the capture has to
+    // contain that and not a resemblance to it.
+    let tick = 1_700_000_000_000;
+    const onDisk = new Vault({ invites: burstInvites, buckets: BUCKETS, dir, now: () => tick });
+    const channel = channelSecret(vaultRoot, "on-disk");
+    const blob = sealForChannel(channel, new TextEncoder().encode("x"));
     // Unpinned, deliberately: `blob.arrival` is derivable only from a TTL deadline, and the
     // session's own objects are all pinned by the time it ends. A vault holding nothing but
     // pinned objects genuinely discloses no arrival time, which is the distinction the row
     // makes and this is what exercises the other side of it.
-    onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "d1" });
+    onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: burstInvites[0] });
+    for (let k = 0; k < COVER_RATE; k++) {
+      // Milliseconds apart, which is what sequential HTTP requests are. Uploading them at one
+      // timestamp would make the batch findable by equality and prove nothing about a client.
+      tick += 40;
+      const body = coverBody(channel, bytes(blob).length, k);
+      onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: coverId(body), body, invite: burstInvites[k + 1] });
+    }
     for (const k of onDisk.observedKeys()) observed.add(k);
     // And a TLS listener, because the `tls.*` rows are only producible when this process is the
     // one terminating. Adding them without this is what made this check fail — for the third
@@ -704,4 +720,58 @@ test("no arrival time is stored, and for pinned objects none is derivable", () =
   const withTtl = vault.observe().rows.find((r) => r["blob.expiry"] !== null)!;
   assert.equal(Number(withTtl["blob.expiry"]) - DEFAULT_TTL_MS <= Date.now(), true,
     "the deadline does not imply an arrival time — recheck the blob.arrival row");
+});
+
+test("a hand-flushed batch is recoverable from the record alone, and a spread client leaves none", () => {
+  // The `upload.burst` row, computed. `resident-flush.test.ts` measures what a burst costs the
+  // CLIENT — a low mean that comes from destroying the clock rather than from hiding anything.
+  // This is the other half: that the vault's own record, with no read log and no transport log
+  // and nothing on disk, hands the operator the batch and its size.
+  //
+  // The two clients differ in nothing but cadence. Same channel, same objects, same count.
+  const batch = (spacing: number) => {
+    let tick = 1_700_000_000_000;
+    const chan = channelSecret(vaultRoot, `burst-${spacing}`);
+    const vault = new Vault({
+      invites: Array.from({ length: COVER_RATE + 1 }, (_, i) => `b${i}`),
+      buckets: BUCKETS, now: () => tick,
+    });
+    const real = sealForChannel(chan, new TextEncoder().encode("a message"));
+    vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: real.id, body: bytes(real), invite: "b0" });
+    for (let k = 0; k < COVER_RATE; k++) {
+      tick += spacing;
+      const body = coverBody(chan, bytes(real).length, k);
+      vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: coverId(body), body, invite: `b${k + 1}` });
+    }
+    return vault;
+  };
+
+  // The operator's whole method, from `observe()` and nothing else: sort the deadlines, cut
+  // wherever the gap exceeds the second `blob.arrival` already discloses.
+  const groups = (vault: Vault): number[] => {
+    const at = vault.observe().rows
+      .map((r) => Number(r["blob.expiry"]) - DEFAULT_TTL_MS).sort((a, b) => a - b);
+    const sizes: number[] = [];
+    for (const [i, t] of at.entries()) {
+      if (i > 0 && t - at[i - 1] <= 1000) sizes[sizes.length - 1]++;
+      else sizes.push(1);
+    }
+    return sizes;
+  };
+
+  // Flushed by hand: sequential requests, milliseconds apart. The operator gets one group of
+  // exactly `coverRate + 1` — the message and every decoy that was meant to hide it, delivered
+  // as a set. Nothing in it says which is the message; that it is a set is the disclosure.
+  const flushed = batch(40);
+  assert.deepEqual(groups(flushed), [COVER_RATE + 1],
+    "a hand-flushed queue no longer arrives as one group — recheck the upload.burst row");
+  assert.ok(flushed.observedKeys().includes("upload.burst"));
+
+  // The same five objects on their own slots inside a jitter window. No group, and the row is
+  // absent — the capability is the client's to remove, which is why this is a row about cadence.
+  const spread = batch(jitterWindowMs({ blockMs: 30_000, jitterBlocks: MIN_JITTER_BLOCKS }) / COVER_RATE);
+  assert.deepEqual(groups(spread), new Array(COVER_RATE + 1).fill(1),
+    "a spread client's uploads grouped anyway — the threshold is wrong, not the client");
+  assert.ok(!spread.observedKeys().includes("upload.burst"),
+    "a client that spread its uploads was reported as bursting");
 });

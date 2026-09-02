@@ -106,6 +106,11 @@ export const OBSERVABLE: readonly Observation[] = [
     why: "TTL has to be enforced, so the deadline is stored",
   },
   {
+    id: "upload.burst",
+    what: "which objects arrived together — the size of a batch one client uploaded in one moment, and over HTTP that they came from one peer",
+    why: "arrival is a deadline minus a constant, so objects uploaded at one moment carry deadlines a millisecond apart and the record groups them whether or not anything writes the grouping down; the socket supplies the peer. THIS IS A PROPERTY OF THE CLIENT'S CADENCE, NOT OF THE SERVER, which is why it is a row rather than a bug: a client that queues a message with its cover and sends the queue at once uploads `coverRate + 1` objects as a run, and `adversary/src/matchers.ts` `after-the-burst` reads a batch by discarding it. The vault cannot spread a client's uploads on its behalf. Only a client that honours each object's own slot avoids it, and `adversary/test/resident-flush.test.ts` measures both — the by-hand client puts several times as many objects in its busiest minute as the resident one, which is the whole of what it trades its timing away for",
+  },
+  {
     id: "read.ids",
     what: "the set of ids in a read request, and when",
     why: "the server has to be asked for something in order to return it, so an operator watching the process sees every read. Writing them down is a separate choice and is off by default — the rows are here because the capability is unavoidable, not because this build retains it",

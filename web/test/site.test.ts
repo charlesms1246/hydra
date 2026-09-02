@@ -58,7 +58,7 @@ test("every claim the statement makes is on the page", () => {
     assert.ok(text.includes(claim.from),
       `"${claim.says.slice(0, 40)}…" is on the page without the source that makes it checkable`);
   }
-  assert.equal(all.length, 43, "the statement changed size; confirm the page still carries all of it");
+  assert.equal(all.length, 44, "the statement changed size; confirm the page still carries all of it");
 });
 
 test("the hand-written prose makes no privacy claim of its own", () => {

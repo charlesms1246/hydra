@@ -368,6 +368,16 @@ export class Vault {
     // Arrival is not stored, but a TTL deadline minus a published constant is an arrival time.
     // Pinned objects carry no deadline, so for those it is genuinely absent.
     if (o.rows.some((r) => r["blob.expiry"] !== null)) seen.add("blob.arrival");
+    // A BATCH IS PROXIMITY, NOT EQUALITY. Uploads are sequential requests, so a client
+    // flushing its queue produces deadlines milliseconds apart rather than one shared
+    // timestamp; grouping on exact equality would find no batch and report a grouping the
+    // record plainly has. `adversary/src/matchers.ts` `after-the-burst` learned this the
+    // expensive way. A second is the resolution `blob.arrival` already discloses, so it is the
+    // unit here too. Pinned objects carry no deadline and so join no batch — the same
+    // asymmetry as arrival, for the same reason.
+    const deadlines = o.rows.map((r) => r["blob.expiry"])
+      .filter((e): e is number => typeof e === "number").sort((a, b) => a - b);
+    if (deadlines.some((e, i) => i > 0 && e - deadlines[i - 1] <= 1000)) seen.add("upload.burst");
     // `read.channelSet` comes with the other two rather than being a separate capability: the
     // ids and their hits ARE the grouping, and an operator who has one has it.
     if (o.reads.length) {
