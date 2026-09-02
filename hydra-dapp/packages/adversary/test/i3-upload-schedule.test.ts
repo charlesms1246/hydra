@@ -17,7 +17,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  MIN_JITTER_BLOCKS, jitterWindowMs, scheduleUpload, assertSafeSchedule,
+  MIN_JITTER_BLOCKS, MIN_JITTER_MS, jitterWindowMs, scheduleUpload, assertSafeSchedule,
 } from "../../channel/src/schedule.ts";
 
 /**
@@ -62,6 +62,29 @@ test("a schedule below the measured threshold is refused, not quietly accepted",
   assert.doesNotThrow(() => assertSafeSchedule({ blockMs: BLOCK, jitterBlocks: 8 }));
   // And scheduling refuses too — the guard is not something a caller can forget to call.
   assert.throws(() => scheduleUpload(0, { blockMs: BLOCK, jitterBlocks: 1 }), /jitter/i);
+});
+
+test("A BLOCK COUNT IS NOT A DURATION, and only the duration defends anything", () => {
+  // The hole `live-crowd.test.ts` found on real mainnet. Every sentence justifying
+  // MIN_JITTER_BLOCKS is in minutes — "four minutes of latency" — and the check was in blocks.
+  // The two agree only at the 30s blocks this was written against, and `blockMs` is a
+  // `--block-ms` flag, so they came apart the moment anybody set it.
+  //
+  // Setting it to the chain's real block interval is what the flag sounds like it wants, and
+  // Starknet mainnet is about two seconds now. Measured over 1200 mainnet blocks: a 16s window
+  // leaves the operator right 0.500 of the time against 0.076 at the 240s default.
+  for (const blockMs of [1000, 2000, 5000, 10_000, 29_999]) {
+    assert.throws(() => assertSafeSchedule({ blockMs }), /window/,
+      `--block-ms ${blockMs} is a ${blockMs * MIN_JITTER_BLOCKS / 1000}s window and was accepted`);
+  }
+  // Enough intervals of a fast chain is still a real window, so the floor is on the DURATION
+  // and not on the block interval — refusing a fast chain outright would be refusing the wrong
+  // thing.
+  assert.doesNotThrow(() => assertSafeSchedule({ blockMs: 2000, jitterBlocks: 120 }));
+  assert.equal(jitterWindowMs({ blockMs: 2000, jitterBlocks: 120 }), MIN_JITTER_MS);
+  // And the default is exactly the floor, which is what makes it a design point rather than a
+  // number with margin baked in that nobody could later distinguish from the requirement.
+  assert.equal(jitterWindowMs({ blockMs: BLOCK }), MIN_JITTER_MS);
 });
 
 test("the default window is where the measured curve flattens", () => {

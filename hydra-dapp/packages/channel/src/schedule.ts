@@ -46,6 +46,38 @@ import { randomInt } from "node:crypto";
  */
 export const MIN_JITTER_BLOCKS = 8;
 
+/**
+ * Four minutes, and it is a WALL-CLOCK floor because that is what the defence was measured in.
+ *
+ * `MIN_JITTER_BLOCKS` is a count, and every sentence justifying it is in minutes — "interior
+ * messages within ~1.3x of chance, for four minutes of latency". Those agree only at the 30s
+ * blocks this was written against. `blockMs` is a `--block-ms` flag, so the two came apart the
+ * moment anyone set it, and setting it to the chain's REAL block time is the thing a careful
+ * person does. Starknet mainnet now produces a block about every two seconds.
+ *
+ * MEASURED ON REAL MAINNET BLOCKS (`adversary/test/live-crowd.test.ts`), a six-message
+ * conversation, counting how many other accounts published often enough to cover every one of
+ * its uploads — the `channel.activeAccount` crowd. Two independent runs, different block ranges
+ * and different public nodes:
+ *
+ *     blockMs   window   crowd  right     crowd  right
+ *       2000      16s     1.0   0.500      1.0   0.500
+ *       5000      40s     1.0   0.500      1.0   0.500
+ *      10000      80s     1.4   0.437      1.3   0.458
+ *      30000     240s    12.6   0.076      5.5   0.184   <- the default, the design point
+ *      60000     480s    65.9   0.015     31.3   0.061
+ *
+ * THE MAGNITUDE IS NOT A CONSTANT and the two runs differ by about a factor of two — the crowd
+ * is a property of who happened to be publishing, which is why `decisions/0029` insists the
+ * number is read per conversation rather than published as one. The SHAPE is stable, and the
+ * shape is the whole argument: sixteen seconds leaves the operator right half the time in both.
+ *
+ * So `--block-ms 2000`, which looks like a correction, costs at least a factor of three and
+ * passed every check this module had. The floor is in milliseconds now. A faster chain does not
+ * make a shorter window safe; it only makes the same window cost fewer blocks.
+ */
+export const MIN_JITTER_MS = 240_000;
+
 export type ScheduleConfig = {
   /** The chain's block interval, in milliseconds. The jitter window is a multiple of it. */
   readonly blockMs: number;
@@ -73,6 +105,19 @@ export function assertSafeSchedule(config: ScheduleConfig): void {
       `below one interval it buys nothing and at one it only halves the operator's accuracy. ` +
       `Minimum is ${MIN_JITTER_BLOCKS}, and even there the first message of a session stays ` +
       `identifiable — see channel/src/schedule.ts.`,
+    );
+  }
+  // AND THE SAME FLOOR IN WALL CLOCK, because the block count and the minutes only agree at
+  // 30s blocks. See MIN_JITTER_MS: a two-second block interval satisfies the check above and
+  // gives a sixteen-second window, which measures at 0.500 against 0.076 on real mainnet.
+  const window = config.blockMs * blocks;
+  if (!(window >= MIN_JITTER_MS)) {
+    throw new Error(
+      `schedule: ${blocks} intervals of ${config.blockMs}ms is a ${window / 1000}s window, and ` +
+      `the defence was measured in minutes rather than in blocks — minimum ` +
+      `${MIN_JITTER_MS / 1000}s. On real mainnet a 16s window leaves the operator right half ` +
+      `the time against 0.076 at the default; a faster chain does not make a shorter window ` +
+      `safe, it makes the same window cost fewer blocks. See channel/src/schedule.ts.`,
     );
   }
 }
