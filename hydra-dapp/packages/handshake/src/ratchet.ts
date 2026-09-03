@@ -138,6 +138,35 @@ export function keyFor(
 }
 
 /**
+ * Advance a chain to `upto` without consuming a key, parking everything stepped over.
+ *
+ * Exported for the DH ratchet, which has to drain a receiving chain before abandoning it — and
+ * which cannot do this for itself. `keyFor` returns a `Secret`, and a `Secret` cannot be turned
+ * back into the hex it came from: `packChain(chainAt(hex))` is NOT `hex`, because `unpackChain`
+ * derives rather than restores. That is the defect this file's header describes, and parking a
+ * key by packing the Secret reproduces it exactly — the key comes back different and every
+ * message from the abandoned chain fails to open.
+ *
+ * So the raw hexes never leave this file's representation. The caller gets them as they are
+ * stored, and hands them back to `unpackChain`, which is the same single hop `keyFor` makes.
+ */
+export function parkThrough(state: ChainState, upto: number, where: string): Record<string, string> {
+  const parked: Record<string, string> = {};
+  for (const [seq, hex] of Object.entries(state.skipped)) {
+    if (Number(seq) < upto) {
+      parked[seq] = hex;
+      delete state.skipped[seq];
+    }
+  }
+  while (state.next < upto) {
+    parked[String(state.next)] = messageHexOf(state.chainHex, where);
+    state.chainHex = nextHexOf(state.chainHex, where);
+    state.next++;
+  }
+  return parked;
+}
+
+/**
  * Give up on the sequences skipped longest ago.
  *
  * A skipped key is a message key kept in a file, so an unbounded set of them is forward secrecy
