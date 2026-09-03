@@ -175,3 +175,37 @@ test("POST-COMPROMISE: recovery takes a full round trip, and then the thief is o
   assert.notEqual(keyHex(take(stolen, later.header, WHERE)), later.key,
     "the thief caught up again on the next message");
 });
+
+test("a REPLAYED old header cannot corrupt the state, even though it is not obviously bogus", () => {
+  // Distinct from a forged header with a made-up key, and it takes a different path through
+  // `receiveKey`: this key is one we really did ratchet past, so the "have I parked anything for
+  // it" check can legitimately say no once its messages have all been read.
+  //
+  // What stops it is the same thing that stops the forgery — the step happens on a copy, and the
+  // copy is adopted only when the body opens. Here the body cannot open, because stepping back
+  // onto an old key derives a chain unrelated to the one that sealed it.
+  const { alice, bob } = pair();
+  const first = send(alice);
+  assert.equal(keyHex(take(bob, first.header, WHERE)), first.key);
+
+  // Both ends step: bob replies, alice reads it and re-keys.
+  const reply = send(bob);
+  assert.equal(keyHex(take(alice, reply.header, WHERE)), reply.key);
+  const second = send(alice);
+  assert.equal(keyHex(take(bob, second.header, WHERE)), second.key);
+
+  const before = JSON.stringify(bob);
+  // The old message, replayed. Its key was used and destroyed.
+  const again = receiveKey(bob, first.header, WHERE);
+  // Whatever it returns, bob must not adopt it — and a caller only adopts on a successful open,
+  // which this cannot produce.
+  assert.notEqual(keyHex(again.key), first.key,
+    "a replayed message handed back the key that already opened it — it was not destroyed");
+  assert.equal(JSON.stringify(bob), before,
+    "merely asking about a replayed header changed the state");
+
+  // And the channel still works afterwards.
+  const third = send(alice);
+  assert.equal(keyHex(take(bob, third.header, WHERE)), third.key,
+    "the channel stopped working after a replayed header");
+});
