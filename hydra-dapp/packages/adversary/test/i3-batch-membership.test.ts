@@ -64,7 +64,7 @@ function channelTraffic(vault: Vault, invites: string[], label: string, n: numbe
     mine.add(coverId(body));
   }
 
-  const seen = messages.map((m) => ({ seq: m.seq, pointer: m.pointer as unknown as Uint8Array }));
+  const seen = messages.map((m) => ({ seq: m.seq, commitment: m.calldata[1], pointer: m.pointer as unknown as Uint8Array }));
   return { mine, batch: readSet(channel, seen) };
 }
 
@@ -134,7 +134,7 @@ test("it is not the shared root: two unrelated readers separate just as cleanly"
     theirs.add(m.blobId);
   }
   const theirBatch = readSet(otherChannel,
-    messages.map((m) => ({ seq: m.seq, pointer: m.pointer as unknown as Uint8Array })));
+    messages.map((m) => ({ seq: m.seq, commitment: m.calldata[1], pointer: m.pointer as unknown as Uint8Array })));
 
   const recovered = grouped(vault, theirBatch);
   for (const id of theirs) assert.ok(recovered.has(id));

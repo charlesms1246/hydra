@@ -25,7 +25,7 @@ import { randomBytes } from "node:crypto";
 
 import { send, cover, openChannel } from "../../client/src/session.ts";
 import { readSet } from "../../client/src/read.ts";
-import { coverBody, coverId, coverIndex, COVER_RATE, anonymitySetFloor, saltForSequence }
+import { coverBody, coverId, coverIndex, COVER_RATE, anonymitySetFloor, saltFrom }
   from "../../channel/src/cover.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
@@ -62,7 +62,7 @@ function session(random: () => number, derived: boolean) {
     uploads.push({ id: coverId(body), real: false });
   }
 
-  const seen = messages.map((m) => ({ seq: m.seq, pointer: m.pointer as unknown as Uint8Array }));
+  const seen = messages.map((m) => ({ seq: m.seq, commitment: m.calldata[1], pointer: m.pointer as unknown as Uint8Array }));
   return { uploads, asked: new Set(readSet(channel, seen)) };
 }
 
@@ -130,7 +130,7 @@ test("the two sides agree on a decoy through one derivation, not two", () => {
   // What the recipient enumerates, from what it read off the chain and nothing else.
   const asked: string[] = [];
   for (const m of messages) {
-    for (let k = 0; k < COVER_RATE; k++) asked.push(`${saltForSequence(m.seq)}:${k}`);
+    for (let k = 0; k < COVER_RATE; k++) asked.push(`${saltFrom(m.calldata[1])}:${k}`);
   }
   assert.deepEqual(minted, asked.sort(),
     "the sender minted decoys the recipient does not ask for");
@@ -152,12 +152,12 @@ test("a sender handing `cover` a SUBSET of its messages still mints what the rec
   const minted = cover(config, tail, () => 0.5).map((d) => `${d.salt}:${d.index}`);
 
   // Message 2's decoys carry message 2's salt, not the first salt in the array it was handed.
-  assert.ok(minted.every((m) => m.startsWith(`${saltForSequence(2)}:`)
-    || m.startsWith(`${saltForSequence(3)}:`)),
+  assert.ok(minted.every((m) => m.startsWith(`${saltFrom(all[2].calldata[1])}:`)
+    || m.startsWith(`${saltFrom(all[3].calldata[1])}:`)),
     `a subset was renumbered from array position: ${minted.join(", ")}`);
   const recipientAsksFor = new Set<string>();
   for (const m of all) {
-    for (let k = 0; k < COVER_RATE; k++) recipientAsksFor.add(`${saltForSequence(m.seq)}:${k}`);
+    for (let k = 0; k < COVER_RATE; k++) recipientAsksFor.add(`${saltFrom(m.calldata[1])}:${k}`);
   }
   for (const m of minted) {
     assert.ok(recipientAsksFor.has(m), `decoy ${m} is one the recipient never asks for`);

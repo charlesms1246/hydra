@@ -87,7 +87,7 @@ function world(people: readonly Person[], random: () => number) {
     }
 
     // The operator learns this grouping from one read batch — see `i3-batch-membership`.
-    const seen = messages.map((m) => ({ seq: m.seq, pointer: m.pointer as unknown as Uint8Array }));
+    const seen = messages.map((m) => ({ seq: m.seq, commitment: m.calldata[1], pointer: m.pointer as unknown as Uint8Array }));
     const batch = new Set(readSet(channel, seen));
     blobsByChannel.set(person.name, mine.filter((id) => batch.has(id)));
   }

@@ -184,7 +184,8 @@ test("the public endpoint is exempt, because there the id IS the capability", ()
 test("a client's read set reaches the floor by padding, not by waiting", () => {
   // A client with one message must still be able to read it. Decoys are random ids shaped
   // exactly like real ones, and a miss is indistinguishable from a message not yet sent.
-  const one: SeenPointer[] = [{ seq: 0, pointer: send(config, new Uint8Array(1), 0, 0, lcg(2)).pointer }];
+  const sent = send(config, new Uint8Array(1), 0, 0, lcg(2));
+  const one: SeenPointer[] = [{ seq: 0, commitment: sent.calldata[1], pointer: sent.pointer }];
   const ids = readSet(channel, one);
   assert.ok(ids.length >= MIN_READ_BATCH, `a one-message channel produced a batch of ${ids.length}`);
   for (const id of ids) assert.match(id, /^enc:[0-9a-f]{62}$/, `${id} is not shaped like a real id`);
@@ -195,9 +196,10 @@ test("the batch does not encode which message is being read", () => {
   // Two reads for different targets must be indistinguishable. If the batch varied with what
   // the reader wanted, the difference between two batches would leak the same thing the batch
   // was supposed to hide.
-  const seen: SeenPointer[] = [0, 1, 2].map((seq) => ({
-    seq, pointer: send(config, new TextEncoder().encode(`m${seq}`), seq, seq * BLOCK, lcg(seq + 1)).pointer,
-  }));
+  const seen: SeenPointer[] = [0, 1, 2].map((seq) => {
+    const m = send(config, new TextEncoder().encode(`m${seq}`), seq, seq * BLOCK, lcg(seq + 1));
+    return { seq, commitment: m.calldata[1], pointer: m.pointer };
+  });
   const fixed = (n: number) => new Uint8Array(31).fill(n % 256);
   assert.deepEqual(readSet(channel, seen, fixed), readSet(channel, seen, fixed),
     "the same channel state produced two different read sets");
@@ -215,7 +217,7 @@ test("selection happens after the fetch, on the client", () => {
   for (let seq = 0; seq < 3; seq++) {
     const out = send(config, new TextEncoder().encode(`secret ${seq}`), seq, seq * BLOCK, lcg(seq + 7));
     vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: out.blobId, body: out.body, invite: `r${seq + 1}` });
-    seen.push({ seq, pointer: out.pointer });
+    seen.push({ seq, commitment: out.calldata[1], pointer: out.pointer });
   }
   const res = vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: readSet(channel, seen) });
   assert.ok(res.ok);

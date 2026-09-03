@@ -87,7 +87,8 @@ async function withVault(fn: (url: string, vault: Vault) => Promise<void>) {
 }
 
 /** Bob's side: the pointers he read off the chain are all he has to start from. */
-const seen = outgoing.map((m, seq) => ({ seq, pointer: m.pointer as unknown as Uint8Array }));
+const seen = outgoing.map((m, seq) =>
+  ({ seq, commitment: m.calldata[1], pointer: m.pointer as unknown as Uint8Array }));
 
 async function fetchBatch(url: string, ids: string[]): Promise<Map<string, Uint8Array>> {
   const res = await fetch(`${url}${ENCRYPTED_ENDPOINT}`, {

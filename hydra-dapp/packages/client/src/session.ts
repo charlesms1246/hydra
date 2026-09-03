@@ -30,7 +30,7 @@ import { noteCalldata } from "../../channel/src/note.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import { scheduleUpload, assertSafeSchedule } from "../../channel/src/schedule.ts";
 import type { ScheduleConfig } from "../../channel/src/schedule.ts";
-import { coverPlan, coverIndex, COVER_RATE, saltFrom, saltForSequence } from "../../channel/src/cover.ts";
+import { coverPlan, coverIndex, COVER_RATE, saltFrom } from "../../channel/src/cover.ts";
 import type { Decoy } from "../../channel/src/cover.ts";
 import { sealForChannel, wireBytes, uploadPathFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
@@ -181,13 +181,18 @@ export function receive(
  */
 export function cover(
   config: SessionConfig,
-  messages: readonly {
-    readonly publishedAt: number;
-    readonly body: Uint8Array;
-    readonly seq: number;
-    /** The commitment this message published, if the caller has a chain. See `Decoy.salt`. */
-    readonly commitment?: bigint;
-  }[],
+  /**
+   * The messages to cover — whole `Outgoing` values, because the salt comes off `calldata`.
+   *
+   * IT USED TO TAKE `{publishedAt, body, seq}` WITH AN OPTIONAL `commitment`, and that optional
+   * field was an invention. Every message this function can be asked to cover is one `send`
+   * produced, and every one of those carries its commitment in `calldata[1]` — so "a message
+   * without a commitment" was never a real state, and the fallback it justified salted by
+   * SEQUENCE, which is the one value two devices on an identity share. That is the exact
+   * mutation `decisions/0033` proves the guarantee against, reachable in production by a field
+   * being absent.
+   */
+  messages: readonly Outgoing[],
   random?: () => number,
 ): Decoy[] {
   const rate = config.coverRate ?? COVER_RATE;
@@ -209,9 +214,9 @@ export function cover(
     return {
       ...d,
       index: d.index % rate,
-      salt: message.commitment === undefined
-        ? saltForSequence(message.seq)
-        : saltFrom(message.commitment),
+      // `calldata[1]` is the commitment, as published. There is no other branch: a message
+      // without one cannot reach here, because `send` is the only thing that makes an `Outgoing`.
+      salt: saltFrom(message.calldata[1]),
     };
   });
 }

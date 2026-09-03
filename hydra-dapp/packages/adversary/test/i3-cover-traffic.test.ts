@@ -277,9 +277,14 @@ test("the lead is the jitter window exactly, and that is what makes the floor a 
 test("NO_CHAIN never reaches production — the second layer, under the type", () => {
   // THE LOAD IS ON THE TYPE, not on this grep, and the order matters. `Salt` is branded, so the
   // only ways to make one are `saltFrom` and `NO_CHAIN` and a bare `0n` is a type error at the
-  // call site. That is what closes the hole a plain `bigint` parameter left: required stops a
-  // caller OMITTING the salt and does nothing about one passing zero, which type-checks and reads
-  // as innocuous.
+  // call site. `saltFrom` then refuses anything that cannot be a commitment, so the sentinel is
+  // unreachable from the honest constructor too.
+  //
+  // AND THE PREMISE OF THAT SENTENCE IS ITSELF ASSERTED, in `crowd.test.ts` — "there are exactly
+  // two ways to make a Salt". It has to be, because it stopped being true once: a third
+  // constructor was added for callers with no chain, this grep was not updated, and it could not
+  // have been, because that constructor legitimately appeared in `client/`. The guard written to
+  // catch this class was defeated by adding a door. A comment cannot hold a premise.
   //
   // This stays as belt and braces over the sentinel's NAME, which is the one thing a type cannot
   // distinguish from a real salt once it has been constructed.

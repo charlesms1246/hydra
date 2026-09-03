@@ -13,8 +13,11 @@ import {
   crowdOf, accuracyAgainst, regularity, prune, linkability, describe, DEFAULT_PRUNING,
 } from "../../channel/src/crowd.ts";
 import type { Publisher } from "../../channel/src/crowd.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { P } from "../../channel/src/commitment.ts";
-import { saltFrom, saltForSequence, isCommitment, NO_CHAIN } from "../../channel/src/cover.ts";
+import { saltFrom, isCommitment, NO_CHAIN } from "../../channel/src/cover.ts";
 
 const W = 240_000;
 /** An account that published at these times, irregularly enough to survive pruning. */
@@ -210,19 +213,27 @@ test("SALTFROM REFUSES WHAT CANNOT BE A COMMITMENT, because zero was the sentine
   assert.throws(() => saltFrom(NO_CHAIN));
 });
 
-test("the three kinds of salt occupy disjoint ranges", () => {
-  // Sequences start at zero and zero is the sentinel, so `saltFrom(BigInt(seq))` for a chainless
-  // harness's first message produced exactly `NO_CHAIN`. Offsetting by one separates them, and the
-  // commitment floor separates both from a real hash.
+test("THERE ARE EXACTLY TWO WAYS TO MAKE A SALT, and the guard asserts its own premise", () => {
+  // The comment in `i3-cover-traffic.test.ts` said "the only ways to make one are `saltFrom` and
+  // `NO_CHAIN`". That was true when written, and then a third constructor was added — a
+  // sequence-based one for callers with no chain — and neither the grep nor its premise was
+  // updated. The guard written to catch exactly this class was defeated by adding a door.
+  //
+  // A comment cannot hold a premise. This does: every `as Salt` in `cover.ts` is counted, so a
+  // fourth door fails here rather than quietly widening what a `Salt` can be.
+  const src = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "channel", "src", "cover.ts"), "utf8");
+  const casts = src.split("\n")
+    .map((l, i) => [l, i + 1] as const)
+    .filter(([l]) => /\bas Salt\b/.test(l) && !l.trimStart().startsWith("*"));
+  assert.equal(casts.length, 2,
+    "a Salt can now be made in a way this guard does not know about:\n"
+    + casts.map(([l, n]) => `  cover.ts:${n} ${l.trim()}`).join("\n"));
+  assert.ok(casts.some(([l]) => l.includes("saltFrom") || l.includes("commitment as Salt")));
+  assert.ok(casts.some(([l]) => l.includes("NO_CHAIN")));
+
+  // And the two are distinguishable, which is what the refusal buys.
   assert.equal(NO_CHAIN, 0n);
-  assert.equal(saltForSequence(0), 1n);
-  assert.notEqual(saltForSequence(0), NO_CHAIN);
-  for (const seq of [0, 1, 99, 100_000]) {
-    assert.ok(saltForSequence(seq) > NO_CHAIN);
-    assert.ok(!isCommitment(saltForSequence(seq)),
-      `a sequence salt for ${seq} could be mistaken for a commitment`);
-  }
+  assert.ok(!isCommitment(NO_CHAIN));
   assert.ok(isCommitment(1n << 200n));
-  assert.ok(!isCommitment(0n));
-  assert.throws(() => saltForSequence(-1), /non-negative/);
 });

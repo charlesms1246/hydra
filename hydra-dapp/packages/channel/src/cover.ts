@@ -343,20 +343,6 @@ export function saltFrom(commitment: bigint): Salt {
 }
 
 /**
- * The salt for a caller with no chain, separating messages by sequence.
- *
- * A SEPARATE CONSTRUCTOR, and the ranges are disjoint on purpose. Sequences start at zero, and
- * zero is {@link NO_CHAIN} — so `saltFrom(BigInt(seq))` for the first message of a chainless
- * harness produced exactly the sentinel, which is its own small collision. Offsetting by one puts
- * every sequence salt below {@link COMMITMENT_FLOOR} and above the sentinel, so the three kinds of
- * salt cannot be confused with each other by arithmetic.
- */
-export function saltForSequence(seq: number): Salt {
-  if (!Number.isInteger(seq) || seq < 0) throw new Error("a sequence is a non-negative integer");
-  return (BigInt(seq) + 1n) as Salt;
-}
-
-/**
  * The salt for a caller that has no chain to read a commitment from.
  *
  * Only the harnesses in `adversary/` that measure cover as a size or a keystream. Making them

@@ -95,7 +95,7 @@ function world() {
     }
 
     const batch = new Set(readSet(channel,
-      messages.map((m) => ({ seq: m.seq, pointer: m.pointer as unknown as Uint8Array }))));
+      messages.map((m) => ({ seq: m.seq, commitment: m.calldata[1], pointer: m.pointer as unknown as Uint8Array }))));
     channels.set(p.owner, mine.filter((id) => batch.has(id)));
     truth.set(p.owner, p.owner);
   }

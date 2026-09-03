@@ -25,7 +25,7 @@ import { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 import { recoverBlobId, ID_BYTES } from "../../channel/src/pointer.ts";
 import { encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
-import { coverBody, coverId, coverIndex, COVER_RATE, saltFrom, saltForSequence, isCommitment } from "../../channel/src/cover.ts";
+import { coverBody, coverId, coverIndex, COVER_RATE, saltFrom, isCommitment } from "../../channel/src/cover.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 
@@ -41,13 +41,15 @@ export { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 /** A pointer seen on chain, with the sequence number it was published at. */
 export type SeenPointer = {
   /**
-   * The commitment this message published, when the caller has a chain to read it from.
+   * The commitment this message published, read off the chain event that announced it.
    *
-   * Optional because `readSet` is also driven by harnesses that only exercise addressing. It is
-   * what salts the channel's cover — see `channel/src/cover.ts` — so a caller that has it gets
-   * decoys no second device on the same identity can collide with.
+   * REQUIRED, and it was optional. A reader always has one — `readChannel` builds these from
+   * chain events and every event carries `data[1]` — so the optional shape only ever existed to
+   * let a harness skip it, and what it bought was a fallback that salted cover by SEQUENCE. Two
+   * devices on one identity share a sequence and do not share a commitment, so that fallback was
+   * the collision `decisions/0033` closed, reachable by a field being absent.
    */
-  readonly commitment?: bigint; readonly seq: number; readonly pointer: Uint8Array };
+  readonly commitment: bigint; readonly seq: number; readonly pointer: Uint8Array };
 
 /**
  * The set of ids to ask for.
@@ -105,8 +107,8 @@ export function readSet(
   // its own — and would be a denial of service here, because a note published with a commitment
   // of `1` would make every reader throw. An event we cannot salt has no decoys of ours under it.
   const salts = new Set(seen
-    .filter((s) => s.commitment === undefined || isCommitment(s.commitment))
-    .map((s) => s.commitment === undefined ? saltForSequence(s.seq) : saltFrom(s.commitment)));
+    .filter((s) => isCommitment(s.commitment))
+    .map((s) => saltFrom(s.commitment)));
   for (const salt of salts) {
     for (let k = 0; k < coverRate; k++) {
       for (const bucket of BUCKETS) {
