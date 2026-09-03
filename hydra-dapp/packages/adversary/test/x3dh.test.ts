@@ -14,6 +14,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { uncoveredRoutes } from "../src/must-not-compile.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -273,14 +274,15 @@ test("none of the eight cross-domain handshake routes compiles", () => {
   } catch (e) {
     out = String((e as { stdout?: string }).stdout ?? "");
   }
-  const lines = out.split("\n").filter((l) => /error TS/.test(l));
-  const fixture = lines.filter((l) => l.includes("x3dh-must-not-compile"));
-  // By distinct line, for the reason `i5-blob-separation.test.ts` explains: a count of errors
-  // passes while one route silently compiles, and the route that compiles is the one that
-  // agrees a channel under the escrowed key.
-  const offending = new Set(fixture.map((l) => l.match(/\((\d+),/)?.[1]).filter(Boolean));
-  const attempts = readFileSync(join(HERE, "x3dh-must-not-compile.ts"), "utf8")
-    .split("\n").filter((l) => /^\/\/ \d+\./.test(l)).length;
-  assert.equal(offending.size, attempts,
-    `${attempts} numbered routes, ${offending.size} rejected — one of them compiles:\n${out}`);
+  const { uncovered, orphans, routes } = uncoveredRoutes(out, "x3dh-must-not-compile", join(HERE, "x3dh-must-not-compile.ts"));
+  assert.ok(routes.length >= 8, `only ${routes.length} numbered routes in the fixture`);
+  // EVERY ROUTE INDIVIDUALLY, through the shared reader — see `adversary/src/must-not-compile.ts`
+  // for why a total cannot say which route was rejected, and for how this exact check was got
+  // wrong twice before.
+  assert.deepEqual(uncovered.map((r) => r.label), [],
+    `these routes COMPILE:\n`
+    + `${uncovered.map((r) => `  route ${r.label} ($x3dh-must-not-compile.ts:${r.from}-${r.to - 1})`).join("\n")}`
+    + `\n\nfull tsc output:\n${out}`);
+  assert.deepEqual(orphans, [],
+    `type errors in the fixture outside any numbered route: lines ${orphans.join(", ")}`);
 });

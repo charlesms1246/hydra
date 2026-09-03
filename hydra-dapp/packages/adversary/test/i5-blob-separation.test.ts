@@ -20,6 +20,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { uncoveredRoutes } from "../src/must-not-compile.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -139,12 +140,20 @@ test("none of the eight publish routes compiles", () => {
   // Counted by DISTINCT LINE, not by error. Eight errors on seven routes passes a count check
   // while one route silently compiles — and the route that compiles is the one that publishes
   // a private message. Every numbered attempt has to be rejected on its own.
-  const fixture = lines.filter((l) => l.includes("i5-must-not-compile"));
-  const offending = new Set(fixture.map((l) => l.match(/\((\d+),/)?.[1]).filter(Boolean));
-  const attempts = readFileSync(join(HERE, "i5-must-not-compile.ts"), "utf8")
-    .split("\n").filter((l) => /^\/\/ \d+\./.test(l)).length;
-  assert.equal(offending.size, attempts,
-    `${attempts} numbered routes, ${offending.size} rejected — one of them compiles:\n${out}`);
+  const { uncovered, orphans, routes } =
+    uncoveredRoutes(out, "i5-must-not-compile", join(HERE, "i5-must-not-compile.ts"));
+  assert.ok(routes.length >= 8, `only ${routes.length} numbered routes in the fixture`);
+  // EVERY NUMBERED ATTEMPT ON ITS OWN, which is what the comment above has always said and what
+  // the code did not do: it counted distinct erroring LINES against the route count, so two
+  // errors in one route and none in another passed at 8 == 8. Shared now — see
+  // `adversary/src/must-not-compile.ts`, and note that `x3dh.test.ts` cited THIS file as the
+  // precedent for counting lines, so the defect propagated by citation.
+  assert.deepEqual(uncovered.map((r) => r.label), [],
+    `these routes COMPILE:\n`
+    + `${uncovered.map((r) => `  route ${r.label} (i5-must-not-compile.ts:${r.from}-${r.to - 1})`).join("\n")}`
+    + `\n\nfull tsc output:\n${out}`);
+  assert.deepEqual(orphans, [],
+    `type errors in the fixture outside any numbered route: lines ${orphans.join(", ")}`);
   // Nothing ELSE may fail to type-check, or this passes for the wrong reason. Every
   // `*-must-not-compile.ts` is excluded, not just this one: they exist to fail, and a new
   // invariant's fixture must not break an older invariant's build gate.
