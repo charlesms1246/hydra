@@ -443,6 +443,9 @@ export async function sendMessage(
   };
   const outgoing = prepare(config, new TextEncoder().encode(text), seq, now, random);
 
+  // The commitment, as published. Read back off `calldata` rather than recomputed, so the value
+  // salting the cover is the one on chain and not a second derivation of it that could drift.
+  const commitment = outgoing.calldata[1];
   const txHash = await chain.publish(outgoing.calldata);
   entry.nextSeq = seq + 1;
   // Recorded here rather than read back later: a client already knows what it sent, and asking
@@ -466,7 +469,11 @@ export async function sendMessage(
     // Global index, from the message's sequence — `coverPlan` numbers within its own call and
     // this client calls it once per message. The recipient derives the same number from the
     // sequence it read off the chain.
-    const body = coverBody(channel, d.bucket, coverIndex(seq, d.index));
+    // SALTED WITH THE COMMITMENT this message just put on chain, and indexed by `k` alone.
+    // The commitment is what makes two devices at the same sequence mint different decoys —
+    // `decisions/0023`'s residual — and it is also why the global `coverIndex` is no longer
+    // needed here: the salt already separates one message's decoys from another's.
+    const body = coverBody(channel, d.bucket, d.index, commitment);
     state.pending.push({
       channel: name, id: coverId(body),
       bodyB64: Buffer.from(body).toString("base64"),

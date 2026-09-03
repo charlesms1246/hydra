@@ -82,8 +82,14 @@ export type CoverConfig = ScheduleConfig & {
 /** A message to be covered: when its chain event lands, and the bucket its upload will be. */
 export type CoverEvent = { readonly at: number; readonly bucket: number };
 
-/** A decoy to send: when, and at what size so it is indistinguishable from what it hides. */
-export type Decoy = {
+/**
+ * A decoy as `coverPlan` schedules it: when, and at what size. No salt yet.
+ *
+ * Separate from {@link Decoy} because a plan is made from times and buckets alone — it has no
+ * message in front of it, so it cannot know a commitment. `session.cover` is what pairs the plan
+ * back to the messages it covers and adds the salt.
+ */
+export type PlannedDecoy = {
   readonly at: number;
   readonly bucket: number;
   /**
@@ -93,6 +99,19 @@ export type Decoy = {
    * ever fetches is a decoy the operator identifies by that alone — see `coverBody`.
    */
   readonly index: number;
+};
+
+/** A decoy ready to mint: a planned one, plus what separates it from another message's. */
+export type Decoy = PlannedDecoy & {
+  /**
+   * What separates this message's decoys from every other message's.
+   *
+   * The on-chain COMMITMENT where there is a chain, and the sequence number where there is not.
+   * Both uniquely name a message to a recipient that has already read the chain event; only the
+   * commitment also separates two DEVICES sharing an identity, because it descends from a random
+   * blind rather than from a counter both devices keep. See `coverBody`.
+   */
+  readonly salt: bigint;
 };
 
 /**
@@ -129,14 +148,14 @@ export function coverPlan(
   events: readonly CoverEvent[],
   config: CoverConfig,
   random: () => number = () => randomInt(1 << 30) / (1 << 30),
-): Decoy[] {
+): PlannedDecoy[] {
   assertSafeSchedule(config);
   const rate = config.coverRate ?? COVER_RATE;
   if (!(rate > 0)) throw new Error("cover: a rate of zero is no cover at all");
   if (events.length === 0) throw new Error("cover: a session with no events needs no cover");
   const window = jitterWindowMs(config);
   const lead = coverLeadMs(config);
-  const out: Decoy[] = [];
+  const out: PlannedDecoy[] = [];
   let index = 0;
   for (const event of events) {
     // Spanning [event - lead, event + window): the lead is what stops the session's earliest
@@ -192,16 +211,38 @@ export function anonymitySetFloor(config: CoverConfig): number {
  * AES-CTR over zeros rather than HKDF: HKDF-SHA256 tops out at 8160 bytes and the largest
  * bucket is 262144. A keystream is indistinguishable from random without the key, which is the
  * property the old random bytes had and the only one this needs.
+ *
+ * THE SALT CLOSES THE TWO-DEVICE COLLISION, which `decisions/0023` recorded as unfixable.
+ *
+ * The argument for unfixable was that a decoy has to be regenerable by the RECIPIENT, who knows
+ * the channel and the sequence and nothing about which device sent it — so any per-device salt is
+ * a salt the recipient cannot compute. That is true of anything the sender picks privately. It is
+ * not true of the **commitment**, which the sender puts on chain and the recipient reads off it
+ * before it fetches anything.
+ *
+ * The commitment is `commit(blind, contentHash)` and the blind is `randomBytes` per message, so
+ * two devices at the same sequence publish different commitments — and therefore mint different
+ * decoys — without coordinating, without a device identifier, and without the recipient needing
+ * to know a second client exists.
+ *
+ * A caller that omits the salt gets the old derivation. That is not a compatibility shim: the
+ * harnesses in `adversary/` that measure cover as a size or a keystream have no chain and no
+ * commitment, and making them invent one would be making them measure a fixture.
  */
 export function coverBody(
   channel: Secret<typeof VAULT_DOMAIN>,
   bucket: number,
   index: number,
+  salt?: bigint,
 ): Uint8Array {
   if (!Number.isInteger(index) || index < 0) {
     throw new Error("a decoy index is a non-negative integer");
   }
-  const key = expose(subKey(coverKey(channel), `body/${bucket}`), VAULT_DOMAIN);
+  // THE SALT IS THE ON-CHAIN COMMITMENT, and it is what stops two devices minting the same
+  // decoys. See the note on `decisions/0023`'s residual below.
+  const key = expose(
+    subKey(coverKey(channel), salt === undefined ? `body/${bucket}` : `body/${bucket}/${salt}`),
+    VAULT_DOMAIN);
   const iv = Buffer.alloc(16);
   iv.writeUInt32BE(index, 12);
   const c = createCipheriv("aes-256-ctr", key, iv);

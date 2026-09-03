@@ -181,7 +181,13 @@ export function receive(
  */
 export function cover(
   config: SessionConfig,
-  messages: readonly { readonly publishedAt: number; readonly body: Uint8Array; readonly seq: number }[],
+  messages: readonly {
+    readonly publishedAt: number;
+    readonly body: Uint8Array;
+    readonly seq: number;
+    /** The commitment this message published, if the caller has a chain. See `Decoy.salt`. */
+    readonly commitment?: bigint;
+  }[],
   random?: () => number,
 ): Decoy[] {
   const rate = config.coverRate ?? COVER_RATE;
@@ -190,13 +196,21 @@ export function cover(
     config,
     random,
   );
-  // Renumbered from the message's own SEQUENCE rather than its position in this array. The
-  // recipient derives a decoy's index from the sequence numbers it read off the chain, and a
-  // caller that passed a subset of its messages here would otherwise mint decoys the recipient
-  // never asks for — which is exactly the never-fetched signal this indexing removes.
+  // SALTED PER MESSAGE, INDEXED WITHIN IT, and the pair is what the recipient enumerates. It
+  // used to be a single global index folded from the sequence; the salt replaces that, because a
+  // sequence number is shared by two devices on one identity and a commitment is not.
+  //
+  // A caller with no chain salts by sequence, which reproduces exactly the separation the old
+  // index gave. A caller that passed a subset of its messages here still mints decoys the
+  // recipient asks for, because the salt comes from the message rather than from a position in
+  // this array — the never-fetched signal that indexing exists to remove.
   return plan.map((d) => {
     const message = messages[Math.floor(d.index / rate)];
-    return { ...d, index: coverIndex(message.seq, d.index % rate, rate) };
+    return {
+      ...d,
+      index: d.index % rate,
+      salt: message.commitment ?? BigInt(message.seq),
+    };
   });
 }
 

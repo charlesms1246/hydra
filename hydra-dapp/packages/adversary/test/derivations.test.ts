@@ -196,7 +196,7 @@ const DERIVATIONS: Record<string, () => Promise<void>> = {
         stored++;
       }
       for (const d of cover(config, messages, random)) {
-        const body = coverBody(channel, d.bucket, d.index);
+        const body = coverBody(channel, d.bucket, d.index, d.salt);
         vault.handle({
           op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: coverId(body), body,
           invite: invites.shift(),

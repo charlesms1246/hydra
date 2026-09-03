@@ -115,11 +115,31 @@ test("the work of keeping up does not grow with the conversation", async () => {
       await readChannel(s.alice, s.chain, "bob", impl);
       cost.push(asked.reduce((a, b) => a + b, 0));
     }
-    // Ten turns in against forty turns in. Quadratic growth is what the ceiling was made of, so
-    // the property to hold is that the steady-state read is flat, not merely finite.
-    assert.ok(cost[39] < cost[9] * 2,
-      `a read costs ${cost[39]} ids at message 40 against ${cost[9]} at message 10 — the batch is `
-      + "growing with the conversation again");
+    // STEADY STATE AGAINST STEADY STATE, and the turn-10 figure is not one.
+    //
+    // This compared turn 10 with turn 40 and was passing by 4% — 1850 against a bound of 1920.
+    // Turn 10 is inside the warm-up: `fresh` is still filling toward RESCAN_EVENTS, so the read
+    // is cheap for a reason that has nothing to do with the conversation's length. Salting cover
+    // by commitment made the warm-up much cheaper still (960 -> 720 at turn 10, 1850 -> 1530 at
+    // turn 40 — cheaper at every point) and the ratio against a smaller denominator tripped a
+    // test measuring the wrong pair.
+    //
+    // Quadratic growth is what the ceiling was made of, so the property is that the read stops
+    // growing once the window is full. Measured 1.07 across turns 20 to 40.
+    assert.ok(cost[39] < cost[19] * 1.3,
+      `a read costs ${cost[39]} ids at message 40 against ${cost[19]} at message 20 — the batch `
+      + "is growing with the conversation again");
+    // And the warm-up is a warm-up rather than a floor somebody should try to hold: it is
+    // cheaper because the rescan window is not yet full, and asserting it stays that way would
+    // be asserting that the client never catches up.
+    assert.ok(cost[19] > cost[9],
+      "the read did not grow at all from turn 10 to turn 20 — the rescan window is not filling, "
+      + "which means a client that fell behind would not catch up");
+    // An absolute ceiling too, because a flat ratio says nothing about the size it is flat at.
+    // `fetchIds` pages against the vault's body limit, so this is about request count, not
+    // failure: 1530 measured here against 1850 before cover was salted by commitment.
+    assert.ok(cost[39] < 2_000,
+      `a steady-state read asks for ${cost[39]} ids; it was 1530 when this bound was written`);
   } finally { s.server.close(); }
 });
 

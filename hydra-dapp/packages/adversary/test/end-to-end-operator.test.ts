@@ -64,7 +64,7 @@ function conversation(random: () => number, withCover: boolean) {
   if (withCover) {
     // Derived from the messages, so each decoy is the size of something it could be hiding.
     for (const decoy of cover(config, sent, random)) {
-      const body = coverBody(channel, decoy.bucket, decoy.index);
+      const body = coverBody(channel, decoy.bucket, decoy.index, decoy.salt);
       arrivals.push({ at: decoy.at, id: coverId(body), bytes: body.length, real: false, seq: -1 });
     }
   }
@@ -214,7 +214,7 @@ function mixedConversation(random: () => number, withCover: boolean) {
   }));
   if (withCover) {
     for (const decoy of cover(config, sent, random)) {
-      const body = coverBody(channel, decoy.bucket, decoy.index);
+      const body = coverBody(channel, decoy.bucket, decoy.index, decoy.salt);
       arrivals.push({ at: decoy.at, id: coverId(body), bytes: body.length, real: false, seq: -1 });
     }
   }

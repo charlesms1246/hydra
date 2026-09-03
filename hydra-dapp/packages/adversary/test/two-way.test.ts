@@ -156,10 +156,23 @@ test("a channel from before the DH ratchet is refused too, for the same reason",
   } finally { server.close(); }
 });
 
-test("TWO CLIENTS ON ONE IDENTITY mint identical cover, and cannot be stopped from it", async () => {
-  // The same defect the direction split fixed, from a place the split cannot reach: two devices
-  // sharing a seed share a ROLE, so they are one direction. Copying a state file to a second
-  // machine is the obvious thing to do with it.
+test("TWO CLIENTS ON ONE IDENTITY no longer mint identical cover", async () => {
+  // `decisions/0023` recorded this as unfixable and it was not. Two devices sharing a seed share
+  // a ROLE, so they are one direction, and copying a state file to a second machine is the
+  // obvious thing to do with it — so both would mint the same decoy bodies at the same sequence,
+  // collide in the vault, and hand the operator a blob id that proves two clients share an
+  // identity.
+  //
+  // THE ARGUMENT FOR UNFIXABLE was that a decoy must be regenerable by the RECIPIENT, who knows
+  // the channel and the sequence and nothing about which device sent it — so any per-device salt
+  // is one the recipient cannot compute. True of anything the sender picks privately. Not true of
+  // the **commitment**, which the sender publishes on chain and the recipient reads off the event
+  // before it fetches anything.
+  //
+  // So: the recipient fetches them by deriving from the commitment, exactly as it already derives
+  // everything else about a message from the chain event that announced it. The blind inside the
+  // commitment is `randomBytes` per message, so two devices at sequence 0 publish different
+  // commitments without coordinating and without either knowing the other exists.
   const { alice, bob, v, server, chain } = await pair();
   try {
     const laptop = JSON.parse(JSON.stringify(alice)) as typeof alice;
@@ -172,10 +185,16 @@ test("TWO CLIENTS ON ONE IDENTITY mint identical cover, and cannot be stopped fr
 
     const phone = new Set(alice.pending.map((p) => p.id));
     const shared = laptop.pending.filter((p) => phone.has(p.id));
-    assert.equal(shared.length, COVER_RATE,
-      `${shared.length} objects collided across two devices; if this is now zero, something `
-      + "gives a device its own cover — say how the recipient fetches it");
-    assert.ok(shared.every((p) => !p.real), "a real message collided, which would be worse");
+    assert.deepEqual(shared, [],
+      `${shared.length} objects still collide across two devices — the commitment salt is not `
+      + "reaching the cover derivation");
+
+    // And the two devices really did send at the same sequence, or the absence of a collision
+    // would be the absence of an overlap rather than a fix.
+    assert.equal(alice.channels.bob.nextSeq, 1);
+    assert.equal(laptop.channels.bob.nextSeq, 1);
+    assert.equal(alice.pending.filter((p) => !p.real).length, COVER_RATE);
+    assert.equal(laptop.pending.filter((p) => !p.real).length, COVER_RATE);
     void bob;
   } finally { server.close(); }
 });

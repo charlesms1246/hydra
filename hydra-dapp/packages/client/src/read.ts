@@ -39,7 +39,15 @@ import type { Secret } from "../../identity/src/domains.ts";
 export { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 
 /** A pointer seen on chain, with the sequence number it was published at. */
-export type SeenPointer = { readonly seq: number; readonly pointer: Uint8Array };
+export type SeenPointer = {
+  /**
+   * The commitment this message published, when the caller has a chain to read it from.
+   *
+   * Optional because `readSet` is also driven by harnesses that only exercise addressing. It is
+   * what salts the channel's cover — see `channel/src/cover.ts` — so a caller that has it gets
+   * decoys no second device on the same identity can collide with.
+   */
+  readonly commitment?: bigint; readonly seq: number; readonly pointer: Uint8Array };
 
 /**
  * The set of ids to ask for.
@@ -79,17 +87,34 @@ export function readSet(
   // index depends on the sequence alone, so generating them per candidate PAIR multiplied the
   // request by the number of events and pushed it past the vault's body limit. The failure was
   // "body too large", which names the symptom.
+  // DEDUPED BY COMMITMENT, which used to be by sequence, and the change is what closes the
+  // two-device collision. A decoy is salted with the commitment its message published, so the
+  // recipient derives it from the chain event rather than from a sequence number that two
+  // devices share. Each event carries exactly one commitment, where one sequence pairs with many
+  // events — so this is not the per-candidate-PAIR blowup that pushed the request past the
+  // vault's body limit; it is tighter than the version it replaces.
+  //
+  // An entry with no commitment is one from a caller that has no chain — the addressing-only
+  // harnesses — and it falls back to the unsalted derivation so those keep measuring what they
+  // were written to measure.
   const decoyIds: string[] = [];
-  for (const seq of new Set(seen.map((s) => s.seq))) {
+  // The commitment where the caller has a chain, the sequence where it does not — the same
+  // choice `session.cover` makes when it mints them, and the reason both ends agree.
+  const salts = new Set(seen.map((s) => s.commitment ?? BigInt(s.seq)));
+  for (const salt of salts) {
     for (let k = 0; k < coverRate; k++) {
-      const index = coverIndex(seq, k, coverRate);
-      for (const bucket of BUCKETS) decoyIds.push(coverId(coverBody(channel, bucket, index)));
+      for (const bucket of BUCKETS) {
+        decoyIds.push(coverId(coverBody(channel, bucket, k, salt)));
+      }
     }
   }
 
   const decoys: string[] = [];
   while (real.length + decoyIds.length + decoys.length < MIN_READ_BATCH) {
     decoys.push(`enc:${Buffer.from(pad(ID_BYTES)).toString("hex")}`);
+  }
+  if (process.env.HYDRA_DEBUG_READ) {
+    console.error(`real=${real.length} salts=${salts.size} decoys=${decoyIds.length} pad=${decoys.length}`);
   }
   return [...new Set([...real, ...decoyIds, ...decoys])].sort();
 }

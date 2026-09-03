@@ -57,7 +57,7 @@ function channelTraffic(vault: Vault, invites: string[], label: string, n: numbe
     mine.add(m.blobId);
   }
   for (const d of cover(config, messages, random)) {
-    const body = coverBody(channel, d.bucket, d.index);
+    const body = coverBody(channel, d.bucket, d.index, d.salt);
     vault.handle({
       op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: coverId(body), body, invite: invites.shift(),
     });

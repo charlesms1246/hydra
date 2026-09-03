@@ -58,7 +58,7 @@ function session(random: () => number, derived: boolean) {
   const uploads: { id: string; real: boolean }[] =
     messages.map((m) => ({ id: m.blobId, real: true }));
   for (const d of cover(config, messages, random)) {
-    const body = derived ? coverBody(channel, d.bucket, d.index) : new Uint8Array(randomBytes(d.bucket));
+    const body = derived ? coverBody(channel, d.bucket, d.index, d.salt) : new Uint8Array(randomBytes(d.bucket));
     uploads.push({ id: coverId(body), real: false });
   }
 
@@ -113,34 +113,53 @@ test("the recipient asks for every bucket, because it cannot know the size in ad
   assert.ok(s.asked.size > s.uploads.length * 2);
 });
 
-test("the two sides agree on a decoy's index through one function, not two", () => {
-  // `coverIndex` is called by the sender when it mints a decoy and by the recipient when it
-  // asks for one. Two copies of the arithmetic would drift, the recipient would stop fetching
-  // some decoys, and those would go back to being identifiable — with nothing failing.
+test("the two sides agree on a decoy through one derivation, not two", () => {
+  // The sender mints a decoy and the recipient asks for one; two copies of the arithmetic would
+  // drift, the recipient would stop fetching some decoys, and those would go back to being
+  // identifiable with nothing failing.
+  //
+  // A decoy is named by a PAIR now — a per-message salt and an index within the message — where
+  // it used to be one folded index. The salt is what a second device on the same identity cannot
+  // reproduce; see `decisions/0023` and `channel/src/cover.ts`.
   const config = { channel, author: ephemeral(), blockMs: BLOCK };
   const messages = Array.from({ length: 3 }, (_, seq) =>
     send(config, new TextEncoder().encode("x"), seq, seq * BLOCK, () => 0.5));
-  const planned = cover(config, messages, () => 0.5).map((d) => d.index).sort((a, b) => a - b);
-  const expected: number[] = [];
-  for (const m of messages) for (let k = 0; k < COVER_RATE; k++) expected.push(coverIndex(m.seq, k));
-  assert.deepEqual(planned, expected.sort((a, b) => a - b));
+  const minted = cover(config, messages, () => 0.5)
+    .map((d) => `${d.salt}:${d.index}`).sort();
+
+  // What the recipient enumerates, from what it read off the chain and nothing else.
+  const asked: string[] = [];
+  for (const m of messages) {
+    for (let k = 0; k < COVER_RATE; k++) asked.push(`${BigInt(m.seq)}:${k}`);
+  }
+  assert.deepEqual(minted, asked.sort(),
+    "the sender minted decoys the recipient does not ask for");
+  // Every index is within one message rather than folded across the session.
+  assert.ok(cover(config, messages, () => 0.5).every((d) => d.index < COVER_RATE));
 });
 
-test("a sender that renumbers from array position instead of sequence breaks it", () => {
-  // The specific way this fix goes wrong later. A caller that hands `cover` a SUBSET of its
-  // messages — the ones it has not yet flushed, say — would mint decoys at indices the
-  // recipient never asks for if the numbering came from array position.
+test("a sender handing `cover` a SUBSET of its messages still mints what the recipient asks for", () => {
+  // The specific way this goes wrong later, and it survives the move from a folded index to a
+  // salt: a caller that passes only the messages it has not yet flushed must not renumber from
+  // array position, or it mints decoys nobody ever asks for — which is the never-fetched signal
+  // this derivation exists to remove.
+  //
+  // The salt comes from the MESSAGE, so a subset is numbered exactly as the whole set would be.
   const config = { channel, author: ephemeral(), blockMs: BLOCK };
   const all = Array.from({ length: 4 }, (_, seq) =>
     send(config, new TextEncoder().encode("x"), seq, seq * BLOCK, () => 0.5));
   const tail = all.slice(2);
-  const indices = cover(config, tail, () => 0.5).map((d) => d.index);
-  // From sequence, so message 2's decoys are numbered from 2 * rate rather than from zero.
-  assert.equal(Math.min(...indices), coverIndex(2, 0));
-  const recipientAsksFor = new Set<number>();
-  for (const m of all) for (let k = 0; k < COVER_RATE; k++) recipientAsksFor.add(coverIndex(m.seq, k));
-  for (const i of indices) {
-    assert.ok(recipientAsksFor.has(i), `decoy ${i} is one the recipient never asks for`);
+  const minted = cover(config, tail, () => 0.5).map((d) => `${d.salt}:${d.index}`);
+
+  // Message 2's decoys carry message 2's salt, not the first salt in the array it was handed.
+  assert.ok(minted.every((m) => m.startsWith("2:") || m.startsWith("3:")),
+    `a subset was renumbered from array position: ${minted.join(", ")}`);
+  const recipientAsksFor = new Set<string>();
+  for (const m of all) {
+    for (let k = 0; k < COVER_RATE; k++) recipientAsksFor.add(`${BigInt(m.seq)}:${k}`);
+  }
+  for (const m of minted) {
+    assert.ok(recipientAsksFor.has(m), `decoy ${m} is one the recipient never asks for`);
   }
 });
 

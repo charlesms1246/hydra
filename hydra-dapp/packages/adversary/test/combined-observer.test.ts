@@ -77,7 +77,7 @@ function world(people: readonly Person[], random: () => number) {
       mine.push(m.blobId);
     }
     for (const d of cover(config, messages, random)) {
-      const body = coverBody(channel, d.bucket, d.index);
+      const body = coverBody(channel, d.bucket, d.index, d.salt);
       const id = coverId(body);
       vault.handle({
         op: "upload", endpoint: ENCRYPTED_ENDPOINT, id, body, invite: invites.shift(),
