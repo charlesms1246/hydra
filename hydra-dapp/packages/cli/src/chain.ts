@@ -17,8 +17,33 @@ import type { State } from "./state.ts";
 export type Chain = {
   /** Put a pointer and a commitment on chain. Returns the transaction hash. */
   publish(calldata: readonly [bigint, bigint]): Promise<string>;
-  /** Every event this contract has emitted, oldest first. */
-  events(): Promise<{ readonly data: readonly bigint[] }[]>;
+  /**
+   * Every event this contract has emitted, oldest first.
+   *
+   * `blockNumber` and `txHash` arrive in the SAME JSON-RPC response as `data` and were being
+   * thrown away. Keeping them costs nothing and they are the only route to two things this repo
+   * could not otherwise see: when an event happened, on a clock that is not the wall clock, and
+   * — via one more call per transaction — which account published it. `channel.activeAccount` on
+   * the disclosure table is about exactly that join, so a client that wants to tell a user how
+   * linkable sending is right now starts here. See `decisions/0029`.
+   *
+   * Both are optional because `memoryChain` has neither a block nor a transaction, and inventing
+   * plausible values for a test double is how a harness ends up measuring itself.
+   */
+  events(): Promise<{
+    readonly data: readonly bigint[];
+    readonly blockNumber?: number;
+    readonly txHash?: string;
+  }[]>;
+  /**
+   * Who published, for a set of transaction hashes.
+   *
+   * SEPARATE FROM `events`, because it costs a request per transaction and most callers do not
+   * want it. A sender is not in an event record — it is on the transaction — so this is a
+   * `starknet_getTransactionByHash` per hash, or nothing at all on a chain that has no
+   * transactions. Settled history does not change, so a caller may cache the answers forever.
+   */
+  senders?(txHashes: readonly string[]): Promise<Map<string, string>>;
 };
 
 export type ChainConfig = {
@@ -69,7 +94,7 @@ export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): 
     async events() {
       // Paged. A public node caps a page well below a busy contract's history, and a client
       // that reads only the first page silently stops seeing new messages.
-      const out: { data: bigint[] }[] = [];
+      const out: { data: bigint[]; blockNumber?: number; txHash?: string }[] = [];
       let token: string | undefined;
       do {
         const page = await rpc(config.rpcUrl, "starknet_getEvents", {
@@ -84,6 +109,24 @@ export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): 
         for (const e of page.events) out.push({ data: e.data.map((d) => BigInt(d)) });
         token = page.continuation_token;
       } while (token);
+      return out;
+    },
+
+    /**
+     * One `starknet_getTransactionByHash` per hash, deduplicated.
+     *
+     * Not batched, because JSON-RPC batching is optional and a node that ignores it answers with
+     * something this code would have to guess at. A hash whose transaction has no
+     * `sender_address` — an L1 handler, a deploy — is left out of the map rather than given a
+     * zero, so a caller counting accounts does not count one that does not exist.
+     */
+    async senders(txHashes) {
+      const out = new Map<string, string>();
+      for (const hash of new Set(txHashes)) {
+        const tx = await rpc(config.rpcUrl, "starknet_getTransactionByHash", [hash], fetchImpl)
+          .catch(() => null) as { sender_address?: string } | null;
+        if (tx?.sender_address) out.set(hash, tx.sender_address);
+      }
       return out;
     },
   };
