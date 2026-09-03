@@ -111,6 +111,16 @@ export const OBSERVABLE: readonly Observation[] = [
     why: "arrival is a deadline minus a constant, so objects uploaded at one moment carry deadlines a millisecond apart and the record groups them whether or not anything writes the grouping down; the socket supplies the peer. THIS IS A PROPERTY OF THE CLIENT'S CADENCE, NOT OF THE SERVER, which is why it is a row rather than a bug: a client that queues a message with its cover and sends the queue at once uploads `coverRate + 1` objects as a run, and `adversary/src/matchers.ts` `after-the-burst` reads a batch by discarding it. The vault cannot spread a client's uploads on its behalf. Only a client that honours each object's own slot avoids it, and `adversary/test/resident-flush.test.ts` measures both — the by-hand client puts several times as many objects in its busiest minute as the resident one, which is the whole of what it trades its timing away for",
   },
   {
+    id: "blob.deleteHash",
+    what: "a per-object opaque value stored against every encrypted blob, which a later deletion must present a preimage of",
+    why: "an encrypted blob is removable by capability rather than by the operator's judgement (`decisions/0035`), so the server has to hold something to check a deletion against. It is a hash, so it is not itself a capability — storing the token would make a backup of this disk a standing authority to erase everything on it. It is on every encrypted upload INCLUDING COVER, because an object without one would be distinguishable from an object with one and a decoy the operator can pick out with a field test is not cover. What it does NOT disclose is which kind of capability is behind it: the same check runs for a channel-derived token and an author-derived one, so the operator cannot tell an evidentiary blob from a deniable one",
+  },
+  {
+    id: "removal.observed",
+    what: "that an object was removed, when, and — for the encrypted class — that whoever asked could prove access to it",
+    why: "a deletion is an act the operator performs, so they see it happen. For a public blob it is their own decision. For an encrypted one they learn that somebody holding channel-or-author material for that object asked for it to go, which is joinable against `read.channelSet`: the same party's reads and their deletion are both in the operator's record. The deletion does not say WHICH of the two capabilities was used and does not name anyone. Nothing about it is avoidable — a removal that the operator could not observe would be a removal they did not perform",
+  },
+  {
     id: "read.ids",
     what: "the set of ids in a read request, and when",
     why: "the server has to be asked for something in order to return it, so an operator watching the process sees every read. Writing them down is a separate choice and is off by default — the rows are here because the capability is unavoidable, not because this build retains it",

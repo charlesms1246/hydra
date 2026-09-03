@@ -27,6 +27,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OBSERVABLE, OBSERVABLE_IDS, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
+import { deleteHashFor } from "../../vault-server/src/delete-hash.ts";
 import { inboxSlot, encodePrekey } from "../../handshake/src/inbox.ts";
 import { initiate, bundleFor } from "../../handshake/src/x3dh.ts";
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
@@ -182,6 +183,22 @@ test("everything the table claims is observable actually is", async () => {
     } finally {
       await rm(certDir, { recursive: true, force: true });
     }
+
+    // And a delete capability plus a removal, because `blob.deleteHash` is only producible on an
+    // encrypted upload that carries one and `removal.observed` only once something is removed.
+    // Adding either without this is what made this check fail — for the fourth time now.
+    const capable = new Vault({ invites: ["c1"], buckets: BUCKETS });
+    const cblob = sealForChannel(channelSecret(vaultRoot, "capability"),
+      new TextEncoder().encode("removable"));
+    const token = new Uint8Array(32).fill(9);
+    capable.handle({
+      op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: cblob.id, body: bytes(cblob),
+      invite: "c1", deleteHash: deleteHashFor(token),
+    });
+    for (const k of capable.observedKeys()) observed.add(k);
+    const gone = capable.handle({ op: "remove", id: cblob.id, token });
+    assert.ok(gone.ok && gone.op === "remove" && gone.removed, "the capability delete did not work");
+    for (const k of capable.observedKeys()) observed.add(k);
 
     // And the limiter mode that produces `rate.peerBucket`, for the same reason.
     const peered = new Vault({ buckets: BUCKETS });

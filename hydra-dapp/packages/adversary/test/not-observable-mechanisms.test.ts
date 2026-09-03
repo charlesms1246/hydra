@@ -69,10 +69,28 @@ function reachableFrom(entry: string, seen = new Set<string>()): Set<string> {
 }
 
 /** grep exits 1 on no match, which is usually the passing case here. */
+/**
+ * Grep the CODE, not the comments.
+ *
+ * Every one of these patterns is about what the server DOES, and a comment is not a thing the
+ * server does. Run over comments too, the guards fail on prose that explains why the code is
+ * correct — which punishes the explanation and teaches the next person to delete it.
+ *
+ * That has now happened three times in this file. The `x3dh-authenticates-not-vault` grep already
+ * carries a note about its first version matching this project's own disclosure table and a
+ * comment reading "unauthenticated reads"; it then matched a comment recording a header RENAME
+ * away from the very word it was looking for. The `no-channel-field` and `no-accounts` greps
+ * matched doc comments saying there is no such field.
+ *
+ * Fixing it in the helper rather than in each pattern, because the next one will do it again.
+ */
 function grep(pattern: string, path: string): string[] {
+  const stripped = (line: string): string => line.replace(/^[^:]*:\d+:/, "").trimStart();
   try {
     return execFileSync("/usr/bin/grep", ["-rn", "--include=*.ts", "-E", pattern, path],
-      { encoding: "utf8" }).split("\n").filter(Boolean);
+      { encoding: "utf8" }).split("\n").filter(Boolean)
+      // A line whose match is inside a comment is not the server doing anything.
+      .filter((l) => !/^(\/\/|\*|\/\*)/.test(stripped(l)));
   } catch {
     return [];
   }
@@ -100,6 +118,18 @@ function grep(pattern: string, path: string): string[] {
  * What that catches which a grep cannot: an identity or a channel arriving through a field nobody
  * thought to name, a count that differs, a bucket that differs, an ordering that differs.
  */
+/**
+ * The field names in a type block, with comments and blank lines stripped.
+ *
+ * The greps below are about what a request or a record CARRIES. Run over the raw block they also
+ * read the prose, so a comment saying "nothing here names a channel" fails "nothing here names a
+ * channel". Both of these fired on exactly that.
+ */
+const fieldsOf = (block: string): string =>
+  block.split("\n")
+    .filter((l) => !/^\s*(\/\*|\*|\/\/)/.test(l))
+    .join("\n");
+
 function recordUnder(traffic: (vault: Vault, invites: string[]) => void): {
   ids: string[]; normalised: string; keys: string[];
 } {
@@ -157,11 +187,15 @@ const MECHANISMS: Record<Mechanism, () => void | Promise<void>> = {
     // called `channel`, which a capture cannot — but on its own it passes if the field is renamed
     // and says nothing about the channel leaking through a VALUE. The first layer is two worlds.
     const src = readFileSync(join(SERVER_SRC, "server.ts"), "utf8");
-    const upload = src.match(/export type UploadRequest = \{[^}]*\}/s);
-    const stored = src.match(/type Stored = \{[^}]*\}/s);
+    const upload = src.match(/export type UploadRequest = \{[\s\S]*?\n\};/);
+    const stored = src.match(/type Stored = \{[\s\S]*?\n\};/);
     assert.ok(upload && stored);
     for (const shape of [upload[0], stored[0]]) {
-      assert.ok(!/channel/i.test(shape), `a channel field appeared in:\n${shape}`);
+      // FIELD NAMES, NOT PROSE. This matched the whole block including doc comments, so a comment
+      // explaining WHY there is no channel field failed the test that there is no channel field.
+      // A guard that a correct explanation can break is a guard that punishes explaining.
+      assert.ok(!/channel/i.test(fieldsOf(shape)),
+        `a channel field appeared in:\n${fieldsOf(shape)}`);
     }
 
     // The same words, sent under two different channels. Everything the operator holds must be
@@ -293,9 +327,12 @@ const MECHANISMS: Record<Mechanism, () => void | Promise<void>> = {
       "the vault-server has acquired something account-shaped");
     assert.ok(!/interface\s+\w*Account|type\s+\w*Account/.test(src));
     // And an upload request has no field an identity could travel in.
-    const upload = src.match(/export type UploadRequest = \{[^}]*\}/s);
+    const upload = src.match(/export type UploadRequest = \{[\s\S]*?\n\};/);
     assert.ok(upload);
-    assert.ok(!/user|account|from|sender/i.test(upload![0]), `an identity field appeared:\n${upload![0]}`);
+    // Field names, not prose — see `fieldsOf`. This fired on a comment that explained why there
+    // is no sender field.
+    assert.ok(!/user|account|from|sender/i.test(fieldsOf(upload![0])),
+      `an identity field appeared:\n${fieldsOf(upload![0])}`);
   },
 
   "x3dh-authenticates-not-vault": () => {

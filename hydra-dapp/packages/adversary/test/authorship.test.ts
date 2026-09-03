@@ -26,7 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { init, open, accept, publishBundle, sendMessage, flush, readChannel }
+import { init, open, accept, publishBundle, sendMessage, flush, readChannel, vaultRootOf }
   from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { Vault } from "../../vault-server/src/server.ts";
@@ -36,13 +36,14 @@ import { signerFor, verifyAuthorship, unframe, frame, SIGNATURE_BYTES }
   from "../../handshake/src/authorship.ts";
 import { keyFor } from "../../handshake/src/ratchet.ts";
 import { encodeHeader, decodeHeader, receiveKey } from "../../handshake/src/dh-ratchet.ts";
+import { deleteToken } from "../../channel/src/deletion.ts";
 import type { DhState } from "../../handshake/src/dh-ratchet.ts";
 import { openForChannel, plaintextOf, sealForChannel, wireBytes, bodyOf, openHeader, ENCRYPTED_ENDPOINT }
   from "../../vault-client/src/blobs.ts";
 import { pointerFor, blobIdFrom } from "../../channel/src/pointer.ts";
 import { noteCalldata } from "../../channel/src/note.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
-import { derive, rootSeed, entropyFrom, fromTestVector, fromStoredSeed, VAULT_DOMAIN }
+import { derive, rootSeed, entropyFrom, fromTestVector, fromStoredSeed, subKey, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
 
 /** A stored channel key, materialised the way `commands.ts` materialises one. */
@@ -355,4 +356,67 @@ test("the frame is the only thing that says which kind a message is, and it is s
   assert.deepEqual(Buffer.from(unframe(deniable).plaintext), Buffer.from("x"));
   // Truncation is refused rather than read as a short message.
   assert.throws(() => unframe(signed.slice(0, 10)), /truncated/);
+});
+
+test("A COUNTERPARTY CANNOT DELETE SIGNED CONTENT, which is 0026's guarantee from the other side", async () => {
+  // `decisions/0026` closed "a counterparty can fabricate your authorship". This is the same
+  // guarantee's other half on the same submission surface: a counterparty destroying it.
+  //
+  // A signed message is evidentiary — the signature over the on-chain commitment is what makes
+  // authorship provable to a stranger later. A delete capability derived from the CHANNEL would
+  // let bob remove alice's signed blob: the commitment would stand, the signature would stand, and
+  // there would be nothing left to check them against. Proof of authorship becomes
+  // unprovable-and-unfalsifiable in exactly the case the class exists for — a source who submitted
+  // something and an organisation that would rather it could not be shown.
+  //
+  // So the capability follows the CLASS: channel for deniable, author for signed.
+  const s = await pair();
+  try {
+    await sendMessage(s.alice, s.chain, "bob", "signed", "alice really said this", T0);
+    await flush(s.alice, LATER);
+    const [stored] = s.alice.channels.bob.history.filter((h) => h.mine);
+    assert.ok(stored, "the signed message was not recorded");
+
+    // Bob holds the whole channel — both addressing keys, both chains, every decoy. He derives the
+    // channel-shaped token for alice's blob, which is the best he can do.
+    const bobsChannel = channelKeyOf(s.bob.channels.alice.addressRecvHex);
+    const bobsGuess = deleteToken(bobsChannel, stored.id);
+    assert.equal(
+      s.v.handle({ op: "remove", id: stored.id, token: bobsGuess }).ok
+        && (s.v.handle({ op: "remove", id: stored.id, token: bobsGuess }) as { removed: boolean }).removed,
+      false, "the counterparty deleted a signed message");
+
+    // And it is still there — the evidence survives the attempt.
+    const after = s.v.handle({
+      op: "fetch", endpoint: ENCRYPTED_ENDPOINT,
+      ids: [stored.id, ...Array.from({ length: 7 }, (_, i) => `enc:${i}`.padEnd(20, "0"))],
+    });
+    assert.ok(after.ok && after.op === "fetch" && after.found.has(stored.id),
+      "the signed blob is gone after a counterparty's delete attempt");
+
+    // The AUTHOR can, and that is the other half: withdrawal is hers to choose.
+    const hers = deleteToken(subKey(vaultRootOf(s.alice), "authorship signing"), stored.id);
+    const removed = s.v.handle({ op: "remove", id: stored.id, token: hers });
+    assert.ok(removed.ok && removed.op === "remove" && removed.removed,
+      "the author could not withdraw her own signed message");
+  } finally { s.server.close(); }
+});
+
+test("either party may clear DENIABLE content, because neither can prove anything about it", async () => {
+  // The other side of the split. Deniable content's only authenticator is a key both hold, so
+  // either clearing it is consistent with what the class already means — and a recipient who
+  // wants a message gone should not need the sender's cooperation to remove a copy of something
+  // they already hold the plaintext of.
+  const s = await pair();
+  try {
+    await sendMessage(s.alice, s.chain, "bob", "ephemeral", "meet me at eight", T0);
+    await flush(s.alice, LATER);
+    const [stored] = s.alice.channels.bob.history.filter((h) => h.mine);
+
+    // Bob's receiving key IS alice's sending key — one channel, two names for it.
+    const bobs = deleteToken(channelKeyOf(s.bob.channels.alice.addressRecvHex), stored.id);
+    const removed = s.v.handle({ op: "remove", id: stored.id, token: bobs });
+    assert.ok(removed.ok && removed.op === "remove" && removed.removed,
+      "the recipient could not clear a deniable message sent to them");
+  } finally { s.server.close(); }
 });

@@ -33,6 +33,14 @@ export type PendingUpload = {
   readonly channel: string;
   readonly id: string;
   readonly bodyB64: string;
+  /**
+   * The stored form of this object's delete capability — `channel/src/deletion.ts`.
+   *
+   * Carried on the queue rather than recomputed at flush time because the token's derivation
+   * depends on the message's CLASS, and the queue is the last place that knows it: a decoy and a
+   * signed message look identical from here on, which is the point of both.
+   */
+  readonly deleteHash?: string;
   readonly uploadAt: number;
   /** False for cover traffic, which is uploaded exactly like a message because it must be. */
   readonly real: boolean;

@@ -145,9 +145,12 @@ export function serve(
         if (req.method === "PUT") {
           const body = await readBody(req);
           const invite = req.headers["x-hydra-invite"];
+          // Every encrypted upload carries one, cover included — see `UploadRequest`.
+          const deleteHash = req.headers["x-hydra-delete-hash"];
           const reply = vault.handle({
             op: "upload", endpoint, id, body: new Uint8Array(body),
             invite: typeof invite === "string" ? invite : undefined,
+            deleteHash: typeof deleteHash === "string" ? deleteHash : undefined,
             pin: req.headers["x-hydra-pin"] === "1",
           });
           return send(reply.ok ? 201 : 400, reply);
@@ -167,6 +170,19 @@ export function serve(
         }
 
         if (req.method === "DELETE") {
+          // THE ENCRYPTED CLASS IS A CAPABILITY, NOT THE OPERATOR'S ACT. A token in the header,
+          // hashed and compared by the server, which holds no discretion over it — see
+          // `decisions/0035` §1 and `channel/src/deletion.ts`.
+          if (endpoint === ENCRYPTED_ENDPOINT) {
+            const offered = req.headers["x-hydra-delete"];
+            const token = typeof offered === "string"
+              ? new Uint8Array(Buffer.from(offered, "hex")) : undefined;
+            const reply = vault.handle({ op: "remove", id, token });
+            // 404 on refusal, for the reason the public path gives: a distinguishable failure
+            // confirms the object exists to anyone probing ids.
+            return (reply as { removed?: boolean }).removed
+              ? send(200, reply) : send(404, { error: "no such object" });
+          }
           const offered = req.headers["x-hydra-removal"];
           if (!options.removalToken || offered !== options.removalToken) {
             // Uninformative, and 404 rather than 401: a 401 would confirm the object exists to

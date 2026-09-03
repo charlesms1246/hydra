@@ -20,6 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { OBSERVABLE_IDS } from "./observations.ts";
+import { deleteHashFor, deleteHashMatches } from "./delete-hash.ts";
 
 /**
  * The smallest encrypted read this vault will serve.
@@ -50,6 +51,18 @@ export type UploadRequest = {
   readonly pin?: boolean;
   /** Required on the encrypted endpoint while the v1 write gate is closed. */
   readonly invite?: string;
+  /**
+   * What a later deletion must present a preimage of — `channel/src/deletion.ts`.
+   *
+   * REQUIRED ON THE ENCRYPTED ENDPOINT, INCLUDING FOR COVER. An upload without one would be
+   * distinguishable from an upload with one, and cover exists to be indistinguishable; a decoy
+   * that skipped this would be a decoy the operator could pick out with a field test.
+   *
+   * The server stores it and can do nothing else with it. It cannot tell whether the token behind
+   * it descends from the channel or from an author's signing key, which is the point: a blob
+   * whose class the operator can read is a blob whose evidentiary weight the operator can see.
+   */
+  readonly deleteHash?: string;
 };
 
 /**
@@ -64,7 +77,19 @@ export type FetchRequest = {
 };
 
 /** Public objects are removable by the operator. The on-chain commitment stands regardless. */
-export type RemoveRequest = { readonly op: "remove"; readonly id: string };
+export type RemoveRequest = {
+  readonly op: "remove";
+  readonly id: string;
+  /**
+   * The delete token, for the encrypted class. Absent for a public takedown, which is the
+   * operator's own act and is authorised at the transport by `removalToken`.
+   *
+   * The server hashes it and compares. It never holds a token, only a hash of one — storing the
+   * token would make a backup of this disk a standing authority to erase everything on it, which
+   * is E-DEL rebuilt one layer down.
+   */
+  readonly token?: Uint8Array;
+};
 
 export type Request = UploadRequest | FetchRequest | RemoveRequest;
 
@@ -79,6 +104,8 @@ type Stored = {
   readonly class: "encrypted" | "public";
   readonly id: string;
   readonly bucket: number;
+  /** sha256 of the delete token. A one-way function of it — see `RemoveRequest`. */
+  readonly deleteHash?: string;
   /**
    * When this expires, or null when pinned.
    *
@@ -148,6 +175,8 @@ export class Vault {
   readonly #reads: ReadRecord[] = [];
   readonly #transport: TransportRecord[] = [];
   #invitesRedeemed = 0;
+  /** Removals performed. The operator sees each one happen; see `removal.observed`. */
+  #removals = 0;
   /** Set by `http.ts` when the vault is served over TLS, so the tls.* rows become producible. */
   #tls = false;
   readonly #now: () => number;
@@ -272,6 +301,9 @@ export class Vault {
       class: encrypted ? "encrypted" : "public",
       id: r.id,
       bucket: r.body.length,
+      // Kept only for the encrypted class, which is the only one with a capability. A public
+      // takedown is the operator's own act and is authorised at the transport.
+      ...(encrypted && r.deleteHash ? { deleteHash: r.deleteHash } : {}),
       expiresAt,
       bytes: Uint8Array.from(r.body),
     };
@@ -310,13 +342,30 @@ export class Vault {
   }
 
   #remove(r: RemoveRequest): Response {
-    // Only the public class. An encrypted object the operator could delete on request would be
-    // an encrypted object the operator can be compelled to delete, and they cannot know what
-    // they are deleting.
     const o = this.#objects.get(r.id);
-    if (!o || o.class !== "public") return { ok: true, op: "remove", removed: false };
+    if (!o) return { ok: true, op: "remove", removed: false };
+
+    // THE PUBLIC CLASS IS THE OPERATOR'S OWN ACT, authorised at the transport. The encrypted class
+    // is not the operator's to judge — they cannot read it — so it is a CAPABILITY instead, and
+    // the operator holds no discretion over it: the token verifies or it does not, and there is
+    // no judgement here that a court could compel. That is the reasoning the old comment gave for
+    // refusing encrypted removal outright, kept rather than overridden. See `decisions/0035` §1.
+    if (o.class === "public") {
+      this.#objects.delete(r.id);
+      this.#unlink(r.id);
+      this.#removals++;
+      return { ok: true, op: "remove", removed: true };
+    }
+
+    // One hash, one preimage, for both derivations. The server cannot tell a channel-derived
+    // token from an author-derived one, and must not be able to.
+    if (!o.deleteHash || !r.token) return { ok: true, op: "remove", removed: false };
+    if (!deleteHashMatches(o.deleteHash, deleteHashFor(r.token))) {
+      return { ok: true, op: "remove", removed: false };
+    }
     this.#objects.delete(r.id);
     this.#unlink(r.id);
+    this.#removals++;
     return { ok: true, op: "remove", removed: true };
   }
 
@@ -346,6 +395,7 @@ export class Vault {
       "blob.class": o.class,
       "blob.id": o.id,
       "blob.bucket": o.bucket,
+      ...(o.deleteHash === undefined ? {} : { "blob.deleteHash": o.deleteHash }),
       "blob.expiry": o.expiresAt,
     }));
     const totals: Record<string, { objects: number; bytes: number }> = {};
@@ -365,6 +415,10 @@ export class Vault {
     const seen = new Set<string>();
     const o = this.observe();
     for (const row of o.rows) for (const k of Object.keys(row)) seen.add(k);
+    // A stored delete hash is a stored field, and a removal is an act the operator performs and
+    // therefore watches. Neither is avoidable; both are rows.
+    if (o.rows.some((r) => r["blob.deleteHash"] !== undefined)) seen.add("blob.deleteHash");
+    if (this.#removals > 0) seen.add("removal.observed");
     // Arrival is not stored, but a TTL deadline minus a published constant is an arrival time.
     // Pinned objects carry no deadline, so for those it is genuinely absent.
     if (o.rows.some((r) => r["blob.expiry"] !== null)) seen.add("blob.arrival");

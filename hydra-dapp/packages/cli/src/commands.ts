@@ -29,6 +29,8 @@ import { recordFor, encodeRecord, decodeRecord, verifyRecord, RECORD_FELTS }
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex, COVER_RATE, saltFrom } from "../../channel/src/cover.ts";
+import { deleteToken } from "../../channel/src/deletion.ts";
+import { deleteHashFor } from "../../vault-server/src/delete-hash.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
 import { prune, accuracyAgainst } from "../../channel/src/crowd.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
@@ -458,8 +460,18 @@ export async function sendMessage(
     attribution: attribution === "signed" ? "signed" : "unverifiable",
   });
 
+  // THE DELETE CAPABILITY, AND WHOSE IT IS DEPENDS ON THE CLASS — `decisions/0035` §1 and
+  // `channel/src/deletion.ts`. Signed content is evidentiary, so only its author may withdraw it;
+  // a channel-derived token would let the COUNTERPARTY destroy it, leaving the commitment and the
+  // signature standing with nothing to check them against. That is `0026`'s guarantee from the
+  // other side — it closed "a counterparty can fabricate your authorship", and this is "a
+  // counterparty can destroy it", on the same submission surface.
+  const deleteFrom = attribution === "signed"
+    ? subKey(vaultRootOf(state), "authorship signing")
+    : channel;
   state.pending.push({
     channel: name, id: outgoing.blobId,
+    deleteHash: deleteHashFor(deleteToken(deleteFrom, outgoing.blobId)),
     bodyB64: Buffer.from(outgoing.body).toString("base64"),
     uploadAt: outgoing.uploadAt, real: true,
   });
@@ -477,6 +489,10 @@ export async function sendMessage(
     const body = coverBody(channel, d.bucket, d.index, saltFrom(commitment));
     state.pending.push({
       channel: name, id: coverId(body),
+      // COVER CARRIES ONE TOO, and it has to. An upload without a delete hash is
+      // distinguishable from an upload with one, and a decoy the operator can pick out with a
+      // field test is not cover. Derived from the channel, like the decoy itself.
+      deleteHash: deleteHashFor(deleteToken(channel, coverId(body))),
       bodyB64: Buffer.from(body).toString("base64"),
       // A DECOY WHOSE SLOT HAS ALREADY PASSED GETS A NEW ONE, and this is not tidiness.
       //
@@ -630,7 +646,10 @@ export async function flush(
   for (const p of due) {
     const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}/${p.id}`, {
       method: "PUT",
-      headers: { "x-hydra-invite": state.invites[0] },
+      headers: {
+        "x-hydra-invite": state.invites[0],
+        ...(p.deleteHash ? { "x-hydra-delete-hash": p.deleteHash } : {}),
+      },
       body: new Uint8Array(Buffer.from(p.bodyB64, "base64")),
     });
     if (res.status === 429) {
