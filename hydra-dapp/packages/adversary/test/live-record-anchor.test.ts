@@ -29,7 +29,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import {
-  IDENTITY_CLASS_HASH, RECORD_FIELD, DOMAIN, SET_SELECTOR,
+  IDENTITY_CLASS_HASH, SET_SELECTOR,
   identityContract, writeRecordCalldata, readRecordCall, decodeRecordReply,
 } from "../../cli/src/anchor.ts";
 import { RECORD_FELTS, decodeRecord, verifyRecord } from "../../handshake/src/record.ts";
@@ -64,6 +64,15 @@ const okResult = (body: any, what: string): string[] => {
 
 /** The `owner_from_id` selector, used to tell a minted id from a free one. */
 const OWNER_FROM_ID = "0x1d233f504e7ffa8a145338134e765d2ffe365291610c05c2ecc615f3596c59a";
+/**
+ * `get_main_id(user)` — how a stranger goes from an address to the id a record lives under.
+ *
+ * starknet_keccak of the name, masked to 250 bits, and confirmed present in the deployed class's
+ * EXTERNAL entry points. The first version of this line was a selector I typed from memory; it is
+ * a 250-bit number and a wrong one does not fail loudly, it fails as "entrypoint not found" or,
+ * worse, as somebody else's function.
+ */
+const GET_MAIN_ID = "0x108d63199bb92aa213225174d82be925dc326995019eb66c83b1cc38b90642e";
 
 /** An id somebody owns, so the ownership gate is what stops a probe write. */
 async function findOwnedId(): Promise<bigint> {
@@ -147,16 +156,29 @@ test("a real record lands on chain and reads back byte for byte", { skip: !SEND 
   const { felts } = myRecord(state, owner);
   assert.equal(felts.length, RECORD_FELTS);
 
-  const invoke = (fn: string, args: string[]) => {
+  // SCAN THE LINES, do not take the last one. `sncast --json` emits several JSON objects and the
+  // final one is a `notification` carrying a Voyager link, not the result — so `.pop()` finds an
+  // object with no `transaction_hash` and reports "no transaction hash" for a transaction that
+  // landed perfectly well. It cost a red test against a real mint that had already succeeded.
+  // RAW FELTS via `--calldata`, not `--arguments`.
+  //
+  // Two reasons, and the second is the one that matters. sncast's Cairo-like serializer refuses
+  // `array![...]` for a `Span<felt252>` ("Expected core::array::Span::<core::felt252>, got
+  // array"), so it does not work — but even where it does, it would mean this test proves
+  // sncast's encoder is right rather than that OURS is. `writeRecordCalldata` is the thing under
+  // test; handing its output straight to the wire is what tests it.
+  const invoke = (fn: string, calldata: string[]) => {
     const out = execFileSync("sncast", [
       "--json", "--accounts-file", ACCOUNTS, "--account", ACCOUNT,
       "invoke", "--contract-address", contract, "--function", fn,
-      "--arguments", args.join(", "), "--network", NETWORK,
+      "--calldata", ...calldata, "--network", NETWORK,
     ], { encoding: "utf8" });
-    const line = out.trim().split("\n").filter(Boolean).pop()!;
-    const hash = JSON.parse(line).transaction_hash;
-    assert.ok(hash, `${fn} returned no transaction hash: ${line}`);
-    return hash as string;
+    for (const line of out.trim().split("\n").filter(Boolean)) {
+      let parsed: { transaction_hash?: string };
+      try { parsed = JSON.parse(line); } catch { continue; }
+      if (parsed.transaction_hash) return parsed.transaction_hash;
+    }
+    throw new Error(`${fn} returned no transaction hash in any line:\n${out}`);
   };
 
   // Mint only if this id is free. `owner_from_id` returning 0 means free; minting an owned id
@@ -164,15 +186,20 @@ test("a real record lands on chain and reads back byte for byte", { skip: !SEND 
   const ownerOf = okResult(
     await callRaw(contract, OWNER_FROM_ID, [`0x${ID.toString(16)}`]), "owner_from_id");
   if (BigInt(ownerOf[0]) === 0n) {
-    invoke("mint", [`${ID}`]);
-    invoke("set_main_id", [`${ID}`]);
+    invoke("mint", [`0x${ID.toString(16)}`]);
   } else {
     assert.equal(BigInt(ownerOf[0]), owner, "this id is minted and not by us — pick another");
   }
 
-  invoke("set_extended_user_data", [
-    `${ID}`, `${RECORD_FIELD}`, `array![${felts.map((f) => f.toString()).join(", ")}]`, `${DOMAIN}`,
-  ]);
+  // Separately from the mint, because `mint` does not set it implicitly and a run that minted on
+  // a previous attempt would otherwise never get here. `get_main_id` is what lets a stranger go
+  // from an address to the id the record lives under, so without it the record is unfindable.
+  const mainId = okResult(
+    await callRaw(contract, GET_MAIN_ID, [`0x${owner.toString(16)}`]), "get_main_id");
+  if (BigInt(mainId[0]) !== ID) invoke("set_main_id", [`0x${ID.toString(16)}`]);
+
+  // The exact felts `anchor.ts` builds — id, field, length, the record, then the trailing domain.
+  invoke("set_extended_user_data", writeRecordCalldata(ID, felts));
 
   // Read it back through the real entrypoint and compare against what we encoded. Not "a record
   // is present" — the same felts, in order.

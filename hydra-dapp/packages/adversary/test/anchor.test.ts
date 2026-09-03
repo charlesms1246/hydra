@@ -91,6 +91,21 @@ test("an unwritten slot reads as absent rather than as a record of zeroes", () =
   assert.notEqual(decodeRecordReply(["0x8", "0x1", ...Array(RECORD_FELTS - 1).fill("0x0")]), null);
 });
 
+test("a transposed READ fails silently on chain, so the span header is the only guard", () => {
+  // ASYMMETRY WORTH KNOWING. A wrong argument order on the WRITE fails loudly — the contract
+  // reverts with "Failed to deserialize param" or "Input too long for arguments". A wrong order
+  // on the READ does not: `get_extended_user_data(id, field, 0, 8)`, with length and domain
+  // swapped, returns an EMPTY SPAN and no error, because the zero-length loop never reaches the
+  // storage syscall. An empty span is indistinguishable from "we read fine and found nothing"
+  // unless something checks the header against what was asked for.
+  //
+  // `decodeRecordReply` is that something. This is the test that says so.
+  assert.throws(() => decodeRecordReply(["0x0"]), /span says/,
+    "an empty span was accepted — a transposed read would report a record as absent");
+  // And the shape a length-0 reply actually has: just the header, no felts after it.
+  assert.throws(() => decodeRecordReply(["0x0"]), /asked for 8/);
+});
+
 test("the field and domain are pinned, because a published record cannot be moved", () => {
   // Changing either strands every record already on chain at an address nobody reads. They are
   // asserted as literals rather than recomputed: a test that derives the value from the code it
