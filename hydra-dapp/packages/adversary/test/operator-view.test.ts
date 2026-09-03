@@ -775,3 +775,47 @@ test("a hand-flushed batch is recoverable from the record alone, and a spread cl
   assert.ok(!spread.observedKeys().includes("upload.burst"),
     "a client that spread its uploads was reported as bursting");
 });
+
+test("A STRANGER CANNOT TAKE DOWN A PUBLIC POST, which they could until `decisions/0035`", async () => {
+  // A public blob's id is public BY CONSTRUCTION — it is how the object is fetched, and it is in
+  // the pointer. `DELETE /v1/pub/<id>` had no check of any kind, so anyone who could read a post
+  // could delete it with one unauthenticated request. Measured against the real server before the
+  // token existed: `{"ok":true,"op":"remove","removed":true}`, and the object was gone.
+  //
+  // This is the narrowest fix that does not pre-empt the moderation design, because every option
+  // in `decisions/0035` ends with the OPERATOR performing the removal, whoever asked for it.
+  const post = publish(new TextEncoder().encode("a public statement"), intent);
+  const withToken = async (token?: string) => {
+    const vault = new Vault({ invites: [], buckets: BUCKETS });
+    const { url, server } = await serve(vault, 0, token ? { removalToken: token } : {});
+    try {
+      await fetch(`${url}${PUBLIC_ENDPOINT}/${post.id}`, { method: "PUT", body: bytes(post) });
+      assert.equal(vault.observe().rows.length, 1, "the post did not store");
+      const attempts: Record<string, number> = {};
+      for (const [label, headers] of [
+        ["none", {}],
+        ["wrong", { "x-hydra-removal": "guess" }],
+        ["right", { "x-hydra-removal": token ?? "" }],
+      ] as const) {
+        const r = await fetch(`${url}${PUBLIC_ENDPOINT}/${post.id}`, { method: "DELETE", headers });
+        attempts[label] = r.status;
+      }
+      return { attempts, left: vault.observe().rows.length };
+    } finally { server.close(); }
+  };
+
+  // No token configured: refused outright. An operator who has not decided who may remove content
+  // has not thereby decided that everyone may.
+  const unset = await withToken(undefined);
+  assert.equal(unset.attempts.none, 404);
+  assert.equal(unset.attempts.right, 404);
+  assert.equal(unset.left, 1, "a post was removed by a server with no removal token configured");
+
+  // Token configured: only the token works, and a miss is a 404 rather than a 401 — a 401 would
+  // confirm the object exists to anyone probing ids.
+  const set = await withToken("s3cret");
+  assert.equal(set.attempts.none, 404);
+  assert.equal(set.attempts.wrong, 404);
+  assert.equal(set.attempts.right, 200);
+  assert.equal(set.left, 0, "the operator's own takedown did not work");
+});

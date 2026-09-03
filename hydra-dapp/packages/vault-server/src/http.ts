@@ -54,7 +54,10 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
  *
  * `PUT /v1/enc/<id>` uploads, with the invite in `x-hydra-invite`. `POST /v1/enc` with a JSON
  * array of ids fetches a batch — reads are batched because a client that asks for one id tells
- * the operator which message it wanted. `DELETE /v1/pub/<id>` is the operator's takedown.
+ * the operator which message it wanted. `DELETE /v1/pub/<id>` is the operator's takedown, and it
+ * requires `x-hydra-removal` to match the `removalToken` the server was started with — refused
+ * outright if none was configured. It had no check whatsoever until `decisions/0035`, and a
+ * public blob's id is public by construction, so anyone who could read a post could delete it.
  */
 /**
  * Terminating TLS here rather than behind a proxy.
@@ -81,7 +84,27 @@ export type TlsConfig = {
 export function serve(
   vault: Vault,
   port = 0,
-  options: { observeTransport?: boolean; rateLimit?: RateLimitConfig; tls?: TlsConfig } = {},
+  options: {
+    observeTransport?: boolean;
+    rateLimit?: RateLimitConfig;
+    tls?: TlsConfig;
+    /**
+     * The secret an operator's takedown must carry. **Without it `DELETE` is refused entirely.**
+     *
+     * It had no check at all, and a public blob's id is public by construction — it is how the
+     * object is fetched. So anyone who could READ a public post could DELETE it, unauthenticated,
+     * with one request. Verified against the real server before this existed: a stranger with no
+     * header got `{"removed":true}` and the object was gone.
+     *
+     * Refusing when unset rather than allowing is the safe default: an operator who has not
+     * decided who may take content down has not thereby decided that everyone may.
+     *
+     * This does not decide the moderation pipeline — see `decisions/0035`. It is the narrowest
+     * thing that is right under every option in it, because every one of them ends with the
+     * OPERATOR performing the removal, whoever asked for it.
+     */
+    removalToken?: string;
+  } = {},
 ): Promise<{ url: string; server: Server; limiter: RateLimiter }> {
   // Defaults to `global`: a public service needs a limit, and the mode that needs no
   // per-client state is the one to reach for first. `per-peer` is a decision with a row on
@@ -144,6 +167,12 @@ export function serve(
         }
 
         if (req.method === "DELETE") {
+          const offered = req.headers["x-hydra-removal"];
+          if (!options.removalToken || offered !== options.removalToken) {
+            // Uninformative, and 404 rather than 401: a 401 would confirm the object exists to
+            // anyone probing ids, which is the same disclosure the read path is careful about.
+            return send(404, { error: "no such object" });
+          }
           return send(200, vault.handle({ op: "remove", id }));
         }
 
