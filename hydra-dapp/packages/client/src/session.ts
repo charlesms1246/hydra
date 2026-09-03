@@ -36,6 +36,8 @@ import { sealForChannel, wireBytes, uploadPathFor } from "../../vault-client/src
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 import { frame, freshBlind } from "../../handshake/src/authorship.ts";
+import { headerFor, sendKey, encodeHeader } from "../../handshake/src/dh-ratchet.ts";
+import type { DhState } from "../../handshake/src/dh-ratchet.ts";
 import type { Attribution } from "../../handshake/src/authorship.ts";
 
 /** Everything one message produces, in the order it must happen. */
@@ -80,6 +82,21 @@ export type SessionConfig = ScheduleConfig & {
    */
   readonly content?: Secret<typeof VAULT_DOMAIN>;
   /**
+   * The DH ratchet, if this client has one. Supersedes `content` when present.
+   *
+   * Passing it changes two things at once, and they belong together: the body seals under a key
+   * from the DH-derived sending chain, and the blob carries a header naming the ratchet public
+   * key that chain came from. Neither is useful without the other — a header nobody reads is
+   * sixty-eight wasted bytes, and a DH-derived key nobody can name is a message nobody can open.
+   *
+   * `decisions/0032` for the disclosure argument: the header takes a reserved prefix inside the
+   * bucket, so blob sizes do not move and no row is added to the operator's table.
+   *
+   * MUTATED BY `send`, unlike everything else in this config. A ratchet that did not advance
+   * would seal every message under one key, which is the defect `ratchet.ts` exists to prevent.
+   */
+  readonly ratchet?: DhState;
+  /**
    * WHO WROTE THIS, and it has no default.
    *
    * Required, so every call site chooses between a signature that nobody including your
@@ -118,7 +135,15 @@ export function send(
   const commitment = commit(blind, contentHashFor(plaintext));
   const signature = config.author.kind === "signed" ? config.author.sign(commitment) : null;
 
-  const blob = sealForChannel(config.content ?? config.channel, frame(signature, blind, plaintext));
+  // The DH ratchet if there is one, the sequence-keyed chain otherwise, the addressing key if
+  // neither. One expression rather than a branch, because a second sealing path is a second
+  // place for a key decision to drift.
+  const header = config.ratchet ? headerFor(config.ratchet) : null;
+  const sealing = config.ratchet
+    ? sendKey(config.ratchet, "session send")
+    : config.content ?? config.channel;
+  const blob = sealForChannel(sealing, frame(signature, blind, plaintext),
+    header ? { bytes: encodeHeader(header), addressing: config.channel } : undefined);
   const body = wireBytes(blob) as unknown as Uint8Array;
   const pointer = pointerFor(config.channel, blobIdFrom(body), seq);
   return {
