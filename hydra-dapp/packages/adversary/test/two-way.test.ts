@@ -31,7 +31,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { init, open, accept, publishBundle, sendMessage, flush, readChannel, foreignSends }
+import { init, open, accept, publishBundle, sendMessage, flush, readChannel, foreignSends, SKIPPED_KEEP }
   from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { Vault } from "../../vault-server/src/server.ts";
@@ -206,5 +206,46 @@ test("and the client says so, because it cannot prevent it", async () => {
     await readChannel(bob, chain, "alice");
     assert.equal(foreignSends(bob, "alice"), 0,
       "the other END of the conversation was mistaken for another of your own devices");
+  } finally { server.close(); }
+});
+
+test("parked keys are bounded, and the bound drops the oldest rather than the needed", async () => {
+  // `dh.acrossSteps` holds a message key for every sequence a ratchet step abandoned, so an
+  // unbounded map is forward secrecy leaking back out through a state file — the same hazard
+  // `forgetOldSkipped` exists for, one level up. `readChannel` trims it.
+  //
+  // WHAT MUST NOT HAPPEN is trimming a key whose message is still in flight, which would be data
+  // loss dressed as secrecy. The bound is by insertion order, so the oldest parked sequences go
+  // first; a straggler from the most recent abandoned chain is the one most likely to still be
+  // coming, and it is the one kept.
+  const { alice, bob, chain, server } = await pair();
+  try {
+    // A conversation with steps in it: alice speaks, bob replies, repeatedly. Each reply that
+    // alice reads ends a chain and parks whatever she had not seen from it.
+    for (let i = 0; i < 6; i++) {
+      await sendMessage(alice, chain, "bob", "ephemeral", `a${i}`, T0 + i * 2 * BLOCK);
+      await flush(alice, T0 + (i * 2 + 20) * BLOCK);
+      await readChannel(bob, chain, "alice");
+      await sendMessage(bob, chain, "alice", "ephemeral", `b${i}`, T0 + (i * 2 + 1) * BLOCK);
+      await flush(bob, T0 + (i * 2 + 21) * BLOCK);
+      await readChannel(alice, chain, "bob");
+    }
+    const read = await readChannel(alice, chain, "bob");
+    assert.equal(read.length, 12, "the conversation did not complete across its ratchet steps");
+
+    // Bounded, whatever happened above.
+    const parked = Object.keys(alice.channels.bob.dh.acrossSteps).length;
+    assert.ok(parked <= SKIPPED_KEEP,
+      `${parked} parked keys against a bound of ${SKIPPED_KEEP} — a state file that only grows`);
+
+    // And the trim is by insertion order, so a key parked more recently outlives an older one.
+    const entry = alice.channels.bob.dh;
+    entry.acrossSteps = {};
+    for (let i = 0; i < SKIPPED_KEEP + 5; i++) entry.acrossSteps[`k:${i}`] = `${i}`;
+    await readChannel(alice, chain, "bob");
+    const left = Object.keys(entry.acrossSteps);
+    assert.equal(left.length, SKIPPED_KEEP);
+    assert.ok(!left.includes("k:0"), "the oldest parked key survived the trim");
+    assert.ok(left.includes(`k:${SKIPPED_KEEP + 4}`), "the newest parked key was trimmed");
   } finally { server.close(); }
 });
