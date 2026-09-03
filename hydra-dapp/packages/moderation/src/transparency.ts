@@ -125,9 +125,16 @@ export function report(
   // 15 reports against cells of 7, 2 and 6 still hands over the 2. See the guard in
   // `transparency.test.ts`.
   //
-  // What WOULD work is a coarser granularity — a volume rounded to a width of at least the floor
-  // makes the residual an interval — and that is a decision with its own cost, not something to
-  // slip back in beside the cells.
+  // NOR DOES ROUNDING, which is the obvious next proposal and is also wrong. A residual interval
+  // does not protect a cell whose own range is already bounded: suppression itself says the cell
+  // is below the floor, so the attacker intersects the two. At FLOOR 5 and a width of 5, cells of
+  // 7 and 9 with a true suppressed cell of 4 give a bucket of [20,25), a residual of [4,9), and
+  // [4,9) n [0,5) = {4} — pinned exactly. It happens whenever the bucket floor sits FLOOR-1 above
+  // the published sum, and a wider bucket NARROWS the intersection rather than removing it.
+  //
+  // So the general statement, which is what survives the next proposal: ANY figure published over
+  // the same events, at ANY granularity, can intersect a suppressed cell's range down to a point.
+  // The report publishes one event set. Volume is not published in any form.
   void reportsReceivedThisPeriod;
   const figures = [...cells].sort(([a], [b]) => a.localeCompare(b))
     .map(([label, n]) => ({ label, shown: band(n) }));
@@ -152,9 +159,10 @@ export function report(
       "cell on its own; it does not survive subtraction, and a parent printed beside its children",
       "is a subtraction waiting to happen. For the same reason the number of reports received is",
       "not published here: reports and decisions are different sets of events, and printing both",
-      "lets the difference between them stand in for a suppressed cell. Banding that number does",
-      "not help, because a band only hides figures below the floor and a report volume worth",
-      "publishing is above it.",
+      "lets the difference between them stand in for a suppressed cell. Neither banding nor",
+      "rounding that number helps. Suppressing a cell already tells you it is below the floor, so",
+      "any other figure over the same events — however coarse — can be intersected with that",
+      "range, and the intersection is sometimes a single value.",
       "",
       "Deletions of encrypted objects are not listed. Those are people deleting their own",
       "messages with a capability they hold, not decisions anyone made about them, and logging",

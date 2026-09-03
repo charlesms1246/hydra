@@ -205,9 +205,51 @@ test("BANDING THE REPORT VOLUME WOULD NOT RESCUE IT — the reason it stays unpu
   const out = report(q.decisions(), 99, ALL);
   assert.ok(!out.figures.some((f) => /report/i.test(f.label)),
     "the report volume is published as a figure again — it is differenceable against the cells");
-  // A coarser granularity is the thing that would work; it is a decision, not a default.
   assert.ok(out.lines.some((l) => l.includes("below the floor")),
     "the report no longer explains why the number a reader most wants is missing");
+});
+
+test("ROUNDING THE VOLUME WOULD NOT RESCUE IT EITHER — the general reason", () => {
+  // "Band it" fails because a band above the floor is the number itself. The obvious next
+  // proposal is "round it, so the residual is a RANGE rather than a value" — and it was made,
+  // and it is also wrong. Kept here with the arithmetic because the argument is what survives,
+  // not the conclusion.
+  //
+  // A range does not protect a cell whose own range is bounded. The attacker intersects the two:
+  // the suppressed cell is known to lie in [0, FLOOR) simply because it was suppressed, so a
+  // residual interval overlapping that range in ONE place pins it exactly.
+  const FLOOR_ = FLOOR;
+  const width = 5;              // round volume to a multiple of this
+  const published = [7, 9];     // cells shown exactly
+  const suppressed = 4;         // the banded cell's true value
+  const volume = published.reduce((a, b) => a + b, 0) + suppressed;
+
+  const bucketStart = Math.floor(volume / width) * width;
+  const sum = published.reduce((a, b) => a + b, 0);
+  // The residual the attacker computes: bucket minus what was published, an interval of width w.
+  const lo = bucketStart - sum;
+  const hi = bucketStart + width - sum;
+  // Intersected with what suppression itself reveals — that the cell is below the floor.
+  const candidates = [];
+  for (let v = Math.max(0, lo); v < Math.min(FLOOR_, hi); v++) candidates.push(v);
+
+  assert.deepEqual(candidates, [suppressed],
+    "the counterexample no longer pins the cell — recheck it before trusting rounding");
+
+  // And the alignment that does it is not rare: it happens whenever the bucket floor sits
+  // exactly FLOOR-1 above the published sum, which for a report published on a schedule is a
+  // matter of when, not whether. A WIDER bucket narrows the intersection rather than removing it.
+  assert.equal(bucketStart - sum, FLOOR_ - 1, "the pinning condition is stated wrong");
+  for (const w of [10, 20, 50]) {
+    const start = Math.floor(volume / w) * w;
+    const wide = [];
+    for (let v = Math.max(0, start - sum); v < Math.min(FLOOR_, start + w - sum); v++) wide.push(v);
+    assert.ok(wide.length <= FLOOR_, `a width of ${w} somehow widened the candidate set`);
+  }
+
+  // THE GENERAL STATEMENT, which is the version that survives the next proposal: any figure
+  // published over the SAME EVENTS, at ANY granularity, can intersect a suppressed cell's range
+  // down to a point. Report volume is therefore not published in any form — see transparency.ts.
 });
 
 test("an empty period is published as empty, because a missing one is a signal", () => {
