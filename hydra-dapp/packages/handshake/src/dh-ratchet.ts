@@ -143,16 +143,33 @@ export const ratchetPublic = (seedHex: string): Uint8Array =>
 export function newDhState(
   agreed: Secret<typeof VAULT_DOMAIN>,
   where: string,
-  opts: { theirRatchetKey?: Uint8Array; ourSeedHex?: string } = {},
+  opts: {
+    theirRatchetKey?: Uint8Array;
+    ourSeedHex?: string;
+    /** Which end this is. Labels the bootstrap chains — see below, it is not cosmetic. */
+    role?: "initiator" | "responder";
+  } = {},
 ): DhState {
   const theirRatchetKey = opts.theirRatchetKey ?? null;
   const ourSeedHex = opts.ourSeedHex ?? freshRatchetSeed();
+  // THE BOOTSTRAP CHAINS ARE LABELLED BY DIRECTION, NOT BY WHOSE THEY ARE, and getting that
+  // wrong cost a whole test suite. Labelling them "send" and "recv" means each end derives the
+  // same "send" for itself, so one end's sending chain is not the other's receiving chain and
+  // the first message from the responder — sent before it has read anything, so still on the
+  // bootstrap chain — opens for nobody.
+  //
+  // It only bites the responder-speaks-first case, because the initiator steps at handshake time
+  // and the responder steps on its first read. That is exactly the case an alternating
+  // conversation hits on its second message.
+  const role = opts.role ?? (theirRatchetKey ? "initiator" : "responder");
+  const outward = role === "initiator" ? "i2r" : "r2i";
+  const inward = role === "initiator" ? "r2i" : "i2r";
   const base: DhState = {
     rootHex: packChain(agreed),
     ourSeedHex,
     theirKeyHex: null,
-    sending: newChain(subKey(agreed, "hydra/dh-ratchet/bootstrap-send")),
-    receiving: newChain(subKey(agreed, "hydra/dh-ratchet/bootstrap-recv")),
+    sending: newChain(subKey(agreed, `hydra/dh-ratchet/bootstrap ${outward}`)),
+    receiving: newChain(subKey(agreed, `hydra/dh-ratchet/bootstrap ${inward}`)),
     previousSendingLength: 0,
     acrossSteps: {},
   };
@@ -222,13 +239,54 @@ export function step(state: DhState, header: Header, where: string): void {
 }
 
 /**
- * The key that opens an incoming message, stepping first if its header says to.
+ * The key that opens an incoming message, and a `commit` the caller calls only if it did.
  *
- * Returns null when the key is genuinely gone — used and deleted, or skipped past and dropped.
- * That is forward secrecy working, and the caller keeps its own transcript for exactly this
- * reason.
+ * NOTHING IS MUTATED UNTIL THE BODY AUTHENTICATES, and that is a denial-of-service fix rather
+ * than tidiness. A header is sealed under the ADDRESSING key, which every reader keeps forever —
+ * so anyone who can write a blob into your receiving direction can put an arbitrary ratchet key
+ * in it. The first version of this stepped on sight: one forged header replaced the receiving
+ * chain with one derived from a key of the attacker's choosing, and every real message after it
+ * became unopenable. No secret was leaked and the channel was dead.
+ *
+ * `adversary/test/authorship.test.ts` found it, by forging with the wrong ratchet key and getting
+ * a silent decryption failure where it expected a refused signature.
+ *
+ * So the work happens on a copy and `commit` is what adopts it. A caller that forgets to commit
+ * re-reads the message next time, which is recoverable; a caller that commits too early loses the
+ * channel, which is not.
+ *
+ * `key` is null when it is genuinely gone — used and deleted, or skipped past and dropped. That
+ * is forward secrecy working, and it is why a client keeps its own transcript.
  */
 export function receiveKey(
+  state: DhState,
+  header: Header,
+  where: string,
+): { key: Secret<typeof VAULT_DOMAIN> | null; commit: () => void } {
+  // A structural copy: every mutable field, and the chains are plain data by design.
+  const trial: DhState = {
+    ...state,
+    sending: { ...state.sending, skipped: { ...state.sending.skipped } },
+    receiving: { ...state.receiving, skipped: { ...state.receiving.skipped } },
+    acrossSteps: { ...state.acrossSteps },
+  };
+  const key = keyOnTrial(trial, header, where);
+  return {
+    key,
+    commit: () => {
+      state.rootHex = trial.rootHex;
+      state.ourSeedHex = trial.ourSeedHex;
+      state.theirKeyHex = trial.theirKeyHex;
+      state.sending = trial.sending;
+      state.receiving = trial.receiving;
+      state.previousSendingLength = trial.previousSendingLength;
+      state.acrossSteps = trial.acrossSteps;
+    },
+  };
+}
+
+/** The old body of `receiveKey`, now run against a copy. */
+function keyOnTrial(
   state: DhState,
   header: Header,
   where: string,

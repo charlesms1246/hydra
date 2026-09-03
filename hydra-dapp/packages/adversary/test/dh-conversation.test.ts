@@ -66,14 +66,20 @@ const post = (from: DhState, text: string, seq: number, at: number) =>
  */
 function open(to: DhState, wire: Uint8Array): string | null {
   const header = decodeHeader(openHeader(addressing, wire));
-  const key = receiveKey(to, header, WHERE);
+  const { key, commit } = receiveKey(to, header, WHERE);
   if (!key) return null;
+  let text: string;
   try {
-    return new TextDecoder().decode(
+    text = new TextDecoder().decode(
       unframe(plaintextOf(openForChannel(key, bodyOf(wire)))).plaintext);
   } catch {
+    // NOT COMMITTED. The ratchet moved on a copy and the copy is discarded, so a blob with a
+    // header somebody else chose cannot advance this state. That is the whole reason `commit` is
+    // a separate call.
     return null;
   }
+  commit();
+  return text;
 }
 
 test("a message crosses, plaintext to plaintext", () => {

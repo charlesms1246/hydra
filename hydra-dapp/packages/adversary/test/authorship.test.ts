@@ -35,7 +35,9 @@ import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { signerFor, verifyAuthorship, unframe, frame, SIGNATURE_BYTES }
   from "../../handshake/src/authorship.ts";
 import { keyFor } from "../../handshake/src/ratchet.ts";
-import { openForChannel, plaintextOf, sealForChannel, wireBytes, ENCRYPTED_ENDPOINT }
+import { encodeHeader, decodeHeader, receiveKey } from "../../handshake/src/dh-ratchet.ts";
+import type { DhState } from "../../handshake/src/dh-ratchet.ts";
+import { openForChannel, plaintextOf, sealForChannel, wireBytes, bodyOf, openHeader, ENCRYPTED_ENDPOINT }
   from "../../vault-client/src/blobs.ts";
 import { pointerFor, blobIdFrom } from "../../channel/src/pointer.ts";
 import { noteCalldata } from "../../channel/src/note.ts";
@@ -68,9 +70,15 @@ const asAlice = (bob: Awaited<ReturnType<typeof pair>>["bob"]) => {
     ...his,
     addressSendHex: his.addressRecvHex,
     addressRecvHex: his.addressSendHex,
-    send: JSON.parse(JSON.stringify(his.recv)),
-    recv: JSON.parse(JSON.stringify(his.send)),
-    nextSeq: his.recv.next,
+    // The forgery: his own channel with the two directions swapped, so he sends where she
+    // sends. Under the DH ratchet that means swapping the chains INSIDE the dh state and
+    // leaving its root and keypair alone — a forger has whatever his own client has.
+    dh: {
+      ...JSON.parse(JSON.stringify(his.dh)),
+      sending: JSON.parse(JSON.stringify(his.dh.receiving)),
+      receiving: JSON.parse(JSON.stringify(his.dh.sending)),
+    },
+    nextSeq: his.dh.receiving.next,
     history: [],
     foreignSeen: 0,
     refusedSeen: 0,
@@ -135,7 +143,13 @@ test("a REPLAYED signature over different content is refused", async () => {
     // Snapshotted BEFORE the read, because reading consumes the key and deletes it — bob cannot
     // reopen a message he has already read, which is the ratchet working. An attacker builds
     // this from the frame at the moment they legitimately open it.
-    const before = JSON.parse(JSON.stringify(s.bob.channels.alice.recv));
+    //
+    // THE WHOLE DH STATE, not just the receiving chain, and that changed with `decisions/0032`.
+    // Bob's receiving chain before his first read is still the bootstrap one: the key that opens
+    // alice's message only exists after he steps onto her ratchet key, and the header is what
+    // tells him to. So the attacker's view is reconstructed the way the reader builds it —
+    // `receiveKey` on a copy — rather than by reaching for a chain that has not been derived yet.
+    const before: DhState = JSON.parse(JSON.stringify(s.bob.channels.alice.dh));
     const read = await readChannel(s.bob, s.chain, "alice");
     assert.equal(read[0].attribution, "signed");
 
@@ -150,21 +164,36 @@ test("a REPLAYED signature over different content is refused", async () => {
 
     // Bob re-seals under the SAME content key alice used, at the same sequence, with her
     // signature and her blind around different words.
-    const key = keyFor(before, 0, "test")!;
-    const opened = unframe(plaintextOf(openForChannel(key, body)));
+    // `bodyOf`, because every real blob now carries a ratchet header in a reserved prefix —
+    // `decisions/0032`. An attacker reading a message they legitimately received does exactly
+    // this: peel the header, step, open the body.
+    const address = channelKeyOf(s.bob.channels.alice.addressRecvHex);
+    const step0 = receiveKey(before, decodeHeader(openHeader(address, body)), "test");
+    step0.commit();
+    const opened = unframe(plaintextOf(openForChannel(step0.key!, bodyOf(body))));
     assert.ok(opened.signature, "the message bob is replaying was not signed");
     assert.equal(commit(opened.blind, contentHashFor(opened.plaintext)), commitment);
 
     // Sealed under the key for the sequence he is about to publish at, which he holds because a
     // ratchet chain is shared. Everything about this message is legitimate except the pairing.
-    const forgeChain = JSON.parse(JSON.stringify(s.bob.channels.alice.recv));
-    const nextKey = keyFor(forgeChain, 1, "test")!;
+    // The next key in the chain he just stepped onto — which he holds, because a ratchet chain
+    // is shared between the two ends until one of them steps again.
+    const nextKey = keyFor(before.receiving, 1, "test")!;
+    // AND A HEADER, naming alice's ratchet key and the next message number. Bob has both — the
+    // key is in his own `theirKeyHex` and the number is just a counter — so this is still a
+    // forgery in which every individual piece is genuine. Without it the reader stops at
+    // `openHeader` and never reaches the signature, which would make this test pass for the
+    // wrong reason: refused for being malformed rather than for being a replay.
+    const forgedHeader = encodeHeader({
+      ratchetKey: new Uint8Array(Buffer.from(s.bob.channels.alice.dh.theirKeyHex!, "hex")),
+      previousChainLength: 0,
+      messageNumber: 1,
+    });
     const forgedBody = wireBytes(sealForChannel(nextKey, frame(
       opened.signature, opened.blind, new TextEncoder().encode("transfer 1000"),
-    ))) as unknown as Uint8Array;
+    ), { bytes: forgedHeader, addressing: address })) as unknown as Uint8Array;
 
     // Published under alice's ORIGINAL commitment, so the signature over it is valid.
-    const address = channelKeyOf(s.bob.channels.alice.addressRecvHex);
     const pointer = pointerFor(address, blobIdFrom(forgedBody), 1);
     await s.chain.publish(noteCalldata(pointer, commitment));
     const put = s.v.handle({
@@ -184,12 +213,65 @@ test("a REPLAYED signature over different content is refused", async () => {
   } finally { s.server.close(); }
 });
 
+test("A FORGED HEADER CANNOT KILL THE CHANNEL, which is what `commit` is for", async () => {
+  // The bug this test exists for was real and it was found by the forgery test above failing for
+  // the wrong reason. A ratchet header is sealed under the ADDRESSING key, which every reader
+  // keeps forever — so anyone who can write a blob into your receiving direction chooses the
+  // ratchet key inside it. The first version of `receiveKey` stepped on sight: one forged header
+  // replaced the receiving chain with one derived from a key of the attacker's choosing, and
+  // every real message afterwards became unopenable. No secret leaked; the conversation died.
+  //
+  // So `receiveKey` works on a copy and the caller adopts it only once the body has opened.
+  const s = await pair();
+  try {
+    await sendMessage(s.alice, s.chain, "bob", "ephemeral", "first", T0);
+    await flush(s.alice, LATER);
+    assert.deepEqual((await readChannel(s.bob, s.chain, "alice")).map((m) => m.text), ["first"]);
+
+    // A blob in alice's direction whose header names a ratchet key nobody has the private half
+    // of. Everything about it is well-formed: it is sealed under the addressing key bob holds,
+    // at the sequence he expects next, and the header decodes.
+    const address = channelKeyOf(s.bob.channels.alice.addressRecvHex);
+    const junkHeader = encodeHeader({
+      ratchetKey: new Uint8Array(32).fill(0xab),
+      previousChainLength: 0,
+      messageNumber: 1,
+    });
+    const poison = wireBytes(sealForChannel(
+      channelKeyOf(s.bob.channels.alice.addressRecvHex),
+      frame(null, 1n, new TextEncoder().encode("poison")),
+      { bytes: junkHeader, addressing: address })) as unknown as Uint8Array;
+    const pointer = pointerFor(address, blobIdFrom(poison), 1);
+    await s.chain.publish(noteCalldata(pointer, 1n));
+    assert.ok(s.v.handle({
+      op: "upload", endpoint: ENCRYPTED_ENDPOINT,
+      id: `enc:${Buffer.from(blobIdFrom(poison)).toString("hex")}`,
+      body: poison, invite: "au-798",
+    }).ok);
+
+    // Bob reads. The poison is counted and discarded.
+    const rootBefore = s.bob.channels.alice.dh.rootHex;
+    await readChannel(s.bob, s.chain, "alice");
+    assert.equal(s.bob.channels.alice.refusedSeen, 1,
+      "the forged header was not counted, so nothing can report that somebody tried");
+    assert.equal(s.bob.channels.alice.dh.rootHex, rootBefore,
+      "the forged header advanced the ratchet — one blob from anyone with write access to the "
+      + "vault can now kill any channel");
+
+    // AND THE CHANNEL STILL WORKS, which is the property. Alice sends again and bob reads it.
+    await sendMessage(s.alice, s.chain, "bob", "ephemeral", "second", T0 + 2 * BLOCK);
+    await flush(s.alice, LATER + 2 * BLOCK);
+    assert.deepEqual((await readChannel(s.bob, s.chain, "alice")).map((m) => m.text),
+      ["first", "second"], "the channel died after a forged header");
+  } finally { s.server.close(); }
+});
+
 test("DENIABILITY, chosen: ephemeral content the counterparty can fabricate", async () => {
   const s = await pair();
   try {
     await sendMessage(s.alice, s.chain, "bob", "ephemeral", "meet me at eight", T0);
     await flush(s.alice, LATER);
-    const before = JSON.parse(JSON.stringify(s.bob.channels.alice.recv));
+    const before: DhState = JSON.parse(JSON.stringify(s.bob.channels.alice.dh));
     const genuine = await readChannel(s.bob, s.chain, "alice");
     assert.deepEqual(genuine.map((m) => m.text), ["meet me at eight"]);
     assert.equal(genuine[0].attribution, "unverifiable");
@@ -217,8 +299,12 @@ test("DENIABILITY, chosen: ephemeral content the counterparty can fabricate", as
     });
     assert.ok(stored.ok && stored.op === "fetch");
 
-    const key = keyFor(before, 0, "test")!;
-    const opened = unframe(plaintextOf(openForChannel(key, stored.found.get(ids[0])!)));
+    // The third party opens it the way any reader does: header under the addressing key, step,
+    // then the body under the key the header named.
+    const address = channelKeyOf(s.bob.channels.alice.addressRecvHex);
+    const wire = stored.found.get(ids[0])!;
+    const taken = receiveKey(before, decodeHeader(openHeader(address, wire)), "test");
+    const opened = unframe(plaintextOf(openForChannel(taken.key!, bodyOf(wire))));
     assert.equal(opened.signature, null,
       "an ephemeral message carried a signature, which would settle who wrote it");
     assert.equal(stored.found.get(ids[0])!.length, stored.found.get(ids[1])!.length,

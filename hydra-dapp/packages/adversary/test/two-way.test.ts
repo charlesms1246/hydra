@@ -137,8 +137,22 @@ test("a channel from before the ratchet is refused rather than migrated", async 
     // stored keys. Migrating it would mean inventing chains the other end does not have, and a
     // channel whose keys only one side knows is worse than one that refuses to open.
     delete (alice.channels.bob as { addressSendHex?: string }).addressSendHex;
-    await assert.rejects(() => sendMessage(alice, chain, "bob", "ephemeral", "x", T0), /predates the message ratchet/);
-    await assert.rejects(() => readChannel(alice, chain, "bob"), /predates the message ratchet/);
+    await assert.rejects(() => sendMessage(alice, chain, "bob", "ephemeral", "x", T0), /predates the ratchet/);
+    await assert.rejects(() => readChannel(alice, chain, "bob"), /predates the ratchet/);
+  } finally { server.close(); }
+});
+
+test("a channel from before the DH ratchet is refused too, for the same reason", async () => {
+  // TWO GENERATIONS OF STATE NOW. A file written before `decisions/0032` has the two bare chains
+  // and no `dh`, and there is nothing to migrate it from: the DH root descends from the agreed
+  // material, which this client deliberately does not keep. Inventing one would produce a
+  // channel whose keys the other end has never heard of.
+  const { alice, server, chain } = await pair();
+  try {
+    delete (alice.channels.bob as { dh?: unknown }).dh;
+    await assert.rejects(() => sendMessage(alice, chain, "bob", "ephemeral", "x", T0),
+      /predates the ratchet/);
+    await assert.rejects(() => readChannel(alice, chain, "bob"), /predates the ratchet/);
   } finally { server.close(); }
 });
 

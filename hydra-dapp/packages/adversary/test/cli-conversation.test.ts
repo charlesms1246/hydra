@@ -230,8 +230,18 @@ test("both sides derive the same channel from names they chose separately", () =
   const b = bob.channels["with-alice"];
   assert.equal(a.addressSendHex, b.addressRecvHex);
   assert.equal(a.addressRecvHex, b.addressSendHex);
-  assert.equal(a.send.chainHex, b.recv.chainHex);
-  assert.equal(a.recv.chainHex, b.send.chainHex);
+  // AND THE CONTENT CHAINS DELIBERATELY DO NOT MATCH YET, which is a change the DH ratchet
+  // makes and worth stating rather than deleting. The initiator steps at handshake time — she
+  // knows the responder's initial ratchet key, so she never sends under the bootstrap chain —
+  // while the responder cannot step until her first message arrives and tells him which key to
+  // step onto. So the chains align one message in, not at `accept`.
+  assert.notEqual(a.dh.sending.chainHex, b.dh.receiving.chainHex,
+    "the initiator did not step at handshake time, so she will send under the bootstrap chain");
+  // What DOES have to agree here is the addressing above: same agreed material, mirrored. The
+  // chains agreeing is checked where it becomes true — `dh-conversation.test.ts` opens real
+  // messages, which is the only proof that matters.
+  assert.notEqual(a.dh.sending.chainHex, a.dh.receiving.chainHex,
+    "one chain is doing both directions");
   assert.notEqual(a.addressSendHex, a.addressRecvHex, "one key is doing both directions again");
   assert.notEqual(alice.seedHex, bob.seedHex);
 });

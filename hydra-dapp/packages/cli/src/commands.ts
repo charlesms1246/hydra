@@ -20,7 +20,9 @@ import { initiate, respondWith } from "../../handshake/src/x3dh.ts";
 import { createStore, mintOneTime, rotate, bundleFrom, oneTimeRemaining }
   from "../../handshake/src/prekeys.ts";
 import { postPrekey, collectPrekeys, httpTransport } from "../../handshake/src/inbox.ts";
-import { newChain, keyFor, packChain, forgetOldSkipped } from "../../handshake/src/ratchet.ts";
+import { keyFor, packChain, forgetOldSkipped } from "../../handshake/src/ratchet.ts";
+import { newDhState, receiveKey, ratchetPublic, decodeHeader }
+  from "../../handshake/src/dh-ratchet.ts";
 import { signedBy, ephemeral, unframe, verifyAuthorship } from "../../handshake/src/authorship.ts";
 import { recordFor, encodeRecord, decodeRecord, verifyRecord, RECORD_FELTS }
   from "../../handshake/src/record.ts";
@@ -29,7 +31,7 @@ import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex, COVER_RATE } from "../../channel/src/cover.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
-import { openForChannel, plaintextOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
+import { openForChannel, plaintextOf, openHeader, bodyOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
 import { MAX_BODY } from "../../vault-server/src/http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import {
@@ -91,9 +93,13 @@ const channelAt = (state: State, name: string): ChannelState => {
   // Refused rather than migrated. A state file written before the ratchet holds the agreed
   // material and no chains, and inventing chains from it would silently produce a channel whose
   // keys the other end does not have. Nothing here can repair that; only a new handshake can.
-  if (!c.addressSendHex || !c.send) {
+  // Two generations of state now, and both are refused for the same reason: the keys a
+  // migration would have to invent came from material this client deliberately no longer keeps.
+  // A channel written before the DH ratchet has `send`/`recv` and no `dh`, and guessing a DH
+  // root for it would produce a channel whose keys the other end does not have.
+  if (!c.addressSendHex || !c.dh) {
     throw new Error(
-      `the channel ${JSON.stringify(name)} predates the message ratchet and cannot be migrated: `
+      `the channel ${JSON.stringify(name)} predates the ratchet it needs and cannot be migrated: `
       + "its keys were derivable from material this client no longer keeps. Open it again.");
   }
   return c;
@@ -269,6 +275,29 @@ export const fingerprint = (bundle: Pick<Bundle, "identityKey" | "signingKey">):
  * The material is not stored, and that is the whole of the forward secrecy. Keeping it would
  * regenerate every chain key and therefore every message key this client ever used.
  */
+/**
+ * The DH ratchet's starting state, derived so BOTH ends compute it from the agreed material.
+ *
+ * THE INITIAL RATCHET KEYPAIR IS DERIVED, NOT RANDOM, and that is not a shortcut. Signal reuses
+ * the responder's signed prekey here; deriving it from the X3DH output instead is equivalent in
+ * strength and needs no extra field on the wire, because the initiator already has to know the
+ * responder's initial public key and the only thing both ends share at this moment is `agreed`.
+ *
+ * Yes, this means the initiator can compute the responder's initial ratchet PRIVATE key. It gains
+ * nothing by it: both ends can already derive every initial chain from `agreed`, which is the
+ * definition of a shared secret. What buys post-compromise security is `step()` minting a key
+ * from `randomBytes` on every subsequent ratchet, and neither end can derive those.
+ *
+ * `agreed` itself is never stored — `remember` lets it go — so after the handshake nobody can
+ * recompute any of this from the state file.
+ */
+const openDh = (agreed: Secret<typeof VAULT_DOMAIN>, role: ChannelState["role"], where: string) => {
+  const responderSeed = hex(expose(subKey(agreed, "dh-ratchet/responder-initial"), VAULT_DOMAIN));
+  return role === "responder"
+    ? newDhState(agreed, where, { role, ourSeedHex: responderSeed })
+    : newDhState(agreed, where, { role, theirRatchetKey: ratchetPublic(responderSeed) });
+};
+
 const remember = (
   state: State, name: string, material: Uint8Array, peer: string, role: ChannelState["role"],
   peerSigningKey: Uint8Array,
@@ -281,8 +310,7 @@ const remember = (
     peerSigningKeyHex: hex(peerSigningKey),
     addressSendHex: hex(expose(subKey(mine, "addressing"), VAULT_DOMAIN)),
     addressRecvHex: hex(expose(subKey(theirs, "addressing"), VAULT_DOMAIN)),
-    send: newChain(subKey(mine, "content chain")),
-    recv: newChain(subKey(theirs, "content chain")),
+    dh: openDh(agreed, role, WHERE),
     nextSeq: 0, readTo: 0, history: [], foreignSeen: 0, refusedSeen: 0,
   };
 };
@@ -404,11 +432,12 @@ export async function sendMessage(
   const seq = entry.nextSeq;
   // The key for this sequence, taken out of the sending chain, which advances and destroys the
   // one before it. A message this client has sent cannot be sealed again.
-  const content = keyFor(entry.send, seq, WHERE);
-  if (!content) throw new Error(`the sending chain is past sequence ${seq} — this is a bug`);
   const config = {
     channel,
-    content,
+    // The DH ratchet, which supersedes a content key: `session.send` takes the message key off
+    // the sending chain AND puts the header naming that chain on the blob. The two have to
+    // happen together or the other end cannot tell which chain to open it with.
+    ratchet: entry.dh,
     author: attribution === "signed" ? signedBy(vaultRootOf(state)) : ephemeral(),
     blockMs: state.blockMs,
   };
@@ -748,10 +777,32 @@ export async function readChannel(
         entry.foreignSeen++;
         continue;
       }
-      const content = keyFor(entry.recv, at.seq, WHERE);
+      // THE HEADER DECIDES THE KEY, NOT THE SEQUENCE, and the two are different counters. A DH
+      // step restarts the ratchet's numbering while the chain sequence keeps climbing, so a
+      // reader that passed `at.seq` to the ratchet would work until the first reply and then
+      // stop. `at.seq` addresses the blob; the header numbers the message.
+      const wire = new Uint8Array(Buffer.from(b64, "base64"));
+      // `theirs` — the RECEIVING addressing key. The sender sealed the header under its own
+      // sending addressing key, and this channel's two directions are mirror images of each
+      // other, so the key that opens their header is the one this end calls receiving.
+      // A HEADER THAT OPENS IS A BLOB ADDRESSED TO THIS CHANNEL BY SOMEBODY WHO HOLDS THE
+      // ADDRESSING KEY, and from here on a failure is worth counting rather than swallowing.
+      // Below this line the `catch` around the loop would hide a forgery: `refusedSeen` exists so
+      // the client can say somebody tried, and a body that will not open under the key its own
+      // header names is exactly that. Decoys and other channels' blobs never get this far — they
+      // fail at `openHeader`, which is where silence is correct.
+      const header = decodeHeader(openHeader(theirs, wire));
+      const { key: content, commit: adopt } = receiveKey(entry.dh, header, WHERE);
       if (!content) continue;
-      const opened = unframe(
-        plaintextOf(openForChannel(content, new Uint8Array(Buffer.from(b64, "base64")))));
+      let opened;
+      try {
+        opened = unframe(plaintextOf(openForChannel(content, bodyOf(wire))));
+      } catch {
+        // NOT ADOPTED, so the forged header cannot advance the ratchet — see `receiveKey`.
+        entry.refusedSeen++;
+        continue;
+      }
+      adopt();
 
       // THREE LINKS, and a message that breaks any of them is refused rather than shown.
       //
@@ -789,7 +840,16 @@ export async function readChannel(
   // A kept message key is a key not deleted, so the set of them is bounded. The recent ones are
   // the ones worth keeping: a blob more than this many sequences late is a blob that is not
   // coming, and holding its key forever would leak forward secrecy back one message at a time.
-  forgetOldSkipped(entry.recv, SKIPPED_KEEP);
+  forgetOldSkipped(entry.dh.receiving, SKIPPED_KEEP);
+  // AND THE ACROSS-STEP KEYS, which are the same hazard one level up. `dh.acrossSteps` holds a
+  // message key for every sequence abandoned by a ratchet step, so a long conversation would
+  // hoard them forever and leak forward secrecy back out through a state file. Bounded by count
+  // because the map is keyed by ratchet key rather than by sequence, so "recent" is insertion
+  // order and nothing else.
+  const parked = Object.keys(entry.dh.acrossSteps);
+  for (const key of parked.slice(0, Math.max(0, parked.length - SKIPPED_KEEP))) {
+    delete entry.dh.acrossSteps[key];
+  }
 
   // Ordered by the chain, not by sequence: each direction counts from zero, so sequence alone
   // interleaves the two conversations wrongly. The event order is the one both ends see.

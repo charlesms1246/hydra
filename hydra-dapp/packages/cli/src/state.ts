@@ -22,7 +22,7 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { PrekeyStore } from "../../handshake/src/prekeys.ts";
-import type { ChainState } from "../../handshake/src/ratchet.ts";
+import type { DhState } from "../../handshake/src/dh-ratchet.ts";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -92,9 +92,17 @@ export type ChannelState = {
    */
   anchor?: string;
 
-  /** The ratchet, one chain per direction. See `handshake/src/ratchet.ts`. */
-  send: ChainState;
-  recv: ChainState;
+  /**
+   * The ratchet — both directions, plus the DH state that re-keys them.
+   *
+   * It used to be two bare `ChainState`s, one per direction, which is the symmetric half:
+   * forward secrecy, and no recovery from a compromise. `DhState` still holds a chain per
+   * direction and adds what re-keys them, so every property the old shape had is still a
+   * property of `dh.sending` and `dh.receiving`.
+   *
+   * See `handshake/src/dh-ratchet.ts` and `decisions/0032`.
+   */
+  dh: DhState;
 
   nextSeq: number;
   /**

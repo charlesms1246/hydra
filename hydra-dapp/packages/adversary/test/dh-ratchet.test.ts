@@ -29,6 +29,21 @@ const agreed = derive(VAULT_DOMAIN,
 const keyHex = (k: ReturnType<typeof sendKey> | null) =>
   k === null ? null : Buffer.from(expose(k, VAULT_DOMAIN)).toString("hex");
 
+/**
+ * `receiveKey` and then commit, which is what a caller does once the body has opened.
+ *
+ * These tests are about the KEYS, so they commit unconditionally. The reason `receiveKey` makes
+ * that a separate step is `dh-conversation.test.ts` and `commands.ts`: a header is sealed under
+ * the addressing key, so anyone who can write into your receiving direction can choose the
+ * ratchet key in it, and a client that stepped on sight would let one forged blob replace its
+ * receiving chain and kill the channel.
+ */
+const take = (state: DhState, header: Header, where: string) => {
+  const r = receiveKey(state, header, where);
+  r.commit();
+  return r.key;
+};
+
 /** Two ends of one conversation, as X3DH would leave them. */
 function pair(): { alice: DhState; bob: DhState } {
   // Bob's ratchet keypair is the one his bundle published, so Alice can take the first step
@@ -68,12 +83,12 @@ test("the header fits inside the smallest bucket without moving it", () => {
 test("both ends derive the same key for the same message", () => {
   const { alice, bob } = pair();
   const a = send(alice);
-  assert.equal(keyHex(receiveKey(bob, a.header, WHERE)), a.key,
+  assert.equal(keyHex(take(bob, a.header, WHERE)), a.key,
     "the two ends disagree about the first message's key");
 
   // And back the other way, which is what makes it a ratchet rather than one chain.
   const b = send(bob);
-  assert.equal(keyHex(receiveKey(alice, b.header, WHERE)), b.key,
+  assert.equal(keyHex(take(alice, b.header, WHERE)), b.key,
     "the reply's key does not agree");
 });
 
@@ -81,9 +96,9 @@ test("messages arriving out of order inside one chain still open", () => {
   const { alice, bob } = pair();
   const sent = [send(alice), send(alice), send(alice)];
   // Third, then first, then second — uploads are late on purpose, so this is ordinary.
-  assert.equal(keyHex(receiveKey(bob, sent[2].header, WHERE)), sent[2].key);
-  assert.equal(keyHex(receiveKey(bob, sent[0].header, WHERE)), sent[0].key);
-  assert.equal(keyHex(receiveKey(bob, sent[1].header, WHERE)), sent[1].key);
+  assert.equal(keyHex(take(bob, sent[2].header, WHERE)), sent[2].key);
+  assert.equal(keyHex(take(bob, sent[0].header, WHERE)), sent[0].key);
+  assert.equal(keyHex(take(bob, sent[1].header, WHERE)), sent[1].key);
 });
 
 test("a message from before a step still opens after it", () => {
@@ -94,22 +109,22 @@ test("a message from before a step still opens after it", () => {
   const early = send(alice);
   const late = send(alice);
   // Bob reads only the first, replies — which steps his sending chain — and Alice steps too.
-  assert.equal(keyHex(receiveKey(bob, early.header, WHERE)), early.key);
+  assert.equal(keyHex(take(bob, early.header, WHERE)), early.key);
   const reply = send(bob);
-  assert.equal(keyHex(receiveKey(alice, reply.header, WHERE)), reply.key);
+  assert.equal(keyHex(take(alice, reply.header, WHERE)), reply.key);
   const afterStep = send(alice);
-  assert.equal(keyHex(receiveKey(bob, afterStep.header, WHERE)), afterStep.key);
+  assert.equal(keyHex(take(bob, afterStep.header, WHERE)), afterStep.key);
 
   // Now the straggler from before the step arrives.
-  assert.equal(keyHex(receiveKey(bob, late.header, WHERE)), late.key,
+  assert.equal(keyHex(take(bob, late.header, WHERE)), late.key,
     "a message sent before the step is unopenable after it — that is data loss, not secrecy");
 });
 
 test("a key is gone once it has been used", () => {
   const { alice, bob } = pair();
   const a = send(alice);
-  assert.equal(keyHex(receiveKey(bob, a.header, WHERE)), a.key);
-  assert.equal(receiveKey(bob, a.header, WHERE), null,
+  assert.equal(keyHex(take(bob, a.header, WHERE)), a.key);
+  assert.equal(take(bob, a.header, WHERE), null,
     "the same message opened twice — its key was not deleted");
 });
 
@@ -126,9 +141,9 @@ test("POST-COMPROMISE: recovery takes a full round trip, and then the thief is o
   // trip. Asserting failure any earlier would be asserting a property no ratchet has.
   const { alice, bob } = pair();
   const opening = send(alice);
-  assert.equal(keyHex(receiveKey(bob, opening.header, WHERE)), opening.key);
+  assert.equal(keyHex(take(bob, opening.header, WHERE)), opening.key);
   const hello = send(bob);
-  assert.equal(keyHex(receiveKey(alice, hello.header, WHERE)), hello.key);
+  assert.equal(keyHex(take(alice, hello.header, WHERE)), hello.key);
 
   // A complete copy, taken here — root, both chains, Bob's ratchet seed, every parked key.
   const stolen: DhState = JSON.parse(JSON.stringify(bob));
@@ -136,27 +151,27 @@ test("POST-COMPROMISE: recovery takes a full round trip, and then the thief is o
   // 1. Alice speaks under a key the thief already knows about. Bob and the thief agree, and they
   //    MUST — a copy that could not follow here would make everything below vacuous.
   const during = send(alice);
-  assert.equal(keyHex(receiveKey(bob, during.header, WHERE)), during.key);
-  assert.equal(keyHex(receiveKey(stolen, during.header, WHERE)), during.key,
+  assert.equal(keyHex(take(bob, during.header, WHERE)), during.key);
+  assert.equal(keyHex(take(stolen, during.header, WHERE)), during.key,
     "the stolen copy could not read the message it was stolen to read");
 
   // 2. Receiving that made Bob mint a fresh ratchet keypair. His reply carries its public half —
   //    and the thief, holding only the old private half, cannot get to the new shared secret.
   //    The thief is NOT asked to receive this: it is Bob's own message.
   const reply = send(bob);
-  assert.equal(keyHex(receiveKey(alice, reply.header, WHERE)), reply.key);
+  assert.equal(keyHex(take(alice, reply.header, WHERE)), reply.key);
 
   // 3. Alice has stepped onto Bob's new key. This is the first message out of reach.
   const after = send(alice);
-  assert.equal(keyHex(receiveKey(bob, after.header, WHERE)), after.key,
+  assert.equal(keyHex(take(bob, after.header, WHERE)), after.key,
     "Bob cannot read it either — the ratchet is broken, not secure");
-  assert.notEqual(keyHex(receiveKey(stolen, after.header, WHERE)), after.key,
+  assert.notEqual(keyHex(take(stolen, after.header, WHERE)), after.key,
     "the stolen state opened a message sent after a full round trip — there is no "
     + "post-compromise security");
 
   // And it stays out of reach, rather than the thief being one step behind.
   const later = send(alice);
-  assert.equal(keyHex(receiveKey(bob, later.header, WHERE)), later.key);
-  assert.notEqual(keyHex(receiveKey(stolen, later.header, WHERE)), later.key,
+  assert.equal(keyHex(take(bob, later.header, WHERE)), later.key);
+  assert.notEqual(keyHex(take(stolen, later.header, WHERE)), later.key,
     "the thief caught up again on the next message");
 });

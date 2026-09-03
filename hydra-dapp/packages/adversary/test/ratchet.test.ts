@@ -132,8 +132,9 @@ test("an absurd sequence number does not spin the chain", () => {
 const everySecret = (state: State, name: string) => {
   const c = state.channels[name];
   const hexes = [
-    c.addressSendHex, c.addressRecvHex, c.send.chainHex, c.recv.chainHex,
-    ...Object.values(c.send.skipped), ...Object.values(c.recv.skipped),
+    c.addressSendHex, c.addressRecvHex, c.dh.sending.chainHex, c.dh.receiving.chainHex,
+    ...Object.values(c.dh.sending.skipped), ...Object.values(c.dh.receiving.skipped),
+    ...Object.values(c.dh.acrossSteps),
   ];
   return hexes.map((h) => derive(VAULT_DOMAIN,
     rootSeed(entropyFrom(fromTestVector(new Uint8Array(Buffer.from(h, "hex")), "seized")))));
@@ -167,7 +168,7 @@ test("no key left in the state file opens a message already read", async () => {
         "a secret still in the state file opened a message read fifteen messages ago");
     }
     // And the ratchet refuses to make the key again.
-    assert.equal(keyFor(s.bob.channels.alice.recv, 5, WHERE), null);
+    assert.equal(keyFor(s.bob.channels.alice.dh.receiving, 5, WHERE), null);
 
     // The words survive only in the transcript, which is the point of keeping one — and why
     // deleting from it is now a real deletion rather than theatre.
@@ -201,8 +202,8 @@ test("the agreed material is not in the file, because keeping it would undo all 
     // The chain key is there, and it must be: it is what opens the NEXT message. What must not
     // be there is anything that regenerates the chain from its beginning.
     assert.ok(dumped.includes("chainHex"));
-    assert.equal(s.alice.channels.bob.send.next, 0);
+    assert.equal(s.alice.channels.bob.dh.sending.next, 0);
     await sendMessage(s.alice, s.chain, "bob", "ephemeral", "one", T0);
-    assert.equal(s.alice.channels.bob.send.next, 1, "sending did not advance the chain");
+    assert.equal(s.alice.channels.bob.dh.sending.next, 1, "sending did not advance the chain");
   } finally { s.server.close(); }
 });
