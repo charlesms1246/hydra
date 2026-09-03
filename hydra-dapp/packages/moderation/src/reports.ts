@@ -88,7 +88,7 @@ export class Reports {
    * nothing about who filed them, which item they concerned, or when beyond the period — so the
    * record stays at its minimum and the report can still be honest about volume.
    */
-  #reportsReceived = 0;
+  readonly #received = new Map<string, number>();
 
   /**
    * File a report against a public blob.
@@ -98,7 +98,12 @@ export class Reports {
    * merely bounded, because holding the container open does not let them control what is in it.
    */
   file(blobId: string, body: string, at: number): Review {
-    this.#reportsReceived++;
+    // BUCKETED BY PERIOD AT FILE TIME, not counted cumulatively. A lifetime counter published each
+    // period is a cumulative figure, and subtracting period N from N+1 gives the delta with no
+    // band on it — a series of individually-safe reports leaking what no single one did. One
+    // integer per period retains nothing more than the total did.
+    const key = Reports.periodKey(at);
+    this.#received.set(key, (this.#received.get(key) ?? 0) + 1);
     const open = this.#open.get(blobId);
     if (!open) {
       const review = { blobId, reports: [{ body, at }], overflow: 0, openedAt: at };
@@ -118,9 +123,21 @@ export class Reports {
     return next;
   }
 
-  /** How many reports have arrived. An aggregate — see `#reportsReceived`. */
-  received(): number {
-    return this.#reportsReceived;
+  /**
+   * Which period a moment falls in. Fixed and public, so the boundaries are not a knob.
+   *
+   * Calendar months. A schedule that slips or a period silently skipped is itself a signal, sent
+   * in the same channel as a canary and carrying none of a canary's deliberateness — see
+   * `transparency.ts`.
+   */
+  static periodKey(at: number): string {
+    const d = new Date(at);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+
+  /** How many reports arrived in one period. An aggregate, per period — see `file`. */
+  receivedIn(at: number): number {
+    return this.#received.get(Reports.periodKey(at)) ?? 0;
   }
 
   /** Every decision made, for the transparency report to be generated from. */

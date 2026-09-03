@@ -44,7 +44,7 @@ test("a banded cell is stated NOT to mean none", () => {
   // cell is empty has been misled by the safety mechanism. So the number and its limit arrive
   // together, in the report itself rather than in a policy document.
   const q = withDecisions(2);
-  const out = report(q.decisions(), q.received(), ALL);
+  const out = report(q.decisions(), q.receivedIn(0), ALL);
   const text = out.lines.join(" ");
   assert.match(text, new RegExp(`fewer than ${FLOOR}`));
   assert.match(text, /INCLUDES ZERO/);
@@ -55,14 +55,15 @@ test("a banded cell is stated NOT to mean none", () => {
 test("the report says less when there is less to say, and that is it being correct", () => {
   // Launch condition: one removal, one category. Everything bands.
   const q = withDecisions(1);
-  const out = report(q.decisions(), q.received(), ALL);
-  for (const line of out.lines.filter((l) => /^(Reports|Decisions|Category)/.test(l))) {
-    assert.match(line, new RegExp(`fewer than ${FLOOR}`),
-      `a launch-volume cell was published as an exact count: ${line}`);
+  const out = report(q.decisions(), q.receivedIn(0), ALL);
+  for (const f of out.figures) {
+    assert.equal(f.shown, `fewer than ${FLOOR}`,
+      `a launch-volume cell was published as an exact count: ${f.label} = ${f.shown}`);
   }
   // And at volume it says the numbers.
   const busy = withDecisions(40);
-  assert.match(report(busy.decisions(), busy.received(), ALL).lines[0], /Reports received: 40/);
+  const loud = report(busy.decisions(), busy.receivedIn(0), ALL);
+  assert.ok(loud.figures.some((f) => f.shown === "40"), "a large cell was banded");
 });
 
 test("ENCRYPTED DELETIONS DO NOT APPEAR — they are not decisions about anyone", () => {
@@ -71,13 +72,13 @@ test("ENCRYPTED DELETIONS DO NOT APPEAR — they are not decisions about anyone"
   const q = new Reports();
   for (let i = 0; i < 9; i++) { q.file(`pub:${i}`, "b", i); q.decide(`pub:${i}`, "removed", "c", i); }
   for (let i = 0; i < 9; i++) { q.file(`enc:${i}`, "b", i); q.decide(`enc:${i}`, "removed", "c", i); }
-  const out = report(q.decisions(), q.received(), ALL);
+  const out = report(q.decisions(), q.receivedIn(0), ALL);
   assert.ok(out.removedIds.every((id) => id.startsWith("pub:")),
     "an encrypted object's id was published in the transparency report");
   assert.equal(out.removedIds.length, 9);
   assert.match(out.lines.join(" "), /Deletions of encrypted objects are not listed/);
-  // The decision COUNT is public-class only too, not just the id list.
-  assert.match(out.lines[1], /Decisions: 9/);
+  // The counts are public-class only too, not just the id list.
+  assert.ok(out.figures.some((f) => f.label.includes("removed") && f.shown === "9"));
 });
 
 test("naming a removed public id is a choice, and it is bounded to that class", () => {
@@ -85,7 +86,7 @@ test("naming a removed public id is a choice, and it is bounded to that class", 
   // so a removal anyone can verify against it is the mechanism this design chose. The cost is a
   // permanent index of removed content, which is why it is decided once rather than by default.
   const q = withDecisions(9);
-  const out = report(q.decisions(), q.received(), ALL);
+  const out = report(q.decisions(), q.receivedIn(0), ALL);
   assert.deepEqual(out.removedIds, [...out.removedIds].sort(), "the ids leak decision order");
   // Kept objects are not named — only removals, which is what a reader can check against the chain.
   const mixed = new Reports();
@@ -93,7 +94,7 @@ test("naming a removed public id is a choice, and it is bounded to that class", 
     mixed.file(`pub:${i}`, "b", i);
     mixed.decide(`pub:${i}`, i < 5 ? "removed" : "kept", "c", i);
   }
-  assert.equal(report(mixed.decisions(), mixed.received(), ALL).removedIds.length, 5);
+  assert.equal(report(mixed.decisions(), mixed.receivedIn(0), ALL).removedIds.length, 5);
 });
 
 test("the report is generated from the record, and the record kept enough", () => {
@@ -108,7 +109,7 @@ test("the report is generated from the record, and the record kept enough", () =
     assert.deepEqual(Object.keys(d).sort(), ["at", "blobId", "category", "outcome"],
       "the decision record grew a field to serve the report");
   }
-  assert.equal(q.received(), 6);
+  assert.equal(q.receivedIn(0), 6);
   // The class is derived from the id rather than stored, which is why no `class` field was needed.
   assert.ok(q.decisions().every((d) => d.blobId.startsWith("pub:")));
 });
@@ -116,8 +117,10 @@ test("the report is generated from the record, and the record kept enough", () =
 test("the period bounds what is counted", () => {
   const q = new Reports();
   for (let i = 0; i < 12; i++) { q.file(`pub:${i}`, "b", i); q.decide(`pub:${i}`, "removed", "c", i); }
-  assert.match(report(q.decisions(), q.received(), { from: 0, to: 6 }).lines[1], /Decisions: 6/);
-  assert.equal(report(q.decisions(), q.received(), { from: 0, to: 6 }).removedIds.length, 6);
+  const win = report(q.decisions(), q.receivedIn(0), { from: 0, to: 6 });
+  assert.equal(win.removedIds.length, 6);
+  assert.ok(win.figures.some((f) => f.shown === "6"));
+  assert.match(win.lines[0], /^Period /, "the period boundaries are not published");
 });
 
 test("the report itself is on the moderation table", () => {
@@ -126,4 +129,84 @@ test("the report itself is on the moderation table", () => {
   // already public.
   assert.ok(MODERATION_OBSERVABLE_IDS.includes("report.published"),
     "the transparency report is not on the moderation disclosure table");
+});
+
+test("NO COMBINATION OF PUBLISHED FIGURES LANDS BELOW THE FLOOR", () => {
+  // A floor protects a cell in isolation and does nothing against arithmetic between figures.
+  // The first version of this report printed `Decisions: 9 — removed 7, kept fewer than 5`, and
+  // 9 − 7 = 2 pinned the banded cell exactly. Two partitions of the same events do it too: publish
+  // by outcome AND by category and the total is derivable either way, so a single banded cell in
+  // one partition is the total minus the rest.
+  //
+  // The requirement is that nothing published permits a combination landing below the floor, and
+  // it is checkable rather than a matter of care — which is what makes this the test that fails
+  // when somebody later adds a well-meaning "total" line.
+  const q = new Reports();
+  const shape: [string, "removed" | "kept"][] = [
+    ...Array.from({ length: 7 }, () => ["impersonation", "removed"] as [string, "removed"]),
+    ...Array.from({ length: 2 }, () => ["impersonation", "kept"] as [string, "kept"]),
+    ...Array.from({ length: 6 }, () => ["harassment", "removed"] as [string, "removed"]),
+  ];
+  shape.forEach(([category, outcome], i) => {
+    q.file(`pub:${i}`, "b", i);
+    q.decide(`pub:${i}`, outcome, category, i);
+  });
+
+  const out = report(q.decisions(), q.receivedIn(0), ALL);
+  // Every figure a reader can actually see as a number. Banded ones carry no value to combine.
+  const known = out.figures.filter((f) => f.shown !== `fewer than ${FLOOR}`).map((f) => Number(f.shown));
+  assert.ok(known.every((n) => Number.isFinite(n)), "a published figure is not a number or a band");
+  // The true values of the cells that WERE banded. A leak is one of these being reachable.
+  const suppressed = [2];
+
+  // Every sum and difference of every subset. Small enough to enumerate exhaustively, which is
+  // the right way to check a claim about arithmetic.
+  const reachable = new Set<number>();
+  for (let mask = 1; mask < 1 << known.length; mask++) {
+    for (let signs = 0; signs < 1 << known.length; signs++) {
+      let total = 0;
+      for (let i = 0; i < known.length; i++) {
+        if (!(mask & (1 << i))) continue;
+        total += (signs & (1 << i)) ? -known[i] : known[i];
+      }
+      reachable.add(total);
+    }
+  }
+  // A suppressed cell's TRUE VALUE being reachable is the leak. Any small number being reachable
+  // is not — two published cells differing by one is arithmetic on public figures and reveals
+  // nothing that was hidden. The first version of this asserted the looser thing and flagged
+  // `7 − 6 = 1` as a breach, which would have been a guard nobody could satisfy.
+  const derivable = suppressed.filter((v) => reachable.has(v));
+  assert.deepEqual(derivable, [],
+    `the suppressed cell(s) ${derivable.join(", ")} are reachable as a combination of the `
+    + "published figures — the band is defeated by subtraction");
+  // And the banded cell really was banded, or this proves nothing.
+  assert.ok(out.figures.some((f) => f.label.includes("kept") && f.shown === `fewer than ${FLOOR}`));
+});
+
+test("an empty period is published as empty, because a missing one is a signal", () => {
+  // A report on a fixed schedule that slips, or a period silently skipped, says something — in the
+  // same channel as a canary and with none of a canary's deliberateness. An empty report is data;
+  // a missing one is ambiguity that reads as a signal nobody meant to send.
+  const q = new Reports();
+  const out = report(q.decisions(), q.receivedIn(0), { from: 0, to: 1000 });
+  assert.match(out.lines[0], /^Period 1970-01-01 to 1970-01-01/);
+  assert.match(out.lines.join(" "), /No decisions were made in this period/);
+  // And the empty period still bands, so "nothing happened" and "almost nothing happened" read
+  // the same — the point of banding zero.
+  assert.ok(out.figures.every((f) => f.shown === `fewer than ${FLOOR}`));
+});
+
+test("the report is period-scoped, not cumulative, so two of them cannot be differenced", () => {
+  // A lifetime counter published every period IS a cumulative figure: subtract period N from N+1
+  // and the delta has no band on it. A series of individually-safe reports leaking what no single
+  // report did is the same disease as the parent-and-children line, across time instead of space.
+  const q = new Reports();
+  const jan = Date.UTC(2026, 0, 15);
+  const feb = Date.UTC(2026, 1, 15);
+  for (let i = 0; i < 9; i++) q.file(`pub:jan${i}`, "b", jan);
+  for (let i = 0; i < 6; i++) q.file(`pub:feb${i}`, "b", feb);
+  assert.equal(q.receivedIn(jan), 9, "the counter is not scoped to the period");
+  assert.equal(q.receivedIn(feb), 6, "the counter is cumulative across periods");
+  assert.notEqual(q.receivedIn(feb), 15);
 });
