@@ -307,7 +307,16 @@ switch (command) {
     const [name] = positional;
     if (!name) usage();
     const before = flag("before");
-    const gone = forget(state, name, before === "" ? undefined : Number(before));
+    // `--force` accepts that the vault's copies stay. Without it a failed remote delete refuses,
+    // because the ids being dropped ARE the capability to remove them — see `forget`.
+    const r = await forget(state, name, before === "" ? undefined : Number(before),
+      fetch, rest.includes("--force"));
+    const gone = r.forgotten;
+    console.log(`removed ${r.removed} of ${r.forgotten} from the vault`);
+    if (r.notYours) {
+      console.log(`${r.notYours} were signed messages someone else wrote — only their author can `
+        + "withdraw those, which is what signing means.");
+    }
     save(state);
     console.log(`${gone} message(s) removed from ${name}`);
     console.log("");

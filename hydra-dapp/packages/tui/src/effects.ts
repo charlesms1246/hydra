@@ -115,7 +115,8 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
       };
     }
     case "forget": {
-      const gone = forget(state, effect.channel);
+      const r = await forget(state, effect.channel, undefined, deps.fetchImpl);
+      const gone = r.forgotten;
       deps.save(state);
       return {
         t: "ok", state, clear: effect.channel,

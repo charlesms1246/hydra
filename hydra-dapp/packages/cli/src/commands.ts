@@ -1018,35 +1018,94 @@ export const UNVERIFIABLE_MARK = "?";
  *
  * Returns how many entries went.
  */
-export function forget(state: State, name: string, before?: number): number {
+export async function forget(
+  state: State,
+  name: string,
+  before?: number,
+  fetchImpl: typeof fetch = fetch,
+  force = false,
+): Promise<{ forgotten: number; removed: number; unreachable: number; notYours: number }> {
   const entry = channelAt(state, name);
   const keep = before === undefined ? [] : entry.history.filter((m) => m.at >= before);
-  const gone = entry.history.length - keep.length;
+  const dropping = entry.history.filter((m) => !keep.includes(m));
+
+  // THE REMOTE COPIES GO FIRST, and this ordering is the whole of the function.
+  //
+  // A delete token is per object — `channel/src/deletion.ts` — so deriving one needs the channel
+  // secret AND the object's identity. The object's identity lives in exactly the history this is
+  // about to drop. So forgetting locally first would permanently destroy the only capability that
+  // could remove the vault's copies: the user performs the strongest deletion the product offers
+  // and, as a side effect, gives up the ability to delete anything. Unrecoverable, and the exact
+  // opposite of what "forget" means.
+  //
+  // A message this client RECEIVED and that was SIGNED is not ours to withdraw — that is
+  // `decisions/0035` working, not a failure — so it is counted and reported rather than attempted.
+  const channel = sending(state, name);
+  const recv = receiving(state, name);
+  let removed = 0;
+  let unreachable = 0;
+  let notYours = 0;
+  for (const m of dropping) {
+    if (!m.mine && m.attribution === "signed") { notYours++; continue; }
+    const from = m.mine && m.attribution === "signed"
+      ? subKey(vaultRootOf(state), "authorship signing")
+      : m.mine ? channel : recv;
+    try {
+      const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}/${m.id}`, {
+        method: "DELETE",
+        headers: { "x-hydra-delete": hex(deleteToken(from, m.id)) },
+      });
+      // 404 IS SUCCESS. The goal is that the vault does not hold it, and a vault that never held
+      // it — never flushed, or already expired by TTL — satisfies that. Counting a miss as a
+      // failure would refuse to forget anything that was not uploaded, which is the common case
+      // for a message the user regrets immediately.
+      if (res.ok) removed++;
+      else if (res.status === 404) { /* already gone */ }
+      else unreachable++;
+    } catch {
+      unreachable++;
+    }
+  }
+
+  // REFUSED RATHER THAN DONE PARTIALLY, unless the caller says otherwise. This is write-once: the
+  // ids are the capability, so a forget that proceeds after a failed delete has silently converted
+  // "not deleted yet" into "never deletable". Refusing leaves the user able to try again.
+  if (unreachable > 0 && !force) {
+    throw new Error(
+      `${unreachable} of ${dropping.length} objects could not be removed from the vault, and `
+      + "forgetting now would destroy the only capability that can remove them — a delete token "
+      + "is derived from the object's id, and the id is in the history this would drop. Fix the "
+      + "vault connection and try again, or forget anyway and accept that those copies stay until "
+      + "their TTL expires.");
+  }
+
   entry.history = keep;
-  return gone;
+  return { forgotten: dropping.length, removed, unreachable, notYours };
 }
 
 /**
  * How many messages in YOUR direction this client did not send.
  *
  * Zero unless a second client is running on the same identity — the same seed copied to a phone
- * and a laptop, which is the obvious thing to do with a state file and the thing this design
- * cannot support. Two devices are not two directions: they share a role, so they derive the same
- * cover from the same sequence numbers, and their decoys are byte-identical. Measured on a
- * two-message exchange from two copies of one state file: ten uploads, **six** objects.
+ * and a laptop, which is the obvious thing to do with a state file.
  *
- * A blob id is a hash of its content, so an id that arrives twice is an id two clients minted
- * independently — and cover is the only object that happens to. A vault keeping its request log
- * reads every decoy off it with certainty.
+ * THE COVER COLLISION THIS USED TO DESCRIBE IS FIXED — `decisions/0033`. Two devices sharing a
+ * seed share a ROLE, so they were one direction and minted byte-identical decoys at the same
+ * sequence; ten uploads became six objects, and a colliding content-addressed id proved two
+ * clients shared an identity. Cover is salted by the message's on-chain COMMITMENT now, which
+ * descends from a per-message random blind, so two devices at the same sequence mint different
+ * decoys without coordinating.
  *
- * IT CANNOT BE FIXED BY GIVING THE DEVICE ITS OWN KEY. The recipient derives a message's decoys
- * from the sender's channel and sequence number in order to fetch them (`decisions/0014` — a
- * decoy nobody fetches is worthless), and it cannot derive them from a device identifier it has
- * never seen. Carrying one would mean putting it on chain, and the note is two felts.
+ * This comment previously said, in capitals, that it could not be fixed by giving a device its own
+ * key. That was true of anything the SENDER picks privately and not true of the commitment, which
+ * the sender publishes and the recipient already reads off the chain event.
  *
- * So the condition is DETECTED rather than prevented, and both front ends say so. This client
- * sent `nextSeq` messages; if the channel holds more than that in its own direction, something
- * else is sending as you.
+ * WHAT IS STILL WORTH REPORTING, and why this function stays. Two clients on one identity both
+ * spend invites, both advance the same sequence numbers, and each destroys its own copy of a
+ * message key at send time — so the other device's messages are unreadable here, permanently. That
+ * is forward secrecy working and it is still a thing a user needs told. This client sent `nextSeq`
+ * messages; if the channel holds more than that in its own direction, something else is sending
+ * as you.
  */
 export const foreignSends = (state: State, name: string): number =>
   state.channels[name]?.foreignSeen ?? 0;

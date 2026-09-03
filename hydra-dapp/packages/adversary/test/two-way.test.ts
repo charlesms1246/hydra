@@ -31,7 +31,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { init, open, accept, publishBundle, sendMessage, flush, readChannel, foreignSends, SKIPPED_KEEP, linkabilityOf }
+import { init, open, accept, publishBundle, sendMessage, flush, readChannel, foreignSends, SKIPPED_KEEP, linkabilityOf, forget }
   from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { describe } from "../../channel/src/crowd.ts";
@@ -414,4 +414,66 @@ test("the three renderings are distinguishable, which is the property that faile
   assert.match(texts[2], /not measured/);
   assert.ok(!texts[2].includes("every time"),
     "the unmeasured copy claims what only the measured-zero copy may claim");
+});
+
+test("FORGETTING REMOVES THE VAULT'S COPIES FIRST, because the ids are the capability", async () => {
+  // The ordering trap, and it is unrecoverable in the wrong order. A delete token is derived per
+  // object from the channel secret AND the object's id — and the id lives in the history that
+  // `forget` drops. So forgetting locally first would permanently destroy the only capability
+  // that could remove the remote copies: the user performs the strongest deletion the product
+  // offers and gives up the ability to delete anything by doing it.
+  const { alice, bob, v, chain, server } = await pair();
+  try {
+    await sendMessage(alice, chain, "bob", "ephemeral", "something regrettable", T0);
+    await flush(alice, LATER);
+    const before = v.observe().rows.length;
+    assert.ok(before > 0, "nothing was uploaded, so this proves nothing");
+
+    const r = await forget(alice, "bob");
+    assert.equal(r.forgotten, 1);
+    assert.ok(r.removed >= 1, "the vault's copy was not removed before the history was dropped");
+    assert.equal(alice.channels.bob.history.length, 0);
+    assert.ok(v.observe().rows.length < before, "the object is still in the vault after forget");
+    void bob;
+  } finally { server.close(); }
+});
+
+test("and it REFUSES rather than half-forgetting when the vault cannot be reached", async () => {
+  // Write-once, so refusing is the safe direction: a forget that proceeds after a failed delete
+  // has silently turned "not deleted yet" into "never deletable". Refusing leaves the user able
+  // to try again — the same reasoning the pool's write-once actions get.
+  const { alice, chain, server } = await pair();
+  try {
+    await sendMessage(alice, chain, "bob", "ephemeral", "keep this recoverable", T0);
+    await flush(alice, LATER);
+    const dead = (async () => { throw new Error("vault unreachable"); }) as unknown as typeof fetch;
+
+    await assert.rejects(() => forget(alice, "bob", undefined, dead),
+      /destroy the only capability/);
+    assert.equal(alice.channels.bob.history.length, 1,
+      "the history was dropped even though the remote delete failed");
+
+    // And `force` is the escape hatch, which must be chosen rather than defaulted to.
+    const forced = await forget(alice, "bob", undefined, dead, true);
+    assert.equal(forced.unreachable, 1);
+    assert.equal(alice.channels.bob.history.length, 0);
+  } finally { server.close(); }
+});
+
+test("a signed message someone else wrote is not ours to withdraw, and forget says so", async () => {
+  // `decisions/0035` working rather than failing: only an author may withdraw signed content, so
+  // a recipient forgetting the conversation cannot remove the sender's evidentiary blob. Counted
+  // and reported rather than silently skipped, because "I deleted it" and "I could not" are
+  // different things to tell a user.
+  const { alice, bob, chain, server } = await pair();
+  try {
+    await sendMessage(alice, chain, "bob", "signed", "on the record", T0);
+    await flush(alice, LATER);
+    await readChannel(bob, chain, "alice");
+    assert.equal(bob.channels.alice.history.filter((m) => !m.mine).length, 1);
+
+    const r = await forget(bob, "alice");
+    assert.equal(r.notYours, 1, "the recipient claimed to withdraw the author's signed message");
+    assert.equal(r.removed, 0);
+  } finally { server.close(); }
 });
