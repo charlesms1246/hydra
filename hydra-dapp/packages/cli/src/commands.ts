@@ -28,7 +28,7 @@ import { recordFor, encodeRecord, decodeRecord, verifyRecord, RECORD_FELTS }
   from "../../handshake/src/record.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
-import { coverPlan, coverBody, coverId, coverIndex, COVER_RATE } from "../../channel/src/cover.ts";
+import { coverPlan, coverBody, coverId, coverIndex, COVER_RATE, saltFrom } from "../../channel/src/cover.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
 import { prune, accuracyAgainst } from "../../channel/src/crowd.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
@@ -474,7 +474,7 @@ export async function sendMessage(
     // The commitment is what makes two devices at the same sequence mint different decoys —
     // `decisions/0023`'s residual — and it is also why the global `coverIndex` is no longer
     // needed here: the salt already separates one message's decoys from another's.
-    const body = coverBody(channel, d.bucket, d.index, commitment);
+    const body = coverBody(channel, d.bucket, d.index, saltFrom(commitment));
     state.pending.push({
       channel: name, id: coverId(body),
       bodyB64: Buffer.from(body).toString("base64"),

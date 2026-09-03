@@ -105,8 +105,20 @@ export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): 
             chunk_size: 100,
             ...(token ? { continuation_token: token } : {}),
           },
-        }, fetchImpl) as { events: { data: string[] }[]; continuation_token?: string };
-        for (const e of page.events) out.push({ data: e.data.map((d) => BigInt(d)) });
+        }, fetchImpl) as {
+          events: { data: string[]; block_number?: number; transaction_hash?: string }[];
+          continuation_token?: string;
+        };
+        for (const e of page.events) {
+          // `block_number` and `transaction_hash` arrive in the SAME response as `data`. Keeping
+          // them costs nothing and they are the only route to when an event happened and who
+          // published it — see the type above and `decisions/0029`.
+          out.push({
+            data: e.data.map((d) => BigInt(d)),
+            blockNumber: e.block_number,
+            txHash: e.transaction_hash,
+          });
+        }
         token = page.continuation_token;
       } while (token);
       return out;

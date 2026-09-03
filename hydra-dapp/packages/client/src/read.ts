@@ -25,7 +25,7 @@ import { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 import { recoverBlobId, ID_BYTES } from "../../channel/src/pointer.ts";
 import { encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
-import { coverBody, coverId, coverIndex, COVER_RATE } from "../../channel/src/cover.ts";
+import { coverBody, coverId, coverIndex, COVER_RATE, saltFrom } from "../../channel/src/cover.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 
@@ -100,7 +100,7 @@ export function readSet(
   const decoyIds: string[] = [];
   // The commitment where the caller has a chain, the sequence where it does not — the same
   // choice `session.cover` makes when it mints them, and the reason both ends agree.
-  const salts = new Set(seen.map((s) => s.commitment ?? BigInt(s.seq)));
+  const salts = new Set(seen.map((s) => saltFrom(s.commitment ?? BigInt(s.seq))));
   for (const salt of salts) {
     for (let k = 0; k < coverRate; k++) {
       for (const bucket of BUCKETS) {

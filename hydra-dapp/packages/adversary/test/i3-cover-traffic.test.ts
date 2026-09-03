@@ -274,13 +274,15 @@ test("the lead is the jitter window exactly, and that is what makes the floor a 
 });
 
 
-test("NO_CHAIN never reaches production, because the type cannot tell it from a real salt", () => {
-  // `salt` is required, which stops a call site OMITTING it. It cannot stop one passing the
-  // spelled-out absence, and `NO_CHAIN` restores exactly the two-device collision `0033` closed —
-  // so the last step of that guarantee is this grep.
+test("NO_CHAIN never reaches production — the second layer, under the type", () => {
+  // THE LOAD IS ON THE TYPE, not on this grep, and the order matters. `Salt` is branded, so the
+  // only ways to make one are `saltFrom` and `NO_CHAIN` and a bare `0n` is a type error at the
+  // call site. That is what closes the hole a plain `bigint` parameter left: required stops a
+  // caller OMITTING the salt and does nothing about one passing zero, which type-checks and reads
+  // as innocuous.
   //
-  // Named rather than a bare `0n` precisely so it is greppable: a magic zero would be invisible
-  // here and the guarantee would be back to convention.
+  // This stays as belt and braces over the sentinel's NAME, which is the one thing a type cannot
+  // distinguish from a real salt once it has been constructed.
   const roots = ["client", "cli", "channel", "handshake", "vault-client"];
   const offenders: string[] = [];
   for (const root of roots) {
@@ -309,6 +311,6 @@ test("every production decoy is salted by something that came off the chain", ()
   const src = readFileSync(join(HERE, "..", "..", "cli", "src", "commands.ts"), "utf8");
   const calls = src.split("\n").filter((l) => /coverBody\(/.test(l) && !l.trimStart().startsWith("*"));
   assert.equal(calls.length, 1, `expected one production coverBody call, found ${calls.length}`);
-  assert.match(calls[0], /,\s*commitment\s*\)/,
+  assert.match(calls[0], /saltFrom\(\s*commitment\s*\)/,
     `the production decoy is not salted by the commitment: ${calls[0].trim()}`);
 });

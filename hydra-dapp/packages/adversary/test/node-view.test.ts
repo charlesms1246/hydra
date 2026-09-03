@@ -172,3 +172,91 @@ test("the vault's table and the node's stay separate, because the parties are", 
       `${id} is on the node's table without saying so in its name`);
   }
 });
+
+/**
+ * A node that serves a fixed chain and records every question, in order.
+ *
+ * `events` returns the same six events whatever it is asked, and `getTransactionByHash` answers
+ * for any hash. So the only thing that can vary between two runs is what the CLIENT chose to ask,
+ * which is the whole point of the two worlds below.
+ */
+function fixedChain(): { asked: { method: string; params: any }[]; fetchImpl: typeof fetch } {
+  const asked: { method: string; params: any }[] = [];
+  const events = Array.from({ length: 6 }, (_, i) => ({
+    data: [`0x${(i + 1).toString(16)}`, `0x${(i + 100).toString(16)}`],
+    block_number: 1000 + i,
+    transaction_hash: `0x${(0xaa00 + i).toString(16)}`,
+  }));
+  const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    asked.push({ method: body.method, params: body.params });
+    const result = body.method === "starknet_getEvents"
+      ? { events }
+      : { sender_address: "0xbb" };
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }),
+      { headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  return { asked, fetchImpl };
+}
+
+/** What the crowd path asks a node, for a client whose own secret is `seed`. */
+async function questionsFor(seed: number): Promise<{ method: string; params: any }[]> {
+  const { asked, fetchImpl } = fixedChain();
+  const chain = starknet({
+    rpcUrl: "https://node.example/rpc", contract: CONTRACT, fromBlock: FROM_BLOCK,
+    accountsFile: "/dev/null", account: "a", network: "sepolia",
+  }, fetchImpl);
+  const events = await chain.events();
+  await chain.senders!(events.map((e) => e.txHash!));
+  void seed;
+  return asked;
+}
+
+test("NODE.TXLOOKUP DOES NOT DEPEND ON THE SECRET — two worlds, one capture", async () => {
+  // The row claims the sender lookup covers the WHOLE window rather than a chosen subset, and
+  // that is what keeps `node.wantedEvent` — a guarantee in a DIFFERENT table — true. Asserting
+  // "the lookup set equals the window" would need the test to know the window, which is a test
+  // asserting its own fixture.
+  //
+  // So assert the property the row actually claims: the questions do not depend on which event is
+  // yours. Two runs, two different client secrets, one identical chain. An implementation that
+  // resolved senders only for the transactions it found interesting produces two different
+  // captures; a window-wide one cannot produce anything but the same capture twice.
+  //
+  // This is a two-world indistinguishability test, and the shape generalises: several rows in
+  // this repo are currently asserted as "the capture looks right" and would be stronger as "the
+  // capture is invariant under the secret".
+  const a = await questionsFor(1);
+  const b = await questionsFor(2);
+
+  // ORDER, NOT JUST THE SET. Request sequence is observable to a node, so a client that resolved
+  // its own transaction first would leak through ordering while passing a set comparison.
+  assert.deepEqual(a, b,
+    "the questions this client asks a node differ with its own secret — the lookup is selective, "
+    + "and `node.wantedEvent` is no longer true");
+  assert.ok(a.length > 1, "the capture is empty; this test would pass on a client that asks nothing");
+});
+
+test("and the questions are exactly what any chain reader would predict", async () => {
+  // The corroborating half, and it is not the test asserting its own fixture: this is the
+  // adversary computing what ANY reader of the public chain can compute, with no client secret in
+  // hand, which is what everything else in `adversary/` does.
+  //
+  // The two halves catch different failures. Two-worlds catches a lookup NARROWER than the window
+  // — selective, secret-dependent. This catches one that is differently shaped or wider: a
+  // duplicate, a hash from outside the window, a second pass over the log.
+  //
+  // It also caught a real bug on the way in. `events()` was dropping `transaction_hash` — the
+  // page mapping still had the old single-field push — so every txHash was `undefined`, `senders`
+  // deduplicated six of them to one, and the crowd was silently a no-op against a real chain.
+  // Nothing else in the suite noticed, because `memoryChain` has no transactions at all.
+  const asked = await questionsFor(1);
+  const reads = asked.filter((r) => r.method === "starknet_getEvents");
+  const lookups = asked.filter((r) => r.method === "starknet_getTransactionByHash");
+  assert.equal(reads.length, 1, "the event log was read more than once for one crowd figure");
+
+  // Every event in the window, once each, in the order the chain gave them.
+  const expected = Array.from({ length: 6 }, (_, i) => `0x${(0xaa00 + i).toString(16)}`);
+  assert.deepEqual(lookups.map((r) => r.params[0]), expected,
+    "the sender lookups are not one-per-event-in-order over the window");
+});

@@ -111,7 +111,7 @@ export type Decoy = PlannedDecoy & {
    * commitment also separates two DEVICES sharing an identity, because it descends from a random
    * blind rather than from a counter both devices keep. See `coverBody`.
    */
-  readonly salt: bigint;
+  readonly salt: Salt;
 };
 
 /**
@@ -225,20 +225,24 @@ export function anonymitySetFloor(config: CoverConfig): number {
  * decoys — without coordinating, without a device identifier, and without the recipient needing
  * to know a second client exists.
  *
- * THE SALT IS REQUIRED, and a caller with no chain says {@link NO_CHAIN} rather than omitting it.
+ * THE SALT IS A BRANDED TYPE, and that took two goes to get right.
  *
- * It was optional, defaulting to the old unsalted derivation, and that is the wrong shape for a
- * security-relevant argument: a production call site could drop it on one branch and nothing
- * would fail — the decoys would simply go back to colliding across devices, silently. A default
- * that restores the vulnerable behaviour makes the guarantee conventional. Required makes it
- * structural, and `cover.test.ts` additionally refuses `NO_CHAIN` anywhere under `client/` or
- * `cli/`, because the type system cannot tell a real salt from a spelled-out absence.
+ * It began optional, defaulting to the old unsalted derivation — the wrong shape for a
+ * security-relevant argument, because a production call site could drop it on one branch and
+ * nothing would fail; the decoys would simply go back to colliding across devices. Making it
+ * required fixed that and left a second hole one level down: a plain `bigint` parameter accepts
+ * `0n`, which type-checks and reads as innocuous.
+ *
+ * {@link Salt} closes it. The only constructors are {@link saltFrom} and {@link NO_CHAIN}, so a
+ * bare literal is a type error at the call site rather than a silent regression at runtime. The
+ * grep in `i3-cover-traffic.test.ts` is kept as a second layer over the sentinel's name, but the
+ * load is on the type.
  */
 export function coverBody(
   channel: Secret<typeof VAULT_DOMAIN>,
   bucket: number,
   index: number,
-  salt: bigint,
+  salt: Salt,
 ): Uint8Array {
   if (!Number.isInteger(index) || index < 0) {
     throw new Error("a decoy index is a non-negative integer");
@@ -259,17 +263,44 @@ export function coverBody(
  * It calls `vault-client`'s own constructor rather than repeating it. A second copy of that
  * line would make decoys filterable the moment the two drifted, and nothing would fail.
  */
+declare const saltBrand: unique symbol;
+
+/**
+ * What separates one message's decoys from another's — a BRANDED bigint, and the brand is the
+ * point.
+ *
+ * A plain `bigint` parameter was the first shape and it is not enough. Requiring the argument
+ * stops a call site omitting it; it does nothing about one passing `0n`, which type-checks, greps
+ * clean past a search for the sentinel's name, and puts two devices back to minting the same
+ * decoys — silently, because nothing about a zero looks wrong.
+ *
+ * So the only two ways to make a `Salt` are {@link saltFrom}, which takes a commitment off the
+ * chain, and {@link NO_CHAIN}, which spells an absence. A bare literal does not type-check, and
+ * the guarantee sits on the type rather than on a text search standing in for one. The grep in
+ * `i3-cover-traffic.test.ts` stays as the second layer, not the first.
+ */
+export type Salt = bigint & { readonly [saltBrand]: true };
+
+/**
+ * The salt for a message that went on chain: its commitment.
+ *
+ * The commitment is `commit(blind, contentHash)` with the blind drawn per message, published by
+ * the sender and read by the recipient off the same event it uses to find the blob. It is the only
+ * value in this protocol that is simultaneously unpredictable to a second device on the same
+ * identity and already in the recipient's hands — `decisions/0033`.
+ */
+export const saltFrom = (commitment: bigint): Salt => commitment as Salt;
+
 /**
  * The salt for a caller that has no chain to read a commitment from.
  *
  * Only the harnesses in `adversary/` that measure cover as a size or a keystream. Making them
- * invent a commitment would be making them measure a fixture, so the absence is spelled instead —
- * and being a named export rather than a bare `0n` is what lets a guard find it.
+ * invent a commitment would be making them measure a fixture, so the absence is spelled instead.
  *
  * NEVER VALID IN PRODUCTION. Two devices sharing an identity would mint the same decoys again,
  * which is the whole of `decisions/0033`.
  */
-export const NO_CHAIN = 0n;
+export const NO_CHAIN = 0n as Salt;
 
 export function coverId(body: Uint8Array): string {
   return encryptedIdFor(body);
