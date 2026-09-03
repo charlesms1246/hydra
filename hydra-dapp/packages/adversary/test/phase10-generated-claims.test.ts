@@ -174,5 +174,14 @@ test("a person can actually read it, without a wallet or an account", () => {
 test("render is deterministic and lists everything", () => {
   assert.equal(render(statement()), render(statement()));
   const lines = render(s).split("\n").filter((l) => l.startsWith("- "));
-  assert.equal(lines.length, all.length);
+  // EVERY CLAIM, not a count of them. `lines.length === all.length` passes when one claim is
+  // rendered twice and another is dropped — an aggregate standing in for a membership check, and
+  // the same defect the must-not-compile guards had. This file already does it correctly for the
+  // disclosure table at the top; it did not here.
+  const rendered = new Set(lines.map((l) => l.slice(2)));
+  const missing = all.filter((c) => !rendered.has(c.says));
+  assert.deepEqual(missing.map((c) => c.says.slice(0, 60)), [],
+    `render() dropped ${missing.length} claim(s) that statement() produced`);
+  assert.equal(rendered.size, all.length,
+    `render() emitted ${lines.length} lines for ${all.length} claims — a claim is rendered twice`);
 });
