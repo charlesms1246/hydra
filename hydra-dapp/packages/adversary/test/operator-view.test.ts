@@ -21,13 +21,14 @@ import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT, DEFAULT_TTL_MS } from "../.
 import { serve, MAX_BODY } from "../../vault-server/src/http.ts";
 import { RateLimiter } from "../../vault-server/src/ratelimit.ts";
 import { MIN_READ_BATCH, readSet, select } from "../../client/src/read.ts";
-import { mkdtemp, rm, stat, readFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OBSERVABLE, OBSERVABLE_IDS, NOT_OBSERVABLE } from "../../vault-server/src/observations.ts";
 import { deleteHashFor } from "../../vault-server/src/delete-hash.ts";
+import { removalAuthorityFromFile } from "../../vault-server/src/authority.ts";
 import { inboxSlot, encodePrekey } from "../../handshake/src/inbox.ts";
 import { initiate, bundleFor } from "../../handshake/src/x3dh.ts";
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
@@ -802,9 +803,18 @@ test("A STRANGER CANNOT TAKE DOWN A PUBLIC POST, which they could until `decisio
   // This is the narrowest fix that does not pre-empt the moderation design, because every option
   // in `decisions/0035` ends with the OPERATOR performing the removal, whoever asked for it.
   const post = publish(new TextEncoder().encode("a public statement"), intent);
+  // MINTED FROM A FILE, because that is the only way to make one. `removalAuthorityFromFile` is
+  // the single mint for `RemovalAuthority` — there is deliberately no `removalAuthorityFrom(s)`,
+  // since a function turning any string into an authority is a cast with a comment on it. The
+  // friction of writing a file here is the guard working on its own test.
+  const dir = await mkdtemp(join(tmpdir(), "hydra-removal-"));
+  const secretFile = join(dir, "removal.token");
+  const secret = "a-long-enough-operator-secret";
+  await writeFile(secretFile, `${secret}\n`);
   const withToken = async (token?: string) => {
     const vault = new Vault({ invites: [], buckets: BUCKETS });
-    const { url, server } = await serve(vault, 0, token ? { removalToken: token } : {});
+    const { url, server } = await serve(vault, 0,
+      token ? { removalToken: removalAuthorityFromFile(secretFile) } : {});
     try {
       await fetch(`${url}${PUBLIC_ENDPOINT}/${post.id}`, { method: "PUT", body: bytes(post) });
       assert.equal(vault.observe().rows.length, 1, "the post did not store");
@@ -830,7 +840,7 @@ test("A STRANGER CANNOT TAKE DOWN A PUBLIC POST, which they could until `decisio
 
   // Token configured: only the token works, and a miss is a 404 rather than a 401 — a 401 would
   // confirm the object exists to anyone probing ids.
-  const set = await withToken("s3cret");
+  const set = await withToken(secret);
   assert.equal(set.attempts.none, 404);
   assert.equal(set.attempts.wrong, 404);
   assert.equal(set.attempts.right, 200);

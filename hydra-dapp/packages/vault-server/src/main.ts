@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 
 import { Vault } from "./server.ts";
 import { serve } from "./http.ts";
+import { removalAuthorityFromFile } from "./authority.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import type { RateLimitConfig } from "./ratelimit.ts";
 
@@ -79,7 +80,7 @@ if (Boolean(tlsKey) !== Boolean(tlsCert)) {
  * in the process table and in a shell history.
  */
 const removalTokenFile = flag("removal-token-file");
-const removalToken = removalTokenFile ? readFileSync(removalTokenFile, "utf8").trim() : "";
+const removalToken = removalTokenFile ? removalAuthorityFromFile(removalTokenFile) : undefined;
 
 const { url } = await serve(vault, Number(flag("port", "8080")), {
   observeTransport: args.includes("--observe-transport"),

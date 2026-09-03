@@ -84,7 +84,12 @@ test("EVERY OPTION `serve` ACCEPTS IS REACHABLE FROM THE REAL ENTRY POINT", () =
 test("A VAULT STARTED THE REAL WAY CAN ACTUALLY PERFORM A TAKEDOWN", async () => {
   const dir = await mkdtemp(join(tmpdir(), "hydra-entry-"));
   const tokenFile = join(dir, "removal.token");
-  await writeFile(tokenFile, "s3cret\n"); // trailing newline: a token file is written by a human
+  // Trailing newline: a token file is written by a human and an editor adds one. Long enough to
+  // clear `MIN_LENGTH` — an authority that removes anyone's public post is not a six-letter word,
+  // and `touch removal.token` used to produce a server announcing takedown as ENABLED and matching
+  // a caller who sent an empty header.
+  const secret = "a-long-enough-operator-secret";
+  await writeFile(tokenFile, `${secret}\n`);
 
   const started = (args: string[]) => new Promise<{
     url: string; stop: () => void; banner: Promise<string>;
@@ -111,7 +116,7 @@ test("A VAULT STARTED THE REAL WAY CAN ACTUALLY PERFORM A TAKEDOWN", async () =>
       const put = await fetch(`${url}${PUBLIC_ENDPOINT}/${post.id}`, { method: "PUT", body });
       assert.equal(put.status, 201, "the post did not store");
       const del = await fetch(`${url}${PUBLIC_ENDPOINT}/${post.id}`,
-        { method: "DELETE", headers: { "x-hydra-removal": "s3cret" } });
+        { method: "DELETE", headers: { "x-hydra-removal": secret } });
       // Asked for as a BATCH, because there is no GET by id here — a request naming one object
       // names it to the operator, so a read is a POST of a padded id list. See `read.ts`.
       const after = await fetch(`${url}${PUBLIC_ENDPOINT}`,

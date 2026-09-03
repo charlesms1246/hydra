@@ -22,9 +22,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+
+import { uncoveredRoutes } from "../src/must-not-compile.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGES = join(HERE, "..", "..");
@@ -107,4 +110,33 @@ test("I8 IS WRITTEN DOWN, and says the thing the tests check", () => {
   for (const phrase of ["never share a binary", "opposite trust assumptions", "x-hydra-removal"]) {
     assert.ok(text.includes(phrase), `decisions/0036 no longer says "${phrase}"`);
   }
+});
+
+test("NO ROUTE FROM A USER'S VALUE TO REMOVAL AUTHORITY COMPILES", () => {
+  const local = join(HERE, "..", "node_modules", ".bin", "tsc");
+  const shared = join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc");
+  const tsc = existsSync(local) ? local : existsSync(shared) ? shared : null;
+  // A missing type-checker is a FAILURE, not a skip — an unrun build check reported as green is
+  // how a build-time guarantee stops being one.
+  assert.ok(tsc, "no tsc — run `npm i -D typescript` in hydra-dapp/packages/identity");
+
+  let out = "";
+  try {
+    execFileSync(tsc!, ["--noEmit", "-p", join(HERE, "..", "tsconfig.json")], { encoding: "utf8" });
+  } catch (e) {
+    out = String((e as { stdout?: string }).stdout ?? "");
+  }
+  const { uncovered, orphans, routes } =
+    uncoveredRoutes(out, "i8-must-not-compile", join(HERE, "i8-must-not-compile.ts"));
+  assert.ok(routes.length >= 6, `only ${routes.length} numbered routes in the fixture`);
+  // Every numbered attempt on its own. A total cannot say WHICH route was rejected, and the one
+  // that quietly compiles here is the one that hands a user's client authority over anyone's post.
+  assert.deepEqual(uncovered.map((r) => r.label), [],
+    "these routes COMPILE:\n"
+    + `${uncovered.map((r) => `  route ${r.label} (i8-must-not-compile.ts:${r.from}-${r.to - 1})`).join("\n")}`
+    + `\n\nfull tsc output:\n${out}`);
+  assert.deepEqual(orphans, [],
+    `type errors in the fixture outside any numbered route: lines ${orphans.join(", ")}`);
+  const other = out.split("\n").filter((l) => /error TS/.test(l) && !/must-not-compile/.test(l));
+  assert.deepEqual(other, [], `type errors outside the fixtures:\n${other.join("\n")}`);
 });

@@ -25,6 +25,7 @@ import { constants } from "node:crypto";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT } from "./server.ts";
 import { RateLimiter, DEFAULT_RATE_LIMIT } from "./ratelimit.ts";
+import { authorises, type RemovalAuthority } from "./authority.ts";
 import type { RateLimitConfig } from "./ratelimit.ts";
 import type { Endpoint } from "./server.ts";
 
@@ -103,7 +104,7 @@ export function serve(
      * thing that is right under every option in it, because every one of them ends with the
      * OPERATOR performing the removal, whoever asked for it.
      */
-    removalToken?: string;
+    removalToken?: RemovalAuthority;
   } = {},
 ): Promise<{ url: string; server: Server; limiter: RateLimiter }> {
   // Defaults to `global`: a public service needs a limit, and the mode that needs no
@@ -184,7 +185,7 @@ export function serve(
               ? send(200, reply) : send(404, { error: "no such object" });
           }
           const offered = req.headers["x-hydra-removal"];
-          if (!options.removalToken || offered !== options.removalToken) {
+          if (!authorises(offered, options.removalToken)) {
             // Uninformative, and 404 rather than 401: a 401 would confirm the object exists to
             // anyone probing ids, which is the same disclosure the read path is careful about.
             return send(404, { error: "no such object" });
