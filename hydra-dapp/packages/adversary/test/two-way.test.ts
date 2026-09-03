@@ -31,7 +31,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { init, open, accept, publishBundle, sendMessage, flush, readChannel, foreignSends, SKIPPED_KEEP }
+import { init, open, accept, publishBundle, sendMessage, flush, readChannel, foreignSends, SKIPPED_KEEP, linkabilityOf }
   from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { Vault } from "../../vault-server/src/server.ts";
@@ -266,5 +266,46 @@ test("parked keys are bounded, and the bound drops the oldest rather than the ne
     assert.equal(left.length, SKIPPED_KEEP);
     assert.ok(!left.includes("k:0"), "the oldest parked key survived the trim");
     assert.ok(left.includes(`k:${SKIPPED_KEEP + 4}`), "the newest parked key was trimmed");
+  } finally { server.close(); }
+});
+
+test("THE CROWD ONLY GOES DOWN, because it is an intersection and not a minimum", async () => {
+  // `decisions/0029`: a crowd is set by its worst-covered message. One message of six sent into a
+  // quiet chain took a measured 34.9 to zero, and a number that recovered afterwards would be a
+  // lie about a message already on the chain.
+  //
+  // A MINIMUM OVER PER-MESSAGE COUNTS WOULD NOT DO IT. The minimum of two counts is an upper
+  // bound on the size of their intersection and never a lower one — two disjoint crowds of ten
+  // intersect to nothing. So the state holds the SET.
+  const { alice, server } = await pair();
+  try {
+    const entry = alice.channels.bob;
+    assert.equal(linkabilityOf(alice, "bob").known, false,
+      "a channel that has never asked a node reported a known crowd");
+
+    entry.crowd = ["a", "b", "c"];
+    assert.deepEqual(linkabilityOf(alice, "bob"), { known: true, crowd: 3, identified: 1 / 4 });
+
+    // A second message covered by a disjoint set takes it to zero, not to three.
+    entry.crowd = entry.crowd.filter((a) => ["x", "y", "z"].includes(a));
+    assert.equal(linkabilityOf(alice, "bob").crowd, 0);
+    assert.equal(linkabilityOf(alice, "bob").identified, 1);
+
+    // And nothing widens it again.
+    entry.crowd = entry.crowd.filter((a) => ["a", "b", "c", "x"].includes(a));
+    assert.equal(linkabilityOf(alice, "bob").crowd, 0, "the crowd recovered after a bad send");
+  } finally { server.close(); }
+});
+
+test("a chain that cannot name senders leaves the crowd unknown, never zero", async () => {
+  // `memoryChain` has no `senders`, so this is the ordinary path for every hermetic test here —
+  // and the assertion is that it produces NO answer rather than a frightening one. An absent
+  // capability and a measured zero are opposite claims and must not render alike.
+  const { alice, chain, server } = await pair();
+  try {
+    await sendMessage(alice, chain, "bob", "ephemeral", "hello", T0);
+    assert.equal(alice.channels.bob.crowd, undefined,
+      "a chain with no sender lookup invented a crowd");
+    assert.equal(linkabilityOf(alice, "bob").known, false);
   } finally { server.close(); }
 });

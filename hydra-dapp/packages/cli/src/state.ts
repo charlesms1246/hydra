@@ -136,6 +136,22 @@ export type ChannelState = {
    * used and its messages cannot be told from yours by position — only by blob id, which is what
    * the read compares. See `commands.ts` `foreignSends`.
    */
+  /**
+   * The accounts that could still have produced every upload this channel has ever made.
+   *
+   * `decisions/0029`'s crowd, as a SET rather than a count, and kept per channel because that is
+   * the level the number is true at. A crowd is set by its worst-covered message — one message of
+   * six sent into a quiet chain took a measured 34.9 to zero — so a figure that recovered after a
+   * bad send would be a lie about a message already on chain. Intersecting a set cannot recover;
+   * a minimum over per-message counts could, because the minimum of two counts is not the size of
+   * their intersection.
+   *
+   * `undefined` means NOT KNOWN — no chain that can resolve senders has been asked. It is not
+   * zero, and anything rendering it must say so: unknown and "the operator names you every time"
+   * are opposite claims.
+   */
+  crowd?: string[];
+
   foreignSeen: number;
   /**
    * Messages that opened under this channel's key and were then refused.

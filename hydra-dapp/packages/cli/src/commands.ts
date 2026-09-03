@@ -30,6 +30,7 @@ import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex, COVER_RATE } from "../../channel/src/cover.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
+import { prune, accuracyAgainst } from "../../channel/src/crowd.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
 import { openForChannel, plaintextOf, openHeader, bodyOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
 import { MAX_BODY } from "../../vault-server/src/http.ts";
@@ -500,7 +501,81 @@ export async function sendMessage(
       real: false,
     });
   }
+  // The crowd, narrowed by what this message just did. Last, because it is the only step here
+  // that can fail for a reason that should not lose a message: the chain read is best-effort and
+  // a failure leaves the previous answer alone rather than replacing it with a wrong one.
+  await narrowCrowd(state, chain, name, entry, [outgoing.uploadAt, ...decoys.map((d) => d.at)]);
   return { txHash, uploadAt: outgoing.uploadAt, decoys: decoys.length };
+}
+
+/**
+ * Narrow this channel's crowd by the uploads a message just scheduled.
+ *
+ * INTERSECTION, NOT A MINIMUM. `decisions/0029` measured that a crowd is set by its worst-covered
+ * message: one message of six sent while the chain was quiet took it from 34.9 to zero. Keeping a
+ * minimum over per-message counts would be wrong in the unsafe direction, because the minimum of
+ * two counts is an upper bound on the size of their intersection and never a lower one — two
+ * disjoint crowds of ten intersect to nothing.
+ *
+ * BEST EFFORT, AND SILENT ON FAILURE. A node that will not answer leaves the previous set alone;
+ * it does not widen it and it does not clear it. A number that got better because a request timed
+ * out is the worst thing this could do. `chain.senders` is optional — a chain that cannot resolve
+ * senders leaves `crowd` undefined, which renders as "not known" and never as zero.
+ */
+async function narrowCrowd(
+  state: State, chain: Chain, name: string, entry: ChannelState, uploads: readonly number[],
+): Promise<void> {
+  if (!chain.senders) return;
+  try {
+    const window = jitterWindowMs({ blockMs: state.blockMs });
+    const events = await chain.events();
+    // The whole window, never a chosen subset — `node.txLookup` says so and `node.wantedEvent`
+    // depends on it. A client resolving only the transactions it found interesting would be
+    // telling the node which ones those were.
+    const recent = events.filter((e) => e.txHash !== undefined);
+    if (recent.length === 0) return;
+    const senders = await chain.senders(recent.map((e) => e.txHash!));
+    if (senders.size === 0) return;
+    const times = new Map<string, number[]>();
+    for (const [i, e] of recent.entries()) {
+      const who = e.txHash === undefined ? undefined : senders.get(e.txHash);
+      if (!who) continue;
+      // Block numbers are the clock the chain actually has; the index stands in where a devnet
+      // has none. Either way it is the same clock the uploads are measured against below.
+      const at = (e.blockNumber ?? i) * state.blockMs;
+      (times.get(who) ?? times.set(who, []).get(who)!).push(at);
+    }
+    const publishers = [...times].map(([account, t]) => ({ account, times: t }));
+    const covering = prune(publishers)
+      .filter((p) => uploads.every((u) => p.times.some((t) => u >= t && u < t + window)))
+      .map((p) => p.account);
+    entry.crowd = entry.crowd === undefined
+      ? covering
+      : covering.filter((a) => entry.crowd!.includes(a));
+  } catch {
+    // A chain that will not answer is not evidence about the crowd, in either direction.
+  }
+}
+
+/**
+ * What to tell a user about how linkable this conversation is.
+ *
+ * Reads stored state and asks nothing, so it is free to call on every frame. The narrowing
+ * happens at send time, which is the only moment the uploads are known.
+ *
+ * THERE IS NO WAY TO GET THE RAW CROWD FROM HERE. `prune` has already run, and the count is a
+ * lower bound on how many accounts could have produced this channel's uploads.
+ */
+export function linkabilityOf(state: State, name: string): {
+  known: boolean; crowd: number; identified: number;
+} {
+  const entry = state.channels[name];
+  if (!entry || entry.crowd === undefined) return { known: false, crowd: 0, identified: 1 };
+  return {
+    known: true,
+    crowd: entry.crowd.length,
+    identified: accuracyAgainst(entry.crowd.length),
+  };
 }
 
 /**

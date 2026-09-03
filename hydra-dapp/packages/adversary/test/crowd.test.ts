@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  crowdOf, accuracyAgainst, regularity, prune, linkability, DEFAULT_PRUNING,
+  crowdOf, accuracyAgainst, regularity, prune, linkability, describe, DEFAULT_PRUNING,
 } from "../../channel/src/crowd.ts";
 import type { Publisher } from "../../channel/src/crowd.ts";
 
@@ -127,4 +127,60 @@ test("ZERO IS A NORMAL ANSWER, and it is the one that matters most", () => {
   assert.equal(l.crowd, 0);
   assert.equal(l.identified, 1);
   assert.equal(l.pruned, 0);
+});
+
+test("THE ZERO COPY IS WRITTEN FIRST, because zero is the usual answer", () => {
+  // On quiet mainnet ranges every aggressive pruning rule reaches a crowd of zero. If the zero
+  // case reads as an afterthought — an error state, a dash, a shorter line than the healthy one —
+  // the feature is a reassurance meter with a bug, which is what `decisions/0029` decided against.
+  const zero = describe({ known: true, crowd: 0 });
+  const some = describe({ known: true, crowd: 11 });
+  assert.ok(zero.length >= some.length - 1,
+    "the zero case is told in fewer lines than the comfortable one");
+  assert.match(zero.join(" "), /every time/,
+    "the zero case does not say that the operator is right every time");
+  assert.match(zero.join(" "), /usual answer/,
+    "the zero case reads as exceptional; it is the common one");
+});
+
+test("not knowing is not the same as knowing zero", () => {
+  // A client that has never asked a node has no number. Rendering that as a crowd of zero would
+  // be an over-claim in the frightening direction, which is still an over-claim — and rendering
+  // it as anything reassuring would be the dangerous one.
+  const unknown = describe({ known: false, crowd: 0 });
+  assert.match(unknown.join(" "), /not measured/);
+  assert.match(unknown.join(" "), /not the same as a good one/);
+  assert.notDeepEqual(unknown, describe({ known: true, crowd: 0 }));
+});
+
+test("the copy is a cost in the past tense, and never a badge", () => {
+  // I7: this number is computed from public data and verified by nobody, so nothing may render
+  // as a mark. And the number is about history — uploads land in the next four minutes and no
+  // query returns those, so a future-tense promise is one nobody can make.
+  for (const crowd of [0, 1, 5, 40]) {
+    const text = describe({ known: true, crowd }).join(" ").toLowerCase();
+    for (const word of ["safe", "secure", "anonymous", "protected", "good", "excellent", "strong"]) {
+      assert.ok(!text.includes(word), `the crowd copy calls a state "${word}"`);
+    }
+    for (const promise of ["you will be", "will be one of", "guarantees", "ensures"]) {
+      assert.ok(!text.includes(promise), `the crowd copy promises the future: "${promise}"`);
+    }
+    assert.match(text, /you have sent/, "the copy is not in the past tense");
+  }
+});
+
+test("the copy says the number only goes down", () => {
+  // `0029`'s ratchet finding: a crowd is set by its worst-covered message, and one message of six
+  // sent into a quiet chain took a measured 34.9 to zero. A user who thinks waiting will restore
+  // it has been told something false about a message already on the chain.
+  assert.match(describe({ known: true, crowd: 9 }).join(" "), /only goes down/);
+  assert.match(describe({ known: true, crowd: 9 }).join(" "), /nothing you\s+do later puts it back/);
+});
+
+test("the sentence quotes the identification rate, not an average of anything", () => {
+  // `1/(1+crowd)` for THIS conversation. The Jensen gap between averaging crowds and averaging
+  // reciprocals is 0.204 against 0.365, and it runs toward over-claiming safety.
+  assert.match(describe({ known: true, crowd: 1 }).join(" "), /out of 2 — right about 50%/);
+  assert.match(describe({ known: true, crowd: 3 }).join(" "), /out of 4 — right about 25%/);
+  assert.match(describe({ known: true, crowd: 11 }).join(" "), /out of 12 — right about 8%/);
 });

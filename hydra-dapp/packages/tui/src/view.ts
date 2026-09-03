@@ -21,6 +21,8 @@ import { PAGES, FIELDS, channelNames, selected, due } from "./app.ts";
 import { attributionLabel } from "../../cli/src/commands.ts";
 import type { Model, Page } from "./app.ts";
 import { statement } from "../../claims/src/statement.ts";
+import { describe } from "../../channel/src/crowd.ts";
+import { linkabilityOf } from "../../cli/src/commands.ts";
 import { bundleFrom, oneTimeRemaining } from "../../handshake/src/prekeys.ts";
 import { derive, rootSeed, entropyFrom, fromStoredSeed, VAULT_DOMAIN } from "../../identity/src/domains.ts";
 import { STATE_FILE } from "../../cli/src/state.ts";
@@ -165,17 +167,26 @@ function chats(m: Model, size: Size, height: number): string[] {
       "  only you could have written this, and anyone holding your bundle can prove it", "gray")
     : paint(" deniable ", "inverse") + paint(
       "  either of you could have written this — `s` to sign", "gray");
+  // The crowd, on the page that composes. Plain text and no colour: it is computed from public
+  // data and verified by nobody, so anything that read as a badge would be claiming more than
+  // I7 allows. `describe` writes the zero case first because zero is the usual answer.
+  const linked = m.state && current ? linkabilityOf(m.state, current) : { known: false, crowd: 0 };
   const compose = [
     mode,
     fit(m.fields.compose + (m.typing && m.page === "chats" ? paint("▏", "cyan") : ""), size.cols - 4),
     "",
     ...(foreign
-      ? wrap(`${foreign} message(s) here were sent as you by another client. two clients on one `
-        + "seed mint identical cover, and an object uploaded twice is one the storage server "
-        + "knows is cover. use one client per identity.", size.cols - 4)
+      // The cover collision is FIXED (`decisions/0033`) — two devices salt their decoys with the
+      // commitment, which differs per message — so this no longer warns about identical cover.
+      // What is left is still worth saying: both clients spend invites and count sequences, and
+      // the other one's messages cannot be read here because this client destroyed that key.
+      ? wrap(`${foreign} message(s) here were sent as you by another client. its words cannot be `
+        + "read on this device — the key was used once and destroyed — and both clients are "
+        + "spending the same invites. use one client per identity.", size.cols - 4)
         .slice(0, 2).map((l) => paint(l, "yellow"))
       : note("the chain shows that YOU published, and in what order. the timing defence hides "
         + "which upload holds the text, not that you sent it.", size.cols - 4).slice(0, 2)),
+    ...describe(linked).flatMap((l) => wrap(l, size.cols - 4)).map((l) => paint(l, "gray")),
   ];
 
   return [

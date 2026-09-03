@@ -37,11 +37,12 @@ import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
   fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
-  myRecord, anchorPeer, anchorOf, recordFelts, drain,
+  myRecord, anchorPeer, anchorOf, recordFelts, drain, linkabilityOf,
   encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
 import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
+import { describe } from "../../channel/src/crowd.ts";
 import { load, save, exists, STATE_FILE } from "./state.ts";
 
 const [command, ...rest] = process.argv.slice(2);
@@ -236,6 +237,10 @@ switch (command) {
       : "DENIABLE. the only thing authenticating this is a key you and they both hold, so either\n"
         + "of you could have written it and neither can prove which. use `publish` if you need\n"
         + "the other thing.");
+    console.log("");
+    // The crowd, on the page that performs the act — the same rule the disclosure text above
+    // follows. `decisions/0029`: it is a cost, in the past tense, and it only goes down.
+    for (const line of describe(linkabilityOf(state, name))) console.log(line);
     console.log("");
     console.log("NOTE: that transaction was signed by your own account, so the chain shows that");
     console.log("YOU published a message, and its nonce shows which one. the timing defence hides");

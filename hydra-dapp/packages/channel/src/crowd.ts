@@ -159,3 +159,48 @@ export function linkability(
   const crowd = crowdOf(uploads, kept, windowMs);
   return { crowd, identified: accuracyAgainst(crowd), pruned: others.length - kept.length };
 }
+
+/**
+ * The crowd as a sentence, and the zero case is written first because it is the usual one.
+ *
+ * Measured on real mainnet: on quiet ranges every aggressive pruning rule reaches a crowd of
+ * zero, and zero means an observer naming the sender is right **every time**. A rendering that
+ * treated that as the error case, with the healthy number as the default, would be a reassurance
+ * meter — which is the thing `decisions/0029` decided this must not be.
+ *
+ * THREE RULES THE WORDING IS HELD TO, each asserted in `crowd.test.ts`:
+ *
+ *   1. **Past tense.** The number is computed from chain history. Uploads land in the next four
+ *      minutes and no query returns those, so "you will be one of N" is a claim nobody can make.
+ *   2. **A cost, not a score.** The same shape as `hydra send` printing what the chain will show.
+ *      No grade, no colour word, nothing that reads as a badge — this is computed from public
+ *      data and verified by nobody, which is what I7 is about.
+ *   3. **It only goes down, and the copy says so.** A crowd is set by its worst-covered message.
+ *      A user who sees a number recover after a quiet-chain send has been told something false
+ *      about a message already on the chain.
+ */
+export function describe(l: { known: boolean; crowd: number }): string[] {
+  if (!l.known) {
+    return [
+      "How linkable this conversation is: not measured.",
+      "Nothing has asked a node who else was publishing, so there is no number here — which is",
+      "not the same as a good one.",
+    ];
+  }
+  if (l.crowd === 0) {
+    return [
+      "Everything you have sent in this conversation could only have come from you.",
+      "Whoever runs the storage server, reading the public chain alongside it, can name your",
+      "account as the sender of every message here. Not sometimes — every time.",
+      "This is the usual answer on a quiet chain.",
+    ];
+  }
+  const one = l.crowd === 1;
+  return [
+    `${l.crowd} other account${one ? "" : "s"} published often enough to have produced everything`,
+    `you have sent in this conversation. Someone matching your uploads against the chain picks`,
+    `you out of ${l.crowd + 1} — right about ${Math.round(accuracyAgainst(l.crowd) * 100)}% of the time.`,
+    "It only goes down. Sending while the chain is quiet takes it toward zero, and nothing you",
+    "do later puts it back.",
+  ];
+}

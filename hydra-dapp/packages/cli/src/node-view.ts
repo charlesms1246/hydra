@@ -54,6 +54,11 @@ export const NODE_OBSERVABLE: readonly NodeObservation[] = [
     why: "THE ROW `decisions/0029` NEEDS BEFORE ANY OF IT SHIPS. Reading the chain to tell a user how linkable sending would be means a read, then a send, from one address, seconds apart. That join is not on any other table: the vault never sees it, and `linkage.ts` scopes the submitting endpoint out. Reading on a schedule rather than on demand removes it and a warm cache removes the read entirely; neither is free, and neither is done yet",
   },
   {
+    id: "node.txLookup",
+    what: "which transactions a client resolved the sender of, and therefore that it is doing sender analysis at all",
+    why: "a sender is not in an event record — it is on the transaction — so telling a user how linkable sending is right now (`decisions/0029`) costs one `starknet_getTransactionByHash` per event in the window. The node learns the window and learns that this client cares who published, which the event read alone did not say. IT IS RESOLVED FOR THE WHOLE WINDOW AND NOT FOR A CHOSEN SUBSET, and that is what keeps `node.wantedEvent` true: an implementation that looked up only the transactions it found interesting would tell the node which ones those were. Settled history does not change, so the answers are cached and a window is paid for once",
+  },
+  {
     id: "node.submission",
     what: "the transaction, from the address that signed it, before it is in any block",
     why: "a transaction has to reach a node to be sequenced. Whoever it is sent to sees the sender, the calldata and the moment — earlier than the public chain shows it, and attached to an IP the chain never carries. `chain.ts` shells out to `sncast` for this, so it is that tool's endpoint rather than `rpcUrl`, which means a user can separate the two parties and by default does not",

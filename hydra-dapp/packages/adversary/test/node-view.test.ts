@@ -53,6 +53,10 @@ const read = async () => {
     accountsFile: "/dev/null", account: "a", network: "sepolia",
   }, fetchImpl);
   const events = await chain.events();
+  // And the sender lookup, because `node.txLookup` is only producible when a client actually
+  // asks who published. `decisions/0029`'s crowd needs it; the row exists because the node sees
+  // it happen.
+  await chain.senders!(["0xdeadbeef"]);
   return { seen, events };
 };
 
@@ -70,6 +74,7 @@ function observedKeys(seen: readonly Seen[]): string[] {
       const f = r.params.filter;
       if (f.address) keys.add("node.readRange");
     }
+    if (r.method === "starknet_getTransactionByHash") keys.add("node.txLookup");
   }
   // Asserted from the code path rather than captured — see the header.
   const chainSrc = readFileSync(
@@ -105,8 +110,12 @@ test("the read names a contract and a block, and nothing about what was wanted",
   // narrowed the query to the events this client cares about would delete this guarantee while
   // making everything faster, which is exactly the trade this assertion exists to block.
   const { seen, events } = await read();
-  assert.equal(seen.length, 2, "the paging loop stopped early; the capture is not a full read");
-  for (const r of seen) {
+  // Only the event reads. The sender lookup is a different request with a different shape, and
+  // it has its own row (`node.txLookup`) and its own constraint — window-wide, never a chosen
+  // subset — asserted below.
+  const reads = seen.filter((r) => r.method === "starknet_getEvents");
+  assert.equal(reads.length, 2, "the paging loop stopped early; the capture is not a full read");
+  for (const r of reads) {
     const f = r.params.filter;
     assert.equal(f.address, CONTRACT);
     assert.equal(f.from_block.block_number, FROM_BLOCK);
@@ -117,6 +126,14 @@ test("the read names a contract and a block, and nothing about what was wanted",
   }
   // And the client really did take the whole log rather than one entry.
   assert.equal(events.length, 2);
+
+  // The sender lookup names transactions, which is exactly why it is a separate row. What keeps
+  // `node.wantedEvent` true is that it covers the window rather than a selection out of it — a
+  // client that resolved only the transactions it found interesting would be telling the node
+  // which ones those were.
+  const lookups = seen.filter((r) => r.method === "starknet_getTransactionByHash");
+  assert.equal(lookups.length, 1);
+  assert.ok(Array.isArray(lookups[0].params), "a tx lookup takes a positional hash");
 });
 
 test("nothing the node is sent carries a message or names a conversation", async () => {
