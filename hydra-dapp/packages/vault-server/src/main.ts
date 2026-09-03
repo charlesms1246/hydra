@@ -8,6 +8,9 @@
  *
  *     node packages/vault-server/src/main.ts --port 8080 --dir ./vault --invites a,b,c
  *
+ * Add `--removal-token-file ./removal.token` to be able to take a public post down. Without it
+ * every takedown is refused — see `ERRORS.md` E-UNREACHABLE for the time that was not on purpose.
+ *
  * Every default here is the more private one, and each is a decision with a row on the
  * disclosure table behind it: transport observation is OFF, rate limiting is `global` (which
  * keeps no per-client state and is worse at its job), and there is no access log. Turning any
@@ -58,9 +61,30 @@ if (Boolean(tlsKey) !== Boolean(tlsCert)) {
   throw new Error("--tls-key and --tls-cert go together; one without the other is not TLS");
 }
 
+/**
+ * The secret a public takedown must carry. Without it `DELETE` is refused outright.
+ *
+ * IT WAS NOT PASSED AT ALL, and that is the defect this flag exists to end. `http.ts` refuses
+ * removal when no token is configured — the correct default, since an operator who has not decided
+ * who may take content down has not decided that everyone may — and this entry point never wired
+ * the option through. So a vault started the real way refused EVERY public takedown while the
+ * capability sat documented on the disclosure table and tested in-process.
+ *
+ * The class is worth naming: every previous finding in this repo was a claim stronger than the
+ * code. This is a claim about a capability the code CANNOT PERFORM — the same defect with the
+ * opposite sign — and nothing looked for it, because no guard checks that a documented mechanism
+ * is reachable from a real entry point. See `ERRORS.md` E-UNREACHABLE.
+ *
+ * Read from a FILE rather than an argument, following `--tls-key`: a secret on a command line is
+ * in the process table and in a shell history.
+ */
+const removalTokenFile = flag("removal-token-file");
+const removalToken = removalTokenFile ? readFileSync(removalTokenFile, "utf8").trim() : "";
+
 const { url } = await serve(vault, Number(flag("port", "8080")), {
   observeTransport: args.includes("--observe-transport"),
   rateLimit,
+  ...(removalToken ? { removalToken } : {}),
   ...(tlsKey ? { tls: { key: readFileSync(tlsKey), cert: readFileSync(tlsCert) } } : {}),
 });
 
@@ -69,6 +93,14 @@ console.log(`invites  ${invites.length}`);
 console.log(`storage  ${flag("dir") || "memory only — everything is lost on restart"}`);
 console.log(`limiter  ${mode}${mode === "none" ? "" : ` at ${perMinute}/min`}`
   + `${mode === "per-peer" ? "  (adds rate.peerBucket to the table)" : ""}`);
+// PRINTED BECAUSE THE ABSENCE IS THE DEFECT. Every other capability's state is announced here —
+// the limiter, transport observation, read logging, TLS — and takedown was the one that was not,
+// which is why a vault that could not perform it looked exactly like one that could.
+console.log(removalToken
+  ? "takedown  public takedown ENABLED (--removal-token-file); encrypted objects are never\n"
+    + "          removable this way — they are deleted by capability, see decisions/0035"
+  : "takedown  public takedown DISABLED — no --removal-token-file, so DELETE is refused. The\n"
+    + "          moderation pipeline cannot remove anything from this vault.");
 if (args.includes("--observe-transport")) console.log("transport observation is ON");
 if (args.includes("--observe-reads")) console.log("read logging is ON");
 console.log(tlsKey
