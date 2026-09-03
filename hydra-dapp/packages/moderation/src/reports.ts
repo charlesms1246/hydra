@@ -162,7 +162,58 @@ export class Reports {
     this.#open.delete(blobId);
     return d;
   }
+
+  /**
+   * The whole queue as plain data, so an operator tool can survive being closed.
+   *
+   * A queue that only exists in one process is not an operator surface — the audit that found
+   * zero of eight steps operable would find the same thing again with a tool that forgets.
+   *
+   * WHAT IS IN HERE IS THE RETENTION DECISION, so it is written rather than derived. Decisions
+   * carry `blobId, outcome, category, at` and nothing else, which is `DECISIONS-NEEDED.md` D8's
+   * stated default — no reporter identity, ever. Report BODIES appear only for reviews that are
+   * still OPEN, because `decide` drops them already: a body is retained exactly as long as a
+   * human still needs to read it, and not one invocation longer. `store.test.ts` checks that no
+   * decided object has a body anywhere in the file, which is the property this comment claims.
+   *
+   * How long DECISIONS live is still open and rides with D7 — see D8. This does not settle it,
+   * and deliberately provides no expiry, because a default retention period invented here would
+   * become the answer by inertia.
+   */
+  snapshot(): Snapshot {
+    return {
+      version: SNAPSHOT_VERSION,
+      open: [...this.#open.values()],
+      decided: [...this.#decided],
+      received: [...this.#received],
+    };
+  }
+
+  /** The inverse of {@link snapshot}. Unknown versions are refused rather than guessed at. */
+  static restore(s: Snapshot): Reports {
+    if (s.version !== SNAPSHOT_VERSION) {
+      throw new Error(`this queue was written by version ${s.version}, and this is `
+        + `${SNAPSHOT_VERSION}. Refusing to guess at the difference — a queue read wrong is a `
+        + "review that does not happen.");
+    }
+    const q = new Reports();
+    for (const r of s.open) q.#open.set(r.blobId, r);
+    q.#decided.push(...s.decided);
+    for (const [k, n] of s.received) q.#received.set(k, n);
+    return q;
+  }
 }
+
+/** Bumped whenever the shape below changes. See {@link Reports.restore}. */
+export const SNAPSHOT_VERSION = 1;
+
+/** The queue as plain JSON. Every field here is a retention decision — see {@link Reports.snapshot}. */
+export type Snapshot = {
+  readonly version: number;
+  readonly open: readonly Review[];
+  readonly decided: readonly Decision[];
+  readonly received: readonly (readonly [string, number])[];
+};
 
 /**
  * What a reviewer is shown, and the sentence that has to travel with the number.
@@ -187,9 +238,36 @@ export function summarise(review: Review, history: readonly Decision[]): string[
     "tell fifty reporters from one sender in a loop — repetition is not corroboration.",
     ...(review.overflow
       ? [`Showing ${review.reports.length}; ${review.overflow} more were not kept.`] : []),
+    "",
+    // THE BODIES, and this function did not show them until an operator tool was built on it.
+    // Everything above `BODIES_KEPT` — keeping 32, deduplicating by DISTINCT body, the whole
+    // argument about an adversary who floods first owning the framing — exists to put the right
+    // text in front of a reviewer, and the one function whose doc says "what a reviewer is shown"
+    // omitted it. The defence protected information that nothing displayed. Same class as the
+    // pipeline having no operator surface, one level down.
+    ...review.reports.map((r) => `  ${new Date(r.at).toISOString().slice(0, 10)}  ${legible(r.body)}`),
+    "",
     ...(history.length
       ? [`Previously decided ${history.length} time${history.length === 1 ? "" : "s"}: `
         + `${history.map((d) => `${d.outcome} (${d.category})`).join(", ")}.`]
       : ["No previous decision about this object."]),
   ];
 }
+
+/**
+ * A report body, made safe to print.
+ *
+ * THIS IS HOSTILE INPUT ARRIVING AT A TERMINAL. A report body is written by a stranger and read by
+ * an operator, and the moment it is displayed it can carry ANSI escapes — which move the cursor,
+ * recolour, clear the screen, or overwrite the lines above. An attacker who can redraw a reviewer's
+ * screen can make one object's reports appear under another object's id, and the reviewer decides
+ * on what they were shown.
+ *
+ * Escapes are replaced rather than dropped, so a body that contained them still looks like a body
+ * that contained them — a reviewer seeing `<7f>` learns something a silently cleaned string hides.
+ * Newlines go too: a body that spans lines can fake the surrounding output's structure.
+ */
+const legible = (body: string): string =>
+  // eslint-disable-next-line no-control-regex
+  body.replace(/[\u0000-\u001f\u007f-\u009f]/g,
+    (c) => `<${c.charCodeAt(0).toString(16).padStart(2, "0")}>`);

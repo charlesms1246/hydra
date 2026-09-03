@@ -1,0 +1,8 @@
+{
+  "name": "@hydra-platform/operator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The moderator's tool. Never shares a binary with a user client — see decisions/0036 (I8).",
+  "engines": { "node": ">=24" }
+}

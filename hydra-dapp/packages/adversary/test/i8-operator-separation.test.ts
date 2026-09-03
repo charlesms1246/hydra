@@ -101,6 +101,24 @@ test("THE OPERATOR TOOL IS NOT KEY-BEARING — reported as absent rather than pa
   }
 });
 
+test("EXACTLY ONE FILE IN THE OPERATOR TOOL IMPORTS `moderation`", () => {
+  // Not a boundary — `0036` is explicit that tsc cannot express one here, because `rootDir`
+  // rejects allow-listed siblings along with forbidden ones and there is no selective form. Since
+  // the enforcement is a scan, the thing worth enforcing is that the surface stays small enough
+  // to read: one file, one direction. A chokepoint makes the dependency something somebody chose
+  // rather than something that accumulated across a package.
+  const present = OPERATOR_TOOL.filter((p) => existsSync(join(PACKAGES, p)));
+  if (present.length === 0) return;   // the previous test is the one that reports absence
+  for (const pkg of present) {
+    const importers = sourcesIn(pkg)
+      .filter((f) => /from ["'][^"']*(packages\/)?moderation\//.test(f.text))
+      .map((f) => f.path);
+    assert.deepEqual(importers, [`${pkg}/src/queue.ts`],
+      `moderation is imported from ${importers.join(", ") || "nowhere"}; it must be reached only `
+      + `through ${pkg}/src/queue.ts, which is also the only file that touches disk.`);
+  }
+});
+
 test("I8 IS WRITTEN DOWN, and says the thing the tests check", () => {
   // The tests above enforce a rule whose REASONS live in prose. A guard whose decision file has
   // drifted is a guard nobody can evaluate — this repo has been bitten by prose that described a
