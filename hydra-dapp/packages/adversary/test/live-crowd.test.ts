@@ -233,7 +233,7 @@ test("THE WINDOW IS THE WHOLE ANSWER, and --block-ms silently sets it", () => {
  * gaps. A metronome scores 0; a Poisson process scores 1. It is the cheapest automation signal an
  * operator has, and it needs nothing but the public chain.
  */
-const regularity = (times) => {
+const regularity = (times: readonly number[]): number => {
   if (times.length < 4) return Infinity;
   const gaps = times.slice(1).map((t, i) => t - times[i]).filter((g) => g > 0);
   if (gaps.length < 3) return Infinity;
@@ -271,9 +271,9 @@ test("THE CROWD UNDER AN OPERATOR WHO DISCOUNTS BOTS — 0029's open preconditio
   const T0 = blocks[0].t, T1 = blocks[blocks.length - 1].t;
   const span = MESSAGES * GAP;
 
-  const crowdOver = (keep) => {
+  const crowdOver = (keep: Map<string, number[]>) => {
     const rnd = prng(4242);
-    const vals = [];
+    const vals: number[] = [];
     for (let t = T0; t + span <= T1; t += 30) vals.push(crowdFor(uploadsAt(t, W, rnd), W, keep));
     // A zero-sample mean is NaN, and NaN compares false against every bound below — so the
     // assertions would pass by being unfalsifiable rather than by being true. Refuse instead.
@@ -286,8 +286,8 @@ test("THE CROWD UNDER AN OPERATOR WHO DISCOUNTS BOTS — 0029's open preconditio
       kept: keep.size,
     };
   };
-  const without = (drop) => {
-    const m = new Map();
+  const without = (drop: (a: string, t: number[]) => boolean) => {
+    const m = new Map<string, number[]>();
     for (const [a, t] of accounts) if (!drop(a, t)) m.set(a, t);
     return m;
   };
@@ -300,7 +300,7 @@ test("THE CROWD UNDER AN OPERATOR WHO DISCOUNTS BOTS — 0029's open preconditio
   const topFifty = crowdOver(without((a) => top50.has(a)));
   const poissonish = crowdOver(without((_, t) => regularity(t) < 1.0));
 
-  const row = (n, r) => `    ${n.padEnd(32)} crowd ${r.crowd.toFixed(2).padStart(6)}   right `
+  const row = (n: string, r: { crowd: number; accuracy: number; kept: number }) => `    ${n.padEnd(32)} crowd ${r.crowd.toFixed(2).padStart(6)}   right `
     + `${r.accuracy.toFixed(3)}   (kept ${r.kept}/${accounts.size})`;
   console.log(`\n${[
     row("no discounting", none),
@@ -313,8 +313,10 @@ test("THE CROWD UNDER AN OPERATOR WHO DISCOUNTS BOTS — 0029's open preconditio
   // MONOTONE IN AGGRESSIVENESS. This is the whole load-bearing claim: pruning can only shrink the
   // crowd, so the pruned figure is a lower bound on the real one and a client that shows it can
   // never tell a user they are safer than they are.
-  for (const [name, r] of [["drop busiest", topOne], ["drop 50", topFifty],
-    ["cv<0.3", metronomic], ["cv<1.0", poissonish]]) {
+  const rules: [string, { crowd: number; accuracy: number }][] = [
+    ["drop busiest", topOne], ["drop 50", topFifty],
+    ["cv<0.3", metronomic], ["cv<1.0", poissonish]];
+  for (const [name, r] of rules) {
     assert.ok(r.crowd <= none.crowd + 1e-9,
       `${name} produced a LARGER crowd (${r.crowd.toFixed(2)}) than no discounting at all `
       + `(${none.crowd.toFixed(2)}) — then pruning is not a lower bound and 0029's rule collapses`);
