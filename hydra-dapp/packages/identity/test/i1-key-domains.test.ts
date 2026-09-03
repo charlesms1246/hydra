@@ -173,16 +173,44 @@ test("the cross-domain derivation does not compile", () => {
     out = String((e as { stdout?: string }).stdout ?? "");
   }
   const lines = out.split("\n").filter((l) => /error TS/.test(l));
-  // Counted by DISTINCT LINE against the number of numbered attempts, not by error. Eight errors
-  // across seven routes passes a count check while one route silently compiles — and the route
-  // that compiles is the one that puts the escrowed pool key into the vault domain. The same
-  // defect was fixed in `i5-blob-separation.test.ts` and `x3dh.test.ts`; this is the third.
   const fixture = lines.filter((l) => l.includes("i1-must-not-compile"));
-  const offending = new Set(fixture.map((l) => l.match(/\((\d+),/)?.[1]).filter(Boolean));
-  const attempts = readFileSync(join(HERE, "i1-must-not-compile.ts"), "utf8")
-    .split("\n").filter((l) => /^\/\/ \d+[a-z]?\./.test(l)).length;
-  assert.equal(offending.size, attempts,
-    `${attempts} numbered routes, ${offending.size} rejected — one of them compiles:\n${out}`);
+
+  // EVERY ROUTE IS CHECKED INDIVIDUALLY, and getting here took three attempts.
+  //
+  // Counting errors was the first version: eight errors across seven routes passes while one
+  // route silently compiles. Counting DISTINCT ERRORING LINES was the second, and it has the
+  // same hole one level down — two errors on two lines of route 1 and none in route 7 still
+  // gives a count of seven. Both compare a total against a total, and a total cannot say WHICH
+  // route was rejected.
+  //
+  // So the fixture's numbered comments are read as boundaries, each route owns the lines from
+  // its comment to the next one, and every route must own at least one error. The route that
+  // matters most is the one that puts escrowed pool material into the vault domain, and it is
+  // exactly the one a total would let through.
+  const src = readFileSync(join(HERE, "i1-must-not-compile.ts"), "utf8").split("\n");
+  const marks: { label: string; from: number }[] = [];
+  src.forEach((l, i) => {
+    const m = l.match(/^\/\/ (\d+[a-z]?)\./);
+    if (m) marks.push({ label: m[1], from: i + 1 });   // tsc lines are 1-based
+  });
+  assert.ok(marks.length >= 7, `only ${marks.length} numbered routes in the fixture`);
+  const routes = marks.map((m, i) => ({
+    label: m.label, from: m.from, to: marks[i + 1]?.from ?? src.length + 1,
+  }));
+
+  const errorLines = fixture
+    .map((l) => Number(l.match(/\((\d+),/)?.[1]))
+    .filter((n) => Number.isFinite(n));
+  const uncovered = routes.filter((r) => !errorLines.some((n) => n >= r.from && n < r.to));
+  assert.deepEqual(uncovered.map((r) => r.label), [],
+    `these routes COMPILE — I1 does not hold for them:\n`
+    + `${uncovered.map((r) => `  route ${r.label} (fixture lines ${r.from}-${r.to - 1})`).join("\n")}`
+    + `\n\nfull tsc output:\n${out}`);
+  // And no error may fall outside every route, which would mean the fixture drifted from its
+  // own numbering and some errors are being credited to the wrong attempt.
+  const orphan = errorLines.filter((n) => !routes.some((r) => n >= r.from && n < r.to));
+  assert.deepEqual(orphan, [],
+    `type errors in the fixture outside any numbered route: lines ${orphan.join(", ")}`);
   // Nothing ELSE may fail to type-check, or this test passes for the wrong reason.
   const other = lines.filter((l) => !l.includes("i1-must-not-compile"));
   assert.deepEqual(other, [], `type errors outside the fixture:\n${other.join("\n")}`);
