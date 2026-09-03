@@ -76,6 +76,19 @@ export type Review = {
 export class Reports {
   readonly #open = new Map<string, Review>();
   readonly #decided: Decision[] = [];
+  /**
+   * AGGREGATE COUNTERS, NOT RECORDS, and the distinction is what keeps `decisions/0035` D8 intact.
+   *
+   * A transparency report has to say how many reports arrived, and the decision record — fixed at
+   * `at, blobId, category, outcome` — cannot say: a review's report count is discarded when it is
+   * decided. Checking that BEFORE writing the generator was the point of the check; discovering it
+   * afterwards is how a retention decision quietly reopens in favour of keeping more.
+   *
+   * The resolution is a number rather than a row. A monotonic count of reports received carries
+   * nothing about who filed them, which item they concerned, or when beyond the period — so the
+   * record stays at its minimum and the report can still be honest about volume.
+   */
+  #reportsReceived = 0;
 
   /**
    * File a report against a public blob.
@@ -85,6 +98,7 @@ export class Reports {
    * merely bounded, because holding the container open does not let them control what is in it.
    */
   file(blobId: string, body: string, at: number): Review {
+    this.#reportsReceived++;
     const open = this.#open.get(blobId);
     if (!open) {
       const review = { blobId, reports: [{ body, at }], overflow: 0, openedAt: at };
@@ -102,6 +116,16 @@ export class Reports {
     };
     this.#open.set(blobId, next);
     return next;
+  }
+
+  /** How many reports have arrived. An aggregate — see `#reportsReceived`. */
+  received(): number {
+    return this.#reportsReceived;
+  }
+
+  /** Every decision made, for the transparency report to be generated from. */
+  decisions(): readonly Decision[] {
+    return this.#decided;
   }
 
   /** Reviews waiting for a human. One per object, whatever the report volume. */

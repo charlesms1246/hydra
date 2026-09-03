@@ -107,7 +107,7 @@ test("the moderation table names every surface moderation actually has", () => {
   // A third table, because the vault cannot produce these rows and documenting them on its table
   // would be the over-claiming failure `operator-view.test.ts` exists to catch.
   assert.deepEqual([...MODERATION_OBSERVABLE_IDS].sort(),
-    ["appeal.filed", "decision.recorded", "report.filed"]);
+    ["appeal.filed", "decision.recorded", "report.filed", "report.published"]);
   for (const o of MODERATION_OBSERVABLE) {
     assert.ok(o.what.length > 20, `${o.id} has no description`);
     assert.ok(o.why.length > 60, `${o.id} has no reason`);

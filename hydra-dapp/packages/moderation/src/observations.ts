@@ -40,6 +40,11 @@ export const MODERATION_OBSERVABLE: readonly ModerationObservation[] = [
     what: "that an appeal was filed, when, and that whoever filed it can sign for the account that published the object",
     why: "an appeal is checked by verifying a signature from the publishing account, so accepting one necessarily means learning that somebody controlling that account contested this decision at this time. THE SHARPEST PART IS THE DELIVERY, NOT THE PROOF. Before an appeal the operator knows account X published post P, which is public and already disclosed. If the appeal arrives over a connection they terminate they additionally hold an IP, an SNI and a TLS session correlated to a Starknet account — it converts a chain identity into a network observation, at the moment the appellant is under pressure and least likely to weigh it. So the artifact is DETACHED and self-authenticating: it can be relayed, posted or handed to somebody else, and the operator verifies the artifact rather than the connection. Delivering it directly is a choice with a cost, and the client says so before sending",
   },
+  {
+    id: "report.published",
+    what: "the shape of this service's moderation activity over time — volumes by outcome and category, per period, and the ids of removed public objects",
+    why: "a transparency report is published, so it is public by construction. It is on this table because being public is not the same as being harmless: it discloses the service's operations over time, and at low volume it discloses more than that. A cell of size one against a public timeline anyone can read names the object it refers to and, on the submission surface, plausibly the person behind it — so every cell below the published floor is banded, and the band INCLUDES ZERO, or banding a cell would announce the cell is non-empty. Naming removed PUBLIC ids is a deliberate choice: the object was public and the on-chain commitment still stands, so a removal anybody can verify against it is the mechanism this design chose, at the cost of a permanent index of removed content. Encrypted deletions are absent entirely — those are people deleting their own objects, not decisions about them",
+  },
 ];
 
 export const MODERATION_OBSERVABLE_IDS: readonly string[] =
