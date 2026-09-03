@@ -42,10 +42,9 @@ import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_SRC = join(HERE, "..", "..", "vault-server", "src");
-const chan = channelSecret(
-  derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(15), "mechanisms")))),
-  "alice→bob",
-);
+const root = derive(VAULT_DOMAIN,
+  rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(15), "mechanisms"))));
+const chan = channelSecret(root, "alice→bob");
 const bytes = (b: Parameters<typeof wireBytes>[0]) => wireBytes(b) as unknown as Uint8Array;
 
 /**
@@ -83,6 +82,56 @@ function grep(pattern: string, path: string): string[] {
  * One assertion per mechanism. Keyed by the same union the guarantees use, so a typo is a
  * compile error rather than a silently absent check.
  */
+
+/**
+ * TWO WORLDS, ONE RECORD — the shape several of these mechanisms want and only some of them had.
+ *
+ * A name-and-shape check ("no field is called `channel`", "no identifier matching `account`")
+ * stands in for an invariance property, and it passes if the field is renamed or if the secret
+ * leaks through a VALUE rather than a name. `read.channelSet` is the standing warning here: it
+ * was published as something the operator could not see until a harness recovered both channels
+ * of a two-channel session exactly.
+ *
+ * So: run the same traffic twice, differing only in the secret, and require the operator's record
+ * to be identical. Blob ids are content hashes and must differ — if they did not, two worlds
+ * would be linkable by equality, which is a worse leak than the one being tested — so they are
+ * normalised to their position. Everything else must match exactly.
+ *
+ * What that catches which a grep cannot: an identity or a channel arriving through a field nobody
+ * thought to name, a count that differs, a bucket that differs, an ordering that differs.
+ */
+function recordUnder(traffic: (vault: Vault, invites: string[]) => void): {
+  ids: string[]; normalised: string; keys: string[];
+} {
+  const invites = Array.from({ length: 16 }, (_, i) => `w-${i}`);
+  // A FIXED CLOCK, because arrival time is a real disclosure that depends on WHEN you upload and
+  // not on the secret. Two worlds run a millisecond apart differ in `blob.expiry` and in nothing
+  // else, which is the harness measuring itself — the first run of this caught exactly that.
+  let tick = 1_800_000_000_000;
+  const vault = new Vault({ invites, buckets: BUCKETS, observeReads: true, now: () => (tick += 1000) });
+  traffic(vault, invites);
+  const o = vault.observe();
+  const ids = o.rows.map((r) => String(r["blob.id"]));
+  // Ids out, positions in. Everything else — class, bucket, expiry, reads, totals — stays.
+  const normalised = JSON.stringify(o, (k, v) =>
+    k === "blob.id" ? "<id>"
+      : typeof v === "string" && ids.includes(v) ? `<id:${ids.indexOf(v)}>`
+        : typeof v === "bigint" ? String(v) : v);
+  return { ids, normalised, keys: vault.observedKeys() };
+}
+
+/** Assert two worlds are indistinguishable in the record, and distinguishable in their ids. */
+function indistinguishable(
+  a: ReturnType<typeof recordUnder>, b: ReturnType<typeof recordUnder>, what: string,
+): void {
+  assert.equal(a.normalised, b.normalised,
+    `the operator's record differs with ${what} — it is observable after all`);
+  assert.deepEqual(a.keys, b.keys, `the capture's observable set differs with ${what}`);
+  // And the ids must NOT be equal, or the two worlds are linkable by the thing that was supposed
+  // to be a hash of unrelated bytes.
+  assert.notDeepEqual(a.ids, b.ids, `two worlds produced identical blob ids`);
+}
+
 const MECHANISMS: Record<Mechanism, () => void | Promise<void>> = {
   "no-key-in-server": () => {
     // The server holds no key, so it cannot decrypt regardless of intent. Checked as an absence
@@ -103,6 +152,10 @@ const MECHANISMS: Record<Mechanism, () => void | Promise<void>> = {
   "no-channel-field": () => {
     // Nothing an upload carries names a channel — not the request, not the stored record. If
     // it did, the operator would group blobs by conversation without decrypting anything.
+    //
+    // THE GREP IS THE SECOND LAYER. It catches a future refactor introducing a field literally
+    // called `channel`, which a capture cannot — but on its own it passes if the field is renamed
+    // and says nothing about the channel leaking through a VALUE. The first layer is two worlds.
     const src = readFileSync(join(SERVER_SRC, "server.ts"), "utf8");
     const upload = src.match(/export type UploadRequest = \{[^}]*\}/s);
     const stored = src.match(/type Stored = \{[^}]*\}/s);
@@ -110,11 +163,22 @@ const MECHANISMS: Record<Mechanism, () => void | Promise<void>> = {
     for (const shape of [upload[0], stored[0]]) {
       assert.ok(!/channel/i.test(shape), `a channel field appeared in:\n${shape}`);
     }
-    // And a real upload, driven end to end, leaves nothing channel-shaped in the record.
-    const vault = new Vault({ invites: ["m1"], buckets: BUCKETS });
-    const blob = sealForChannel(chan, new TextEncoder().encode("grouped?"));
-    vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id, body: bytes(blob), invite: "m1" });
-    assert.ok(!JSON.stringify(vault.observe()).includes("alice"));
+
+    // The same words, sent under two different channels. Everything the operator holds must be
+    // identical except the ids, which are hashes of different ciphertexts.
+    const words = new TextEncoder().encode("meet me at eight");
+    const world = (label: string) => (vault: Vault, invites: string[]) => {
+      const channel = channelSecret(root, label);
+      for (const n of [0, 1, 2]) {
+        const blob = sealForChannel(channel, new Uint8Array([...words, n]));
+        vault.handle({
+          op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id,
+          body: bytes(blob), invite: invites.shift()!,
+        });
+      }
+    };
+    indistinguishable(recordUnder(world("alice→bob")), recordUnder(world("alice→carol")),
+      "which channel the blobs belong to");
   },
 
   "min-read-batch": () => {
@@ -203,6 +267,24 @@ const MECHANISMS: Record<Mechanism, () => void | Promise<void>> = {
   },
 
   "no-accounts": () => {
+    // TWO CLIENTS, ONE RECORD. The grep below catches a future refactor introducing an account
+    // TYPE, which a capture cannot. It does not catch an identity arriving through something
+    // nobody would call an account — and that is the live risk rather than a theoretical one now
+    // that this server terminates TLS, because a reused connection is an identity that persists
+    // across uploads and never matches `(user|account|login|session|principal|owner)`.
+    const twoClients = (label: string) => (vault: Vault, invites: string[]) => {
+      const channel = channelSecret(root, label);
+      for (const n of [0, 1]) {
+        const blob = sealForChannel(channel, new Uint8Array([7, n]));
+        vault.handle({
+          op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blob.id,
+          body: bytes(blob), invite: invites.shift()!,
+        });
+      }
+    };
+    indistinguishable(recordUnder(twoClients("device-one")), recordUnder(twoClients("device-two")),
+      "which client uploaded");
+
     // The other half of `uploader.identity`. `invite-destroyed` proves the token is not kept;
     // this proves there is no identity for it to have been kept against. An account system
     // would make the invite's destruction beside the point.
