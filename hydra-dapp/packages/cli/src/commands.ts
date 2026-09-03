@@ -26,7 +26,7 @@ import { recordFor, encodeRecord, decodeRecord, verifyRecord, RECORD_FELTS }
   from "../../handshake/src/record.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
-import { coverPlan, coverBody, coverId, coverIndex } from "../../channel/src/cover.ts";
+import { coverPlan, coverBody, coverId, coverIndex, COVER_RATE } from "../../channel/src/cover.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
 import { openForChannel, plaintextOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
@@ -477,6 +477,7 @@ export async function flush(
   state: State,
   now: number = Date.now(),
   fetchImpl: typeof fetch = fetch,
+  limit: number = Infinity,
 ): Promise<{ uploaded: number; waiting: number }> {
   // Sorted by scheduled time, not queue order. Cover for a message is scheduled to START
   // BEFORE that message's own chain event — `coverLeadMs` equals the jitter window, and that
@@ -490,7 +491,16 @@ export async function flush(
   // cadence — a client that flushes once an hour uploads a message and all its cover in one
   // burst, and a burst is a message. `claude-docs/decisions/0011-cli-client.md` says so, and
   // it is why a real client wants a resident process rather than a command.
-  const due = state.pending.filter((p) => p.uploadAt <= now).sort((a, b) => a.uploadAt - b.uploadAt);
+  //
+  // `limit` IS THE BURST DEFENCE, and it is a parameter rather than a constant because the two
+  // things it trades off belong to the caller. Uploading every due object at once hands the
+  // operator `upload.burst`: a run of `coverRate + 1` objects from one peer in one moment is a
+  // message and its cover, delivered as a set. Uploading one at a time removes the set and costs
+  // latency. Both front ends pass {@link FLUSH_LIMIT}; the default is unbounded so that a caller
+  // reconstructing a schedule — every I3 harness in `adversary/` — measures the schedule rather
+  // than this policy.
+  const due = state.pending.filter((p) => p.uploadAt <= now)
+    .sort((a, b) => a.uploadAt - b.uploadAt).slice(0, limit);
   // Checked before anything is sent. Uploading half a batch and then running out would leave
   // real messages in the vault with their cover still queued, which is worse than not starting.
   if (state.invites.length < due.length) {
@@ -518,6 +528,58 @@ export async function flush(
   const done = new Set(uploaded);
   state.pending = state.pending.filter((p) => !done.has(p.id));
   return { uploaded: due.length, waiting: state.pending.length };
+}
+
+/**
+ * How many objects one flush may upload.
+ *
+ * ONE. A burst is a set of objects the operator can group, and a set of one is not a set.
+ *
+ * `vault-server/src/observations.ts` `upload.burst` says what the alternative discloses: arrival
+ * is a deadline minus a constant, so objects uploaded together carry deadlines milliseconds apart
+ * and the record groups them whether or not anything writes the grouping down. A hand-flushed
+ * client puts `coverRate + 1` objects in one instant, and `adversary/test/operator-view.test.ts`
+ * recovers them as one group of five.
+ *
+ * The cost is latency and it is real: a client with thirty objects behind it needs thirty flushes.
+ * For the TUI that is thirty seconds of its own tick and invisible. For `hydra flush` it is why
+ * {@link drain} exists rather than a loop the user writes.
+ */
+export const FLUSH_LIMIT = 1;
+
+/**
+ * Upload everything due, one object at a time, spread over real time.
+ *
+ * WHY THE DELAY IS RANDOM AND NOT A FIXED INTERVAL. A client uploading on a metronome is as
+ * groupable as one uploading in a burst — the operator matches on the period instead of on the
+ * instant, and a fixed gap is a fingerprint that survives across sessions. So the gap is drawn
+ * uniformly, and the scale is the jitter window because that is the only time constant this
+ * protocol has: spreading an object's upload across the window it was already meant to land in
+ * costs nothing that was not already lost when the client fell behind.
+ *
+ * `sleep` is injected so a test can drive this without waiting. The default is a real timer,
+ * because a default that returned immediately would make every test of this function a test of
+ * something else.
+ */
+export async function drain(
+  state: State,
+  now: () => number = Date.now,
+  fetchImpl: typeof fetch = fetch,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  random: () => number = Math.random,
+): Promise<{ uploaded: number; waiting: number }> {
+  const window = jitterWindowMs({ blockMs: state.blockMs });
+  let uploaded = 0;
+  for (;;) {
+    const r = await flush(state, now(), fetchImpl, FLUSH_LIMIT);
+    uploaded += r.uploaded;
+    if (r.uploaded === 0) return { uploaded, waiting: r.waiting };
+    // Only pause if something else is already due — a client that is up to date should not sit
+    // there sleeping, and one object going up alone is not a burst to begin with.
+    if (state.pending.some((p) => p.uploadAt <= now())) {
+      await sleep(random() * (window / (COVER_RATE + 1)));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

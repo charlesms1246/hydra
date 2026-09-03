@@ -37,7 +37,7 @@ import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
   fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
-  myRecord, anchorPeer, anchorOf, recordFelts,
+  myRecord, anchorPeer, anchorOf, recordFelts, drain,
   encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
 import { chainFor } from "./chain.ts";
@@ -246,7 +246,18 @@ switch (command) {
 
   case "flush": {
     const state = load();
-    const { uploaded, waiting } = await flush(state);
+    // `drain`, not `flush`: one object at a time with a random gap between them. Uploading every
+    // due object at once is a set the vault operator can group — `upload.burst` on the disclosure
+    // table — and `coverRate + 1` objects arriving as a run is a message with its cover.
+    //
+    // So this command takes as long as it takes, and says so rather than looking hung.
+    const due = state.pending.filter((p) => p.uploadAt <= Date.now()).length;
+    if (due > 1) {
+      console.log(
+        `${due} objects are due. They go up one at a time, spread out on purpose: all of them at `
+        + "once is a batch the vault operator can group as one client's message and its cover.");
+    }
+    const { uploaded, waiting } = await drain(state);
     save(state);
     console.log(`uploaded ${uploaded}, ${waiting} still waiting`);
     break;

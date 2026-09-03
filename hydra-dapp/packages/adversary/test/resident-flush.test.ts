@@ -31,7 +31,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { init, open, publishBundle, sendMessage } from "../../cli/src/commands.ts";
+import { init, open, publishBundle, sendMessage, flush, drain } from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { best, MATCHERS } from "../src/matchers.ts";
 import type { Arrival } from "../src/matchers.ts";
@@ -270,4 +270,65 @@ test("every matcher is still exercised by this model, so `best` is a real maximu
   }
   assert.ok(winners.size >= 2, `only ${[...winners]} ever wins; the maximum is over one strategy`);
   assert.equal(MATCHERS.length, 5);
+});
+
+test("THE BURST DEFENCE: `drain` puts one object in an instant where `flush` puts five", async () => {
+  // `upload.burst` on the disclosure table says what a hand-flushed client hands the operator:
+  // arrival is a deadline minus a constant, so objects uploaded together carry deadlines
+  // milliseconds apart and the record groups them. `coverRate + 1` objects arriving as a run is a
+  // message and its cover, delivered as a set.
+  //
+  // This drives the REAL client both ways against a recording vault and counts what lands
+  // together. It is the row turning into a defence rather than staying a confession.
+  const session = async () => {
+    const alice = init({ blockMs: BLOCK, invites: Array.from({ length: 40 }, (_, i) => `inv-${i}`) });
+    open(alice, "with-bob", publishBundle(init({ invites: [] }), 0));
+    await sendMessage(alice, memoryChain(), "with-bob", "ephemeral", "hello", T0, prng(11));
+    return alice;
+  };
+
+  /** A vault that records when each object arrived, on a clock the test advances. */
+  const recorder = () => {
+    const at: number[] = [];
+    let clock = T0;
+    const fetchImpl = (async () => {
+      at.push(clock);
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    return { at, fetchImpl, tick: (ms: number) => { clock += ms; } };
+  };
+
+  // The busiest instant: how many objects share one arrival moment.
+  const busiest = (at: readonly number[]) => {
+    const per = new Map<number, number>();
+    for (const t of at) per.set(t, (per.get(t) ?? 0) + 1);
+    return Math.max(...per.values());
+  };
+
+  // Unbounded — every due object at once, which is what a bare `flush` does and what every I3
+  // harness in this directory deliberately still measures.
+  const bare = recorder();
+  const a1 = await session();
+  const late = T0 + 40 * BLOCK;
+  const r1 = await flush(a1, late, bare.fetchImpl);
+  assert.equal(r1.uploaded, COVER_RATE + 1, "the session did not queue a message and its cover");
+  assert.equal(busiest(bare.at), COVER_RATE + 1,
+    "a bare flush no longer bunches — then this comparison is stale");
+
+  // Paced — `drain`, with the sleep replaced by advancing the recorder's clock, which is what a
+  // real delay does to what the operator sees.
+  const paced = recorder();
+  const a2 = await session();
+  const rnd = prng(12);
+  const r2 = await drain(a2, () => late, paced.fetchImpl,
+    async (ms) => { paced.tick(Math.max(1, Math.round(ms))); }, rnd);
+  assert.equal(r2.uploaded, COVER_RATE + 1, "drain did not upload everything that was due");
+  assert.equal(busiest(paced.at), 1,
+    `drain still put ${busiest(paced.at)} objects in one instant — the burst defence is not working`);
+
+  // And the gaps are not a metronome, which would be groupable by period instead of by instant.
+  const gaps = paced.at.slice(1).map((t, i) => t - paced.at[i]);
+  assert.equal(gaps.length, COVER_RATE);
+  assert.ok(new Set(gaps).size > 1,
+    `every gap was ${gaps[0]}ms — a fixed interval is a fingerprint that outlives the session`);
 });

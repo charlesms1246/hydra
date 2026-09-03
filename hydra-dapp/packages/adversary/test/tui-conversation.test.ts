@@ -204,11 +204,24 @@ test("a whole conversation, typed", async () => {
     // what the timing defence prevents.
     assert.equal(v.observe().rows.length, stored, "send uploaded — the timing defence is gone");
 
-    // Time passes, and the tick uploads. Nobody pressed anything.
+    // Time passes, and the ticks upload. Nobody pressed anything.
+    //
+    // ONE OBJECT PER TICK, which is the burst defence and not an accident of the harness. A tick
+    // that uploaded everything due would put a message and its four decoys in one instant, and
+    // `upload.burst` is what the vault operator reads off that. So five objects take five ticks,
+    // and the count is asserted rather than looped away — if a change makes a tick upload the lot
+    // again, this is where it shows.
+    const queued = alice.state!.pending.length;
     const uploadAt = Math.max(...alice.state!.pending.map((p) => p.uploadAt));
-    ha.at(uploadAt + MIN_JITTER_BLOCKS * BLOCK);
-    alice = await step(alice, ha.deps, { t: "tick", now: uploadAt + MIN_JITTER_BLOCKS * BLOCK });
-    assert.equal(alice.state!.pending.length, 0, "the resident tick did not upload what was due");
+    let ticks = 0;
+    while (alice.state!.pending.length > 0 && ticks < queued + 5) {
+      ha.at(uploadAt + MIN_JITTER_BLOCKS * BLOCK);
+      alice = await step(alice, ha.deps, { t: "tick", now: uploadAt + MIN_JITTER_BLOCKS * BLOCK });
+      ticks++;
+    }
+    assert.equal(alice.state!.pending.length, 0, "the resident ticks did not upload what was due");
+    assert.equal(ticks, queued,
+      `${queued} objects took ${ticks} ticks — one per tick is the burst defence`);
     assert.ok(v.observe().rows.length > stored + 1, "the message went up with no cover");
 
     // Bob reads it.

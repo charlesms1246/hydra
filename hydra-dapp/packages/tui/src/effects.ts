@@ -16,7 +16,7 @@
  */
 
 import {
-  init, publishBundle, openAndSend, collect, sendMessage, flush, readChannel, rotatePrekey,
+  init, publishBundle, openAndSend, collect, sendMessage, flush, FLUSH_LIMIT, readChannel, rotatePrekey,
   fingerprint, nextOneTime, encodeWire, decodeWire, foreignSends, forget,
   myRecord, anchorPeer, recordFelts,
 } from "../../cli/src/commands.ts";
@@ -78,7 +78,10 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
       };
     }
     case "flush": {
-      const r = await flush(state, deps.now(), deps.fetchImpl);
+      // ONE OBJECT PER TICK, not everything due. The one-second tick is the pacing, so a client
+      // that has fallen behind trickles rather than dumping — see `FLUSH_LIMIT`. Sleeping inside
+      // the effect would stall every other effect behind it; the timer already does the job.
+      const r = await flush(state, deps.now(), deps.fetchImpl, FLUSH_LIMIT);
       deps.save(state);
       return { t: "ok", state, text: `uploaded ${r.uploaded}, ${r.waiting} still scheduled` };
     }
