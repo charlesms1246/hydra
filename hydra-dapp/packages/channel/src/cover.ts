@@ -42,6 +42,7 @@ import { encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN, subKey, expose } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 import { assertSafeSchedule, jitterWindowMs } from "./schedule.ts";
+import { P } from "./commitment.ts";
 import type { ScheduleConfig } from "./schedule.ts";
 
 /** Decoys per jitter window. See the table above for why it is not larger. */
@@ -282,14 +283,78 @@ declare const saltBrand: unique symbol;
 export type Salt = bigint & { readonly [saltBrand]: true };
 
 /**
+ * The floor a real commitment is above, and the reason there is one.
+ *
+ * A commitment is `poseidonHashMany(...)`, uniform over the field, so the chance of a genuine one
+ * landing below 2^64 is about 2^-187. Anything under it is therefore not a hash — it is a counter,
+ * an index, a default, or a field that was never set. Those are the values that reach a
+ * constructor by accident, and every one of them would silently weaken cover rather than fail.
+ */
+const COMMITMENT_FLOOR = 1n << 64n;
+
+/**
  * The salt for a message that went on chain: its commitment.
  *
  * The commitment is `commit(blind, contentHash)` with the blind drawn per message, published by
  * the sender and read by the recipient off the same event it uses to find the blob. It is the only
  * value in this protocol that is simultaneously unpredictable to a second device on the same
  * identity and already in the recipient's hands — `decisions/0033`.
+ *
+ * IT REFUSES A VALUE THAT CANNOT BE A COMMITMENT, and that is the point of the function existing
+ * rather than a cast at each call site.
+ *
+ * The brand stops a bare `0n` being written where a salt belongs. It does nothing about a
+ * commitment field that is legitimately unset, defaulted, or zero-initialised flowing through the
+ * honest path — and `saltFrom(0n)` was `NO_CHAIN`, indistinguishable to every layer below, so that
+ * would have restored the two-device collision through the correct constructor with the correct
+ * type in code nobody edited wrongly. Not hypothetical in this repo: `events()` was found dropping
+ * `transaction_hash` and handing back `undefined` from a mapping that had quietly stopped
+ * applying, one file over.
+ *
+ * So the sentinel is unreachable from here, and an accidentally-empty commitment fails loudly at
+ * the boundary instead of silently disabling the defence. Refusing to send is the correct
+ * response: the alternative is sending with cover that a second device can reproduce.
  */
-export const saltFrom = (commitment: bigint): Salt => commitment as Salt;
+/**
+ * Whether a value could be a commitment this protocol produced.
+ *
+ * EXPORTED BECAUSE A READER MUST NOT THROW ON SOMEBODY ELSE'S EVENT. `saltFrom` refuses a value
+ * that cannot be a commitment, which is right for the SENDER — its own commitment failing that
+ * check means its own hashing is broken. It is wrong for the reader: chain events come from
+ * anyone, and a note published with a commitment of `1` would make every reader's `readSet` throw.
+ * That is a denial of service anyone with an account can mount for the price of one transaction.
+ *
+ * So a reader asks first and skips what it cannot salt. An event whose commitment could not be
+ * ours has no decoys of ours under it, so there is nothing to ask the vault for.
+ */
+export const isCommitment = (value: bigint): boolean =>
+  value >= COMMITMENT_FLOOR && value < P;
+
+export function saltFrom(commitment: bigint): Salt {
+  if (commitment < COMMITMENT_FLOOR) {
+    throw new Error(
+      `a commitment of ${commitment} is too small to be one — a Poseidon hash lands below 2^64 `
+      + "about once in 2^187 times, so this is a counter, an index, or a field nobody set. "
+      + "Salting cover with it would let a second device on this identity mint the same decoys; "
+      + "see claude-docs/decisions/0033.");
+  }
+  if (commitment >= P) throw new Error(`a commitment must be a felt: ${commitment} is not below P`);
+  return commitment as Salt;
+}
+
+/**
+ * The salt for a caller with no chain, separating messages by sequence.
+ *
+ * A SEPARATE CONSTRUCTOR, and the ranges are disjoint on purpose. Sequences start at zero, and
+ * zero is {@link NO_CHAIN} — so `saltFrom(BigInt(seq))` for the first message of a chainless
+ * harness produced exactly the sentinel, which is its own small collision. Offsetting by one puts
+ * every sequence salt below {@link COMMITMENT_FLOOR} and above the sentinel, so the three kinds of
+ * salt cannot be confused with each other by arithmetic.
+ */
+export function saltForSequence(seq: number): Salt {
+  if (!Number.isInteger(seq) || seq < 0) throw new Error("a sequence is a non-negative integer");
+  return (BigInt(seq) + 1n) as Salt;
+}
 
 /**
  * The salt for a caller that has no chain to read a commitment from.

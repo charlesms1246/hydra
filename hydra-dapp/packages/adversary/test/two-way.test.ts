@@ -309,3 +309,26 @@ test("a chain that cannot name senders leaves the crowd unknown, never zero", as
     assert.equal(linkabilityOf(alice, "bob").known, false);
   } finally { server.close(); }
 });
+
+test("a junk commitment on the chain cannot stop a reader, only itself", async () => {
+  // The denial of service that `saltFrom`'s refusal introduced and `isCommitment` closes.
+  //
+  // Refusing a value that cannot be a commitment is right for a SENDER holding its own — if its
+  // own hash fails that check, its hashing is broken and it should not send. It is wrong for a
+  // reader: chain events come from anyone, so a note published with a commitment of `1` would
+  // make every reader's `readSet` throw. That is a channel-wide outage for the price of one
+  // transaction, mountable by anybody with an account.
+  const { alice, bob, chain, server } = await pair();
+  try {
+    await sendMessage(alice, chain, "bob", "ephemeral", "before", T0);
+    await flush(alice, LATER);
+    // Anyone can publish this; nothing about it is addressed to this channel.
+    await chain.publish([1n, 1n]);
+    await sendMessage(alice, chain, "bob", "ephemeral", "after", T0 + 2 * BLOCK);
+    await flush(alice, LATER + 2 * BLOCK);
+
+    const read = await readChannel(bob, chain, "alice");
+    assert.deepEqual(read.filter((m) => !m.mine).map((m) => m.text), ["before", "after"],
+      "a junk commitment on the chain stopped the reader");
+  } finally { server.close(); }
+});

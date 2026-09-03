@@ -25,7 +25,7 @@ import { MIN_READ_BATCH } from "../../vault-server/src/server.ts";
 import { recoverBlobId, ID_BYTES } from "../../channel/src/pointer.ts";
 import { encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
-import { coverBody, coverId, coverIndex, COVER_RATE, saltFrom } from "../../channel/src/cover.ts";
+import { coverBody, coverId, coverIndex, COVER_RATE, saltFrom, saltForSequence, isCommitment } from "../../channel/src/cover.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 
@@ -100,7 +100,13 @@ export function readSet(
   const decoyIds: string[] = [];
   // The commitment where the caller has a chain, the sequence where it does not — the same
   // choice `session.cover` makes when it mints them, and the reason both ends agree.
-  const salts = new Set(seen.map((s) => saltFrom(s.commitment ?? BigInt(s.seq))));
+  // A COMMITMENT FROM THE CHAIN IS SOMEBODY ELSE'S DATA, so it is checked rather than trusted.
+  // `saltFrom` refuses a value that cannot be a commitment, which is correct for a sender holding
+  // its own — and would be a denial of service here, because a note published with a commitment
+  // of `1` would make every reader throw. An event we cannot salt has no decoys of ours under it.
+  const salts = new Set(seen
+    .filter((s) => s.commitment === undefined || isCommitment(s.commitment))
+    .map((s) => s.commitment === undefined ? saltForSequence(s.seq) : saltFrom(s.commitment)));
   for (const salt of salts) {
     for (let k = 0; k < coverRate; k++) {
       for (const bucket of BUCKETS) {

@@ -13,6 +13,8 @@ import {
   crowdOf, accuracyAgainst, regularity, prune, linkability, describe, DEFAULT_PRUNING,
 } from "../../channel/src/crowd.ts";
 import type { Publisher } from "../../channel/src/crowd.ts";
+import { P } from "../../channel/src/commitment.ts";
+import { saltFrom, saltForSequence, isCommitment, NO_CHAIN } from "../../channel/src/cover.ts";
 
 const W = 240_000;
 /** An account that published at these times, irregularly enough to survive pruning. */
@@ -183,4 +185,44 @@ test("the sentence quotes the identification rate, not an average of anything", 
   assert.match(describe({ known: true, crowd: 1 }).join(" "), /out of 2 — right about 50%/);
   assert.match(describe({ known: true, crowd: 3 }).join(" "), /out of 4 — right about 25%/);
   assert.match(describe({ known: true, crowd: 11 }).join(" "), /out of 12 — right about 8%/);
+});
+
+test("SALTFROM REFUSES WHAT CANNOT BE A COMMITMENT, because zero was the sentinel", () => {
+  // The brand stops a bare `0n` being WRITTEN where a salt belongs. It does nothing about a
+  // commitment field that is legitimately unset, defaulted, or zero-initialised arriving on the
+  // honest path — and `saltFrom(0n)` was `NO_CHAIN`, indistinguishable to every layer below. That
+  // would have restored the two-device collision through the correct constructor, with the correct
+  // type, in code nobody edited wrongly.
+  //
+  // Not hypothetical here: `chain.ts` was found handing back `undefined` transaction hashes from a
+  // mapping that had quietly stopped applying, one file over.
+  for (const bad of [0n, 1n, 7n, 4096n, (1n << 64n) - 1n]) {
+    assert.throws(() => saltFrom(bad), /too small to be one/,
+      `saltFrom(${bad}) was accepted; a counter is not a commitment`);
+  }
+  // A real commitment is a Poseidon hash, uniform over the field.
+  assert.doesNotThrow(() => saltFrom(1n << 64n));
+  assert.doesNotThrow(() => saltFrom(P - 1n));
+  assert.throws(() => saltFrom(P), /must be a felt/);
+
+  // And the sentinel is now unreachable from the honest constructor, which is the property the
+  // discriminated union would have bought — for one line and no call-site churn.
+  assert.throws(() => saltFrom(NO_CHAIN));
+});
+
+test("the three kinds of salt occupy disjoint ranges", () => {
+  // Sequences start at zero and zero is the sentinel, so `saltFrom(BigInt(seq))` for a chainless
+  // harness's first message produced exactly `NO_CHAIN`. Offsetting by one separates them, and the
+  // commitment floor separates both from a real hash.
+  assert.equal(NO_CHAIN, 0n);
+  assert.equal(saltForSequence(0), 1n);
+  assert.notEqual(saltForSequence(0), NO_CHAIN);
+  for (const seq of [0, 1, 99, 100_000]) {
+    assert.ok(saltForSequence(seq) > NO_CHAIN);
+    assert.ok(!isCommitment(saltForSequence(seq)),
+      `a sequence salt for ${seq} could be mistaken for a commitment`);
+  }
+  assert.ok(isCommitment(1n << 200n));
+  assert.ok(!isCommitment(0n));
+  assert.throws(() => saltForSequence(-1), /non-negative/);
 });

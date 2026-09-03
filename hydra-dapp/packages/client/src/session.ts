@@ -30,7 +30,7 @@ import { noteCalldata } from "../../channel/src/note.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import { scheduleUpload, assertSafeSchedule } from "../../channel/src/schedule.ts";
 import type { ScheduleConfig } from "../../channel/src/schedule.ts";
-import { coverPlan, coverIndex, COVER_RATE, saltFrom } from "../../channel/src/cover.ts";
+import { coverPlan, coverIndex, COVER_RATE, saltFrom, saltForSequence } from "../../channel/src/cover.ts";
 import type { Decoy } from "../../channel/src/cover.ts";
 import { sealForChannel, wireBytes, uploadPathFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
@@ -209,7 +209,9 @@ export function cover(
     return {
       ...d,
       index: d.index % rate,
-      salt: saltFrom(message.commitment ?? BigInt(message.seq)),
+      salt: message.commitment === undefined
+        ? saltForSequence(message.seq)
+        : saltFrom(message.commitment),
     };
   });
 }
