@@ -205,14 +205,133 @@ test("THE WINDOW IS THE WHOLE ANSWER, and --block-ms silently sets it", () => {
   }
   console.log(`\n    blockMs  window  crowd            operator\n${rows.join("\n")}\n`);
 
-  // The default has to be materially better than the chain's own block interval, or the flag is
-  // not a footgun and `MIN_JITTER_MS` is unnecessary.
-  assert.ok(at[30_000].accuracy < at[2000].accuracy / 2,
+  // ASSERT THE SHAPE, NOT THE SIZE, and this test learned that the hard way. Across three runs
+  // the crowd at the 240s default measured 12.6, 5.5 and 3.6 — the accuracy it buys ranged from
+  // 0.076 to 0.257, so a gap of "at least six-fold" held on a busy afternoon and failed on a
+  // quiet one. Pinning the ratio produced a red test that said nothing was wrong.
+  //
+  // What is structural is that widening the window never hurts and eventually helps a lot. A
+  // narrow window is pinned at a crowd of one on every run — the single account that publishes
+  // in most blocks — so the operator is right half the time no matter when you look.
+  const curve = [2000, 5000, 10_000, 30_000, 60_000].map((b) => at[b].accuracy);
+  for (let i = 1; i < curve.length; i++) {
+    assert.ok(curve[i] <= curve[i - 1] + 1e-9,
+      `accuracy rose from ${curve[i - 1].toFixed(3)} to ${curve[i].toFixed(3)} as the window `
+      + "widened — the curve in schedule.ts is stale");
+  }
+  assert.ok(at[30_000].accuracy < at[2000].accuracy * 0.75,
     `a 240s window scores ${at[30_000].accuracy.toFixed(3)} against a 16s window's `
-    + `${at[2000].accuracy.toFixed(3)} — the six-fold gap MIN_JITTER_MS exists for has closed`);
-  // And wider still keeps paying, which is why the floor is a floor and not a target.
+    + `${at[2000].accuracy.toFixed(3)} — if the default buys nothing, MIN_JITTER_MS is arbitrary`);
   assert.ok(at[60_000].accuracy < at[30_000].accuracy,
     "a wider window stopped helping; the curve in schedule.ts is stale");
+  // The narrow end is the claim that has held on every run: one account, half the time.
+  assert.ok(at[2000].crowd < 2, `a 16s window gave a crowd of ${at[2000].crowd.toFixed(2)}`);
+});
+
+/**
+ * How regular an account's transactions are: the coefficient of variation of its inter-transaction
+ * gaps. A metronome scores 0; a Poisson process scores 1. It is the cheapest automation signal an
+ * operator has, and it needs nothing but the public chain.
+ */
+const regularity = (times) => {
+  if (times.length < 4) return Infinity;
+  const gaps = times.slice(1).map((t, i) => t - times[i]).filter((g) => g > 0);
+  if (gaps.length < 3) return Infinity;
+  const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  if (mean === 0) return 0;
+  const v = gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length;
+  return Math.sqrt(v) / mean;
+};
+
+test("THE CROWD UNDER AN OPERATOR WHO DISCOUNTS BOTS — 0029's open precondition", () => {
+  // 0029's open precondition, and the answer is regime-dependent in a way that settles the design
+  // question rather than complicating it.
+  //
+  // Four runs over different mainnet ranges. On a BUSY range the crowd survives discounting almost
+  // intact — covering a twelve-minute conversation needs an account to have published in each of
+  // six four-minute windows, which does not take a bot, and most crowd members appear in well
+  // under 5% of blocks:
+  //
+  //     no discounting 12.64   drop busiest 11.64   drop cv<0.3 12.44   drop cv<1.0 2.69
+  //
+  // On a QUIET range the same rules take it to nothing at all:
+  //
+  //     no discounting  2.00   drop busiest  1.20   drop cv<0.3  2.00   drop cv<1.0 0.00
+  //
+  // A pruned crowd of zero means the operator is right EVERY time. So the honest number is
+  // frequently zero, and `0029`'s interface is a warning light rather than a reassurance meter.
+  // That is the useful outcome: "show the pruned crowd" is the rule, pruning only ever shrinks it,
+  // so the pruned figure is a lower bound and a user is never told they are safer than they are.
+  //
+  // WHAT IS NOT ASSERTED HERE, because it varies by regime and a version of this test that pinned
+  // it went red on a quiet afternoon while nothing was wrong: how MUCH discounting costs. Only the
+  // direction is structural.
+  const accounts = byAccount();
+  const W = (30_000 * MIN_JITTER_BLOCKS) / 1000;
+  const T0 = blocks[0].t, T1 = blocks[blocks.length - 1].t;
+  const span = MESSAGES * GAP;
+
+  const crowdOver = (keep) => {
+    const rnd = prng(4242);
+    const vals = [];
+    for (let t = T0; t + span <= T1; t += 30) vals.push(crowdFor(uploadsAt(t, W, rnd), W, keep));
+    // A zero-sample mean is NaN, and NaN compares false against every bound below — so the
+    // assertions would pass by being unfalsifiable rather than by being true. Refuse instead.
+    assert.ok(vals.length > 0,
+      `${blocks.length} blocks is under ${span}s of chain for one conversation — raise HYDRA_BLOCKS`);
+    return {
+      crowd: vals.reduce((a, b) => a + b, 0) / vals.length,
+      // Per conversation, never `1/(1+mean)` — see `chain-busyness.test.ts`.
+      accuracy: vals.reduce((a, c) => a + 1 / (1 + c), 0) / vals.length,
+      kept: keep.size,
+    };
+  };
+  const without = (drop) => {
+    const m = new Map();
+    for (const [a, t] of accounts) if (!drop(a, t)) m.set(a, t);
+    return m;
+  };
+  const ranked = [...accounts].sort((a, b) => b[1].length - a[1].length).map(([a]) => a);
+  const top50 = new Set(ranked.slice(0, 50));
+
+  const none = crowdOver(accounts);
+  const topOne = crowdOver(without((a) => a === ranked[0]));
+  const metronomic = crowdOver(without((_, t) => regularity(t) < 0.3));
+  const topFifty = crowdOver(without((a) => top50.has(a)));
+  const poissonish = crowdOver(without((_, t) => regularity(t) < 1.0));
+
+  const row = (n, r) => `    ${n.padEnd(32)} crowd ${r.crowd.toFixed(2).padStart(6)}   right `
+    + `${r.accuracy.toFixed(3)}   (kept ${r.kept}/${accounts.size})`;
+  console.log(`\n${[
+    row("no discounting", none),
+    row("drop the single busiest", topOne),
+    row("drop metronomic (cv < 0.3)", metronomic),
+    row("drop the 50 busiest", topFifty),
+    row("drop anything cv < 1.0", poissonish),
+  ].join("\n")}\n`);
+
+  // MONOTONE IN AGGRESSIVENESS. This is the whole load-bearing claim: pruning can only shrink the
+  // crowd, so the pruned figure is a lower bound on the real one and a client that shows it can
+  // never tell a user they are safer than they are.
+  for (const [name, r] of [["drop busiest", topOne], ["drop 50", topFifty],
+    ["cv<0.3", metronomic], ["cv<1.0", poissonish]]) {
+    assert.ok(r.crowd <= none.crowd + 1e-9,
+      `${name} produced a LARGER crowd (${r.crowd.toFixed(2)}) than no discounting at all `
+      + `(${none.crowd.toFixed(2)}) — then pruning is not a lower bound and 0029's rule collapses`);
+    assert.ok(r.accuracy >= none.accuracy - 1e-9,
+      `${name} made the operator WORSE (${r.accuracy.toFixed(3)} against ${none.accuracy.toFixed(3)}) `
+      + "— discounting candidates cannot help the person being hidden among them");
+  }
+  // Nested rules nest: dropping fifty accounts cannot leave more than dropping one of them.
+  assert.ok(topFifty.crowd <= topOne.crowd + 1e-9,
+    `dropping 50 left ${topFifty.crowd.toFixed(2)} and dropping 1 left ${topOne.crowd.toFixed(2)}`);
+
+  // And the consequence the interface has to be built for: a pruned crowd of zero is a normal
+  // outcome, not an error. On the quiet range above every aggressive rule reached it.
+  if (poissonish.crowd === 0) {
+    console.log("    NOTE: on this range the pruned crowd is ZERO — the operator is right every "
+      + "time, and that is the number a user would be shown.\n");
+  }
 });
 
 test("the floor refuses exactly the configurations that measured badly", () => {
