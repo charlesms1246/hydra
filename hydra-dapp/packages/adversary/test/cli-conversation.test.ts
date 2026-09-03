@@ -16,6 +16,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 import {
   init, publishBundle, open, accept, sendMessage, flush, readChannel, fingerprint,
@@ -263,4 +268,26 @@ test("the seed is fresh every time, so two clients are two people", () => {
   const seeds = new Set(Array.from({ length: 16 }, () => init({ invites: [] }).seedHex));
   assert.equal(seeds.size, 16);
   assert.equal(seeds.values().next().value!.length, 64);
+});
+
+test("PUBLISH SAYS THE ACCOUNT KEY IS WHAT CONTESTS A REMOVAL, before it acts", () => {
+  // Standing rule 7: publishing is an act, so what the act commits you to belongs in it.
+  //
+  // The appeal path proves authorship by signing with the account that published — the only
+  // identity this system has. And the anonymity design pushes the other way: the value-free route
+  // works once per account, and the shape it encourages is publish-once-and-never-return. So THE
+  // MORE CORRECTLY SOMEBODY FOLLOWS THE ANONYMITY DESIGN, THE LESS ABLE THEY ARE TO APPEAL, and
+  // the people with a durable reusable account are the ones with least to fear.
+  //
+  // That trade is defensible. It is not defensible to let somebody make it without being told.
+  const src = readFileSync(join(HERE, "..", "..", "cli", "src", "cli.ts"), "utf8");
+  const block = src.slice(src.indexOf('case "send":'), src.indexOf('case "read":'));
+  assert.match(block, /KEEP THE ACCOUNT KEY/,
+    "publish does not say the key is what proves authorship later");
+  assert.match(block, /appeal/i, "publish does not mention appealing a takedown");
+  assert.match(block, /permanent|forecloses/,
+    "publish does not say that discarding it cannot be undone");
+  // And it is on the SIGNED path, where authorship is the point — not on the deniable one, where
+  // there is nothing to prove and the warning would be noise.
+  assert.match(block, /if \(signed\) \{/);
 });

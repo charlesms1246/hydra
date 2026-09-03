@@ -237,7 +237,21 @@ switch (command) {
       : "DENIABLE. the only thing authenticating this is a key you and they both hold, so either\n"
         + "of you could have written it and neither can prove which. use `publish` if you need\n"
         + "the other thing.");
-    console.log("");
+    if (signed) {
+      // STANDING RULE 7: publishing is an act, so what the act commits you to belongs in it.
+      //
+      // The appeal path (`decisions/0035` §5) proves authorship by signing with the account that
+      // published. That instrument is the only identity in this system — and the anonymity design
+      // pushes the other way: the value-free route works once per account, and the shape it
+      // encourages is publish-once-and-never-return. So the more correctly someone follows it, the
+      // less able they are to contest a removal later. That trade cannot be made by somebody who
+      // was never told about it.
+      console.log("KEEP THE ACCOUNT KEY IF YOU MIGHT EVER NEED TO CONTEST THIS. Signing with the");
+      console.log("account that just published is the only way to prove you wrote this or to");
+      console.log("appeal a takedown. Discarding it is a reasonable choice — it is one less thing");
+      console.log("linking you to this — but it is permanent, and it forecloses both.");
+      console.log("");
+    }
     // The crowd, on the page that performs the act — the same rule the disclosure text above
     // follows. `decisions/0029`: it is a cost, in the past tense, and it only goes down.
     for (const line of describe(linkabilityOf(state, name))) console.log(line);

@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { Reports, summarise, BODIES_KEPT } from "../../vault-server/src/reports.ts";
+import { Reports, summarise, BODIES_KEPT } from "../../moderation/src/reports.ts";
 
 const GENUINE = "this is my leaked medical record";
 const FLOOD = "i do not like this";
