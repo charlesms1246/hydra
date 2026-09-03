@@ -504,7 +504,15 @@ export async function sendMessage(
   // The crowd, narrowed by what this message just did. Last, because it is the only step here
   // that can fail for a reason that should not lose a message: the chain read is best-effort and
   // a failure leaves the previous answer alone rather than replacing it with a wrong one.
-  await narrowCrowd(state, chain, name, entry, [outgoing.uploadAt, ...decoys.map((d) => d.at)]);
+  //
+  // THE TIMES OBJECTS WILL ACTUALLY GO UP AT, taken off the queue rather than off the plan. The
+  // plan schedules half of a message's decoys BEFORE its chain event — `coverPlan`'s lead — and
+  // no client can execute that, so `state.pending` holds redrawn times for those. Handing the
+  // plan's times here computes a crowd against moments at which nothing is ever uploaded, and
+  // the answer is wrong in the direction that looks fine: fewer accounts cover, so the crowd
+  // comes out smaller than it is.
+  const mine = state.pending.filter((p) => p.channel === name).slice(-(decoys.length + 1));
+  await narrowCrowd(state, chain, name, entry, mine.map((p) => p.uploadAt));
   return { txHash, uploadAt: outgoing.uploadAt, decoys: decoys.length };
 }
 
@@ -525,25 +533,24 @@ export async function sendMessage(
 async function narrowCrowd(
   state: State, chain: Chain, name: string, entry: ChannelState, uploads: readonly number[],
 ): Promise<void> {
-  if (!chain.senders) return;
+  if (!chain.publishers) return;
   try {
     const window = jitterWindowMs({ blockMs: state.blockMs });
     const events = await chain.events();
-    // The whole window, never a chosen subset — `node.txLookup` says so and `node.wantedEvent`
-    // depends on it. A client resolving only the transactions it found interesting would be
-    // telling the node which ones those were.
-    const recent = events.filter((e) => e.txHash !== undefined);
-    if (recent.length === 0) return;
-    const senders = await chain.senders(recent.map((e) => e.txHash!));
-    if (senders.size === 0) return;
+    const blocks = events.map((e) => e.blockNumber).filter((n): n is number => n !== undefined);
+    if (blocks.length === 0) return;
+    // THE WHOLE RANGE THE WINDOW TOUCHES, never a chosen subset — `node.blockScan` says so and
+    // `node.wantedEvent` depends on it. A client scanning only the blocks it found interesting
+    // would be telling the node which ones those were.
+    const found = await chain.publishers(Math.min(...blocks), Math.max(...blocks));
+    if (found.length === 0) return;
     const times = new Map<string, number[]>();
-    for (const [i, e] of recent.entries()) {
-      const who = e.txHash === undefined ? undefined : senders.get(e.txHash);
-      if (!who) continue;
-      // Block numbers are the clock the chain actually has; the index stands in where a devnet
-      // has none. Either way it is the same clock the uploads are measured against below.
-      const at = (e.blockNumber ?? i) * state.blockMs;
-      (times.get(who) ?? times.set(who, []).get(who)!).push(at);
+    // `atMs` is the BLOCK'S OWN TIMESTAMP, in the same units as `uploads`. It used to be
+    // `blockNumber * blockMs`, which is a different quantity entirely — about 4.2e11 against
+    // uploads at 1.8e12 — so nothing ever overlapped and the crowd was always zero. Zero is the
+    // alarming direction, so it read as the honest common case rather than as a bug.
+    for (const { account, atMs } of found) {
+      (times.get(account) ?? times.set(account, []).get(account)!).push(atMs);
     }
     const publishers = [...times].map(([account, t]) => ({ account, times: t }));
     const covering = prune(publishers)

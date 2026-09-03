@@ -56,7 +56,7 @@ const read = async () => {
   // And the sender lookup, because `node.txLookup` is only producible when a client actually
   // asks who published. `decisions/0029`'s crowd needs it; the row exists because the node sees
   // it happen.
-  await chain.senders!(["0xdeadbeef"]);
+  await chain.publishers!(1, 1);
   return { seen, events };
 };
 
@@ -74,7 +74,7 @@ function observedKeys(seen: readonly Seen[]): string[] {
       const f = r.params.filter;
       if (f.address) keys.add("node.readRange");
     }
-    if (r.method === "starknet_getTransactionByHash") keys.add("node.txLookup");
+    if (r.method === "starknet_getBlockWithTxs") keys.add("node.blockScan");
   }
   // Asserted from the code path rather than captured — see the header.
   const chainSrc = readFileSync(
@@ -131,9 +131,9 @@ test("the read names a contract and a block, and nothing about what was wanted",
   // `node.wantedEvent` true is that it covers the window rather than a selection out of it — a
   // client that resolved only the transactions it found interesting would be telling the node
   // which ones those were.
-  const lookups = seen.filter((r) => r.method === "starknet_getTransactionByHash");
-  assert.equal(lookups.length, 1);
-  assert.ok(Array.isArray(lookups[0].params), "a tx lookup takes a positional hash");
+  const scans = seen.filter((r) => r.method === "starknet_getBlockWithTxs");
+  assert.equal(scans.length, 1);
+  assert.ok(Array.isArray(scans[0].params), "a block scan takes a positional block id");
 });
 
 test("nothing the node is sent carries a message or names a conversation", async () => {
@@ -192,7 +192,7 @@ function fixedChain(): { asked: { method: string; params: any }[]; fetchImpl: ty
     asked.push({ method: body.method, params: body.params });
     const result = body.method === "starknet_getEvents"
       ? { events }
-      : { sender_address: "0xbb" };
+      : { timestamp: 1_700_000_000, transactions: [{ sender_address: "0xbb" }] };
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }),
       { headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
@@ -207,12 +207,13 @@ async function questionsFor(seed: number): Promise<{ method: string; params: any
     accountsFile: "/dev/null", account: "a", network: "sepolia",
   }, fetchImpl);
   const events = await chain.events();
-  await chain.senders!(events.map((e) => e.txHash!));
+  const blocks = events.map((e) => e.blockNumber!);
+  await chain.publishers!(Math.min(...blocks), Math.max(...blocks));
   void seed;
   return asked;
 }
 
-test("NODE.TXLOOKUP DOES NOT DEPEND ON THE SECRET — two worlds, one capture", async () => {
+test("NODE.BLOCKSCAN DOES NOT DEPEND ON THE SECRET — two worlds, one capture", async () => {
   // The row claims the sender lookup covers the WHOLE window rather than a chosen subset, and
   // that is what keeps `node.wantedEvent` — a guarantee in a DIFFERENT table — true. Asserting
   // "the lookup set equals the window" would need the test to know the window, which is a test
@@ -252,11 +253,12 @@ test("and the questions are exactly what any chain reader would predict", async 
   // Nothing else in the suite noticed, because `memoryChain` has no transactions at all.
   const asked = await questionsFor(1);
   const reads = asked.filter((r) => r.method === "starknet_getEvents");
-  const lookups = asked.filter((r) => r.method === "starknet_getTransactionByHash");
+  const scans = asked.filter((r) => r.method === "starknet_getBlockWithTxs");
   assert.equal(reads.length, 1, "the event log was read more than once for one crowd figure");
 
-  // Every event in the window, once each, in the order the chain gave them.
-  const expected = Array.from({ length: 6 }, (_, i) => `0x${(0xaa00 + i).toString(16)}`);
-  assert.deepEqual(lookups.map((r) => r.params[0]), expected,
-    "the sender lookups are not one-per-event-in-order over the window");
+  // Every block in the window, once each, in ascending order — a RANGE, which is the property
+  // `node.blockScan` claims and the thing a selection could not satisfy.
+  const expected = Array.from({ length: 6 }, (_, i) => 1000 + i);
+  assert.deepEqual(scans.map((r) => r.params[0].block_number), expected,
+    "the block scan is not a contiguous ascending range over the window");
 });

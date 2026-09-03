@@ -36,14 +36,24 @@ export type Chain = {
     readonly txHash?: string;
   }[]>;
   /**
-   * Who published, for a set of transaction hashes.
+   * Who published in a block range, and WHEN in wall-clock terms.
    *
-   * SEPARATE FROM `events`, because it costs a request per transaction and most callers do not
-   * want it. A sender is not in an event record — it is on the transaction — so this is a
-   * `starknet_getTransactionByHash` per hash, or nothing at all on a chain that has no
-   * transactions. Settled history does not change, so a caller may cache the answers forever.
+   * A BLOCK SCAN RATHER THAN A LOOKUP PER TRANSACTION, and the timestamp is the reason. This was
+   * `senders(txHashes)` doing one `getTransactionByHash` each, which answers "who" and not
+   * "when" — so the caller reconstructed a time as `blockNumber * blockMs`. On Sepolia that is
+   * about 4.2e11 against uploads at 1.8e12: not a different precision, a different quantity.
+   * Nothing could ever overlap, the crowd was always zero, and zero is the alarming direction, so
+   * it read as the honest common case.
+   *
+   * `starknet_getBlockWithTxs` returns the block's `timestamp` AND every transaction's
+   * `sender_address`, so one call per block answers both and costs fewer requests than one per
+   * transaction. It is also window-wide by construction — a range cannot be a chosen subset —
+   * which is what `node.blockScan` on the disclosure table rests on.
+   *
+   * Optional because a chain with no blocks cannot answer. Settled history does not change, so a
+   * caller may cache the answers forever.
    */
-  senders?(txHashes: readonly string[]): Promise<Map<string, string>>;
+  publishers?(fromBlock: number, toBlock: number): Promise<{ account: string; atMs: number }[]>;
 };
 
 export type ChainConfig = {
@@ -125,19 +135,23 @@ export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): 
     },
 
     /**
-     * One `starknet_getTransactionByHash` per hash, deduplicated.
+     * One `starknet_getBlockWithTxs` per block in the range, in order.
      *
-     * Not batched, because JSON-RPC batching is optional and a node that ignores it answers with
-     * something this code would have to guess at. A hash whose transaction has no
-     * `sender_address` — an L1 handler, a deploy — is left out of the map rather than given a
-     * zero, so a caller counting accounts does not count one that does not exist.
+     * A transaction with no `sender_address` — an L1 handler, a deploy — is left out rather than
+     * given a zero, so a caller counting accounts does not count one that does not exist. A block
+     * that will not load is skipped rather than throwing: a partial answer narrows the crowd,
+     * which is the safe direction, and a thrown one would lose the message being sent.
      */
-    async senders(txHashes) {
-      const out = new Map<string, string>();
-      for (const hash of new Set(txHashes)) {
-        const tx = await rpc(config.rpcUrl, "starknet_getTransactionByHash", [hash], fetchImpl)
-          .catch(() => null) as { sender_address?: string } | null;
-        if (tx?.sender_address) out.set(hash, tx.sender_address);
+    async publishers(fromBlock, toBlock) {
+      const out: { account: string; atMs: number }[] = [];
+      for (let n = fromBlock; n <= toBlock; n++) {
+        const block = await rpc(config.rpcUrl, "starknet_getBlockWithTxs",
+          [{ block_number: n }], fetchImpl).catch(() => null) as
+          { timestamp?: number; transactions?: { sender_address?: string }[] } | null;
+        if (!block?.timestamp || !block.transactions) continue;
+        for (const tx of block.transactions) {
+          if (tx.sender_address) out.push({ account: tx.sender_address, atMs: block.timestamp * 1000 });
+        }
       }
       return out;
     },
@@ -205,8 +219,24 @@ export function poolChain(
 }
 
 /** For tests, and for anyone who wants to see what the client does before it costs gas. */
-export function memoryChain(): Chain & { readonly published: [bigint, bigint][] } {
+/**
+ * A chain in memory, for tests.
+ *
+ * `crowd` IS THE POINT OF THE OPTION, and its absence is equally the point. Without it there is
+ * no `publishers`, so `narrowCrowd` cannot run and the client renders "not measured" — the state
+ * every hermetic test was in, and the state that hid a feature computing nothing for two separate
+ * reasons. With it a real crowd exists and the chain-backed path is exercised.
+ *
+ * Both are needed. "Not measured" is a real rendering with its own copy, and a fixture that only
+ * ever produced a number would stop testing it — which is how the last one went wrong.
+ */
+export function memoryChain(opts: {
+  /** Other accounts publishing, in wall-clock ms, so a crowd can exist. */
+  readonly crowd?: readonly { readonly account: string; readonly at: readonly number[] }[];
+} = {}): Chain & { readonly published: [bigint, bigint][] } {
   const published: [bigint, bigint][] = [];
+  const others = (opts.crowd ?? [])
+    .flatMap((p) => p.at.map((atMs) => ({ account: p.account, atMs })));
   return {
     published,
     async publish(calldata) {
@@ -214,8 +244,14 @@ export function memoryChain(): Chain & { readonly published: [bigint, bigint][] 
       return `0x${published.length.toString(16).padStart(64, "0")}`;
     },
     async events() {
-      return published.map((data) => ({ data }));
+      // Block numbers only when there is a crowd to place against them. A chain with neither is
+      // the plain memory chain this started as, and its events carry exactly what they carried.
+      return published.map((data, i) => opts.crowd
+        ? { data, blockNumber: i, txHash: `0x${i.toString(16)}` }
+        : { data });
     },
+    // Present only when a crowd was configured, so the unmeasured path stays reachable.
+    ...(opts.crowd ? { publishers: async () => others.map((o) => ({ ...o })) } : {}),
   };
 }
 

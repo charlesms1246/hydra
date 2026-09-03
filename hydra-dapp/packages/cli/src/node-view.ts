@@ -54,9 +54,9 @@ export const NODE_OBSERVABLE: readonly NodeObservation[] = [
     why: "THE ROW `decisions/0029` NEEDS BEFORE ANY OF IT SHIPS. Reading the chain to tell a user how linkable sending would be means a read, then a send, from one address, seconds apart. That join is not on any other table: the vault never sees it, and `linkage.ts` scopes the submitting endpoint out. Reading on a schedule rather than on demand removes it and a warm cache removes the read entirely; neither is free, and neither is done yet",
   },
   {
-    id: "node.txLookup",
-    what: "which transactions a client resolved the sender of, and therefore that it is doing sender analysis at all",
-    why: "a sender is not in an event record — it is on the transaction — so telling a user how linkable sending is right now (`decisions/0029`) costs one `starknet_getTransactionByHash` per event in the window. The node learns the window and learns that this client cares who published, which the event read alone did not say. IT IS RESOLVED FOR THE WHOLE WINDOW AND NOT FOR A CHOSEN SUBSET, and that is what keeps `node.wantedEvent` true: an implementation that looked up only the transactions it found interesting would tell the node which ones those were. Settled history does not change, so the answers are cached and a window is paid for once",
+    id: "node.blockScan",
+    what: "which range of blocks a client read in full, and therefore that it is working out who published and when",
+    why: "neither a sender nor a timestamp is in an event record — the sender is on the transaction and the time is on the block — so telling a user how linkable sending is right now (`decisions/0029`) costs one `starknet_getBlockWithTxs` per block in the window. The node learns the range and learns that this client cares who else was publishing, which the event read alone did not say. IT IS A RANGE AND NOT A SELECTION, which is what keeps `node.wantedEvent` true: a client scanning only the blocks it found interesting would tell the node which ones those were, and a range cannot be a chosen subset. This replaced a per-transaction lookup that answered `who` and not `when`, which is why it is a range at all. Settled history does not change, so the answers are cached and a window is paid for once",
   },
   {
     id: "node.submission",

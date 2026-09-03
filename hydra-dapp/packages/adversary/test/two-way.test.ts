@@ -34,6 +34,7 @@ import assert from "node:assert/strict";
 import { init, open, accept, publishBundle, sendMessage, flush, readChannel, foreignSends, SKIPPED_KEEP, linkabilityOf }
   from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
+import { describe } from "../../channel/src/crowd.ts";
 import { Vault } from "../../vault-server/src/server.ts";
 import { serve } from "../../vault-server/src/http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
@@ -331,4 +332,86 @@ test("a junk commitment on the chain cannot stop a reader, only itself", async (
     assert.deepEqual(read.filter((m) => !m.mine).map((m) => m.text), ["before", "after"],
       "a junk commitment on the chain stopped the reader");
   } finally { server.close(); }
+});
+
+/**
+ * A chain with a crowd on it, so the crowd path is actually exercised.
+ *
+ * WHY THIS FIXTURE EXISTS. `memoryChain()` has no `publishers`, so `narrowCrowd` returns early and
+ * every hermetic test in this repo saw "not measured". That is a real rendering, so nothing looked
+ * wrong — and behind it the feature was broken twice over: `events()` dropped `transaction_hash`,
+ * and the clock was `blockNumber * blockMs` against wall-clock uploads, which is a different
+ * quantity rather than a different precision. Both rendered as the honest idle state.
+ *
+ * `at` is in wall-clock ms, matching `uploadAt`. `spread` makes the gaps irregular so the account
+ * survives `prune`'s regularity rule — a metronome is discounted, which is the point of the rule.
+ */
+const publishingAt = (account: string, from: number, gaps: readonly number[]) => {
+  const at: number[] = [];
+  let t = from;
+  for (const g of gaps) { at.push(t); t += g; }
+  return { account, at };
+};
+const spread = [1_000, 97_000, 3_000, 211_000, 7_000, 43_000, 2_000, 150_000];
+
+test("THE CROWD IS NONZERO when other accounts covered every upload", async () => {
+  // The branch no hermetic test could reach before. Two accounts publish across the whole span,
+  // irregularly enough to survive pruning, so both cover every object this client uploads.
+  const { alice, server } = await pair();
+  try {
+    const T = T0;
+    const chain = memoryChain({ crowd: [
+      publishingAt("0xaaa", T - 60_000, spread),
+      publishingAt("0xbbb", T - 90_000, spread),
+    ] });
+    await sendMessage(alice, chain, "bob", "ephemeral", "hello", T);
+    const l = linkabilityOf(alice, "bob");
+    assert.equal(l.known, true, "a chain that can name publishers still reported not measured");
+    assert.equal(l.crowd, 2, `the crowd is ${l.crowd}; the covering accounts were not counted`);
+    assert.equal(l.identified, 1 / 3);
+  } finally { server.close(); }
+});
+
+test("THE CROWD IS ZERO when nobody else was publishing, and that is the modal case", async () => {
+  // The case `decisions/0029` says is usual — 1405 of 1839 — and the one the copy is written for.
+  // The chain can answer; the answer is that nobody covers.
+  const { alice, server } = await pair();
+  try {
+    const chain = memoryChain({ crowd: [
+      // Publishing, but hours away from anything this client uploads.
+      publishingAt("0xccc", T0 - 40 * 60 * 60 * 1000, spread),
+    ] });
+    await sendMessage(alice, chain, "bob", "ephemeral", "hello", T0);
+    const l = linkabilityOf(alice, "bob");
+    assert.equal(l.known, true, "a measured zero was reported as not measured");
+    assert.equal(l.crowd, 0);
+    assert.equal(l.identified, 1, "a crowd of zero is not an operator right every time");
+  } finally { server.close(); }
+});
+
+test("and NOT MEASURED is still reachable, deliberately rather than by accident", async () => {
+  // The state the whole suite was silently in. It stays reachable and stays distinct: a chain
+  // with no `publishers` cannot answer, and cannot-answer is not the same claim as measured-zero.
+  const { alice, chain, server } = await pair();
+  try {
+    await sendMessage(alice, chain, "bob", "ephemeral", "hello", T0);
+    assert.equal(alice.channels.bob.crowd, undefined);
+    assert.equal(linkabilityOf(alice, "bob").known, false);
+  } finally { server.close(); }
+});
+
+test("the three renderings are distinguishable, which is the property that failed", async () => {
+  // Zero and not-measured both mean "no number to show" and mean opposite things about safety.
+  // They collapsed into one rendering for the whole life of this feature, and no test could tell.
+  const zero = describe({ known: true, crowd: 0 });
+  const some = describe({ known: true, crowd: 2 });
+  const unknown = describe({ known: false, crowd: 0 });
+  const texts = [zero, some, unknown].map((l) => l.join(" "));
+  assert.equal(new Set(texts).size, 3, "two of the three renderings are the same words");
+  // And not merely different strings — each says the thing that distinguishes it.
+  assert.match(texts[0], /every time/);
+  assert.match(texts[1], /out of 3/);
+  assert.match(texts[2], /not measured/);
+  assert.ok(!texts[2].includes("every time"),
+    "the unmeasured copy claims what only the measured-zero copy may claim");
 });
