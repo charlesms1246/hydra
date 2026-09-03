@@ -20,7 +20,7 @@
  * answer by inertia.
  */
 
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { Reports, summarise, type Snapshot, type Decision, type Review }
@@ -31,12 +31,47 @@ export type { Decision, Review, Period };
 export { summarise, transparencyReport };
 
 /**
+ * Fold a spool of filed reports into the queue.
+ *
+ * The spool is append-only and written by the public intake endpoint; the queue is written only
+ * here. That split is what makes two writers safe — see `intake.ts`.
+ *
+ * A MALFORMED LINE IS SKIPPED AND COUNTED, not fatal. The spool is written by a public endpoint,
+ * so a truncated final line is what a crash mid-append looks like; refusing the whole file would
+ * let one bad line discard every real report behind it. The count is returned rather than swallowed
+ * so the operator sees that it happened.
+ */
+export function ingest(spoolPath: string, q: Reports): { filed: number; skipped: number } {
+  if (!existsSync(spoolPath)) return { filed: 0, skipped: 0 };
+  let filed = 0;
+  let skipped = 0;
+  for (const line of readFileSync(spoolPath, "utf8").split("\n")) {
+    if (line.trim() === "") continue;
+    try {
+      const { blobId, body, at } = JSON.parse(line) as Record<string, unknown>;
+      if (typeof blobId !== "string" || typeof body !== "string" || typeof at !== "number") {
+        skipped++;
+        continue;
+      }
+      q.file(blobId, body, at);
+      filed++;
+    } catch { skipped++; }
+  }
+  return { filed, skipped };
+}
+
+/**
  * Load the queue, or start an empty one.
  *
  * A missing file is an empty queue and not an error: the first `decide` a new operator runs should
  * not require them to have created a file first. A CORRUPT file is an error, loudly, because the
  * alternative is starting empty and silently discarding a queue of real reports.
  */
+/** Empty the spool once its contents are safely in the queue file. Never before. */
+export function clearSpool(path: string): void {
+  rmSync(path, { force: true });
+}
+
 export function load(path: string): Reports {
   if (!existsSync(path)) return new Reports();
   let parsed: Snapshot;

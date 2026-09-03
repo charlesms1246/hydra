@@ -106,8 +106,12 @@ test("THE APPEAL IS DETACHED, so proving authorship need not disclose a network 
 test("the moderation table names every surface moderation actually has", () => {
   // A third table, because the vault cannot produce these rows and documenting them on its table
   // would be the over-claiming failure `operator-view.test.ts` exists to catch.
+  // `report.connection` was added when intake was BUILT, and this guard is what noticed the
+  // difference. `report.filed` says a reporter identity is "deliberately absent" — true of the
+  // record and not of the socket, and a table describing what is KEPT rather than what is SEEN
+  // under-claims, which is the dangerous direction.
   assert.deepEqual([...MODERATION_OBSERVABLE_IDS].sort(),
-    ["appeal.filed", "decision.recorded", "report.filed", "report.published"]);
+    ["appeal.filed", "decision.recorded", "report.connection", "report.filed", "report.published"]);
   for (const o of MODERATION_OBSERVABLE) {
     assert.ok(o.what.length > 20, `${o.id} has no description`);
     assert.ok(o.why.length > 60, `${o.id} has no reason`);
@@ -121,4 +125,11 @@ test("the moderation table names every surface moderation actually has", () => {
   for (const field of ["blob id", "outcome", "category", "date"]) {
     assert.ok(row.what.toLowerCase().includes(field), `the row does not mention ${field}`);
   }
+  // And the connection row says the two things that make it honest: what is visible, and that
+  // relaying is a real but PARTIAL mitigation — a reporter who submits from their own connection
+  // still tells the operator they were the one who looked.
+  const conn = MODERATION_OBSERVABLE.find((o) => o.id === "report.connection")!;
+  assert.match(conn.what, /network address/);
+  assert.match(conn.why, /relayed/);
+  assert.match(conn.why, /cannot be mitigated/);
 });

@@ -28,7 +28,12 @@ export const MODERATION_OBSERVABLE: readonly ModerationObservation[] = [
   {
     id: "report.filed",
     what: "that some object was reported, when, and the text of up to a bounded number of distinct reports about it",
-    why: "a report has to reach a human to be acted on, so the operator reads it. What is deliberately absent is any identity for the reporter — there is none to record, because the service has no accounts and adding one to rate-limit reporting would be the first identity in the system. So the operator learns that an object was reported and cannot learn by how many people: a count of reports is not a count of people, and the review surface says so beside the number rather than elsewhere",
+    why: "a report has to reach a human to be acted on, so the operator reads it. What is deliberately absent from THE RECORD is any identity for the reporter — there is none to record, and see `report.connection` for what is nevertheless visible at the socket, because the service has no accounts and adding one to rate-limit reporting would be the first identity in the system. So the operator learns that an object was reported and cannot learn by how many people: a count of reports is not a count of people, and the review surface says so beside the number rather than elsewhere",
+  },
+  {
+    id: "report.connection",
+    what: "the network address, and any TLS metadata, of whoever submits a report — at the moment they submit it",
+    why: "a report has to arrive over something, and if the operator terminates that connection they hold an IP and a timestamp correlated to the object being reported. THIS ROW EXISTS BECAUSE THE ONE ABOVE WAS WRITTEN BEFORE INTAKE WAS BUILT and says an identity for the reporter is 'deliberately absent' — true of what is STORED and not of what is SEEN. A table that describes the record rather than the observer under-claims, which is the dangerous direction. The mitigation is real but partial: a report is unauthenticated bytes with no reply and no handle, so it can be relayed by anyone or sent over Tor and nothing about it binds to the sender — unlike an appeal, which must carry a signature. What cannot be mitigated is that a reporter who submits directly, from their own connection, tells the operator they were the one who looked. The same shape as `appeal.filed`, one surface over, and it is the reason the spool records only blob id, body and time: what the operator SEES at the socket must not become what the operator KEEPS",
   },
   {
     id: "decision.recorded",

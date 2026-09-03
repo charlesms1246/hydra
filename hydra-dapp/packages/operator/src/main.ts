@@ -17,6 +17,8 @@
  *     node packages/operator/src/main.ts decide  <id> removed|kept <category>
  *     node packages/operator/src/main.ts remove  <id> --vault URL --removal-token-file FILE
  *     node packages/operator/src/main.ts report  <YYYY-MM>
+ *     node packages/operator/src/main.ts intake  --port 8081 --spool ./reports.spool
+ *     node packages/operator/src/main.ts ingest
  *
  * `decide` and `remove` are SEPARATE STEPS on purpose. A decision is a record; a removal is an act
  * against a vault that may be unreachable, may refuse, or may be one of several. Collapsing them
@@ -25,7 +27,9 @@
  */
 
 import { removalAuthorityFromFile } from "../../vault-server/src/authority.ts";
-import { load, save, summarise, transparencyReport, type Period } from "./queue.ts";
+import { load, save, ingest, clearSpool, summarise, transparencyReport, type Period }
+  from "./queue.ts";
+import { serveIntake } from "./intake.ts";
 
 const args = process.argv.slice(2);
 const flag = (name: string, fallback = ""): string => {
@@ -37,6 +41,7 @@ const positional = args.filter((a, i) =>
 
 const [command, ...rest] = positional;
 const queuePath = flag("queue", "./moderation-queue.json");
+const spoolPath = flag("spool", "./reports.spool");
 const now = () => Date.now();
 
 /** The month a report covers, as a half-open range. `2026-09` means September, not 30 days. */
@@ -112,6 +117,34 @@ switch (command) {
     break;
   }
 
+  case "intake": {
+    // The public half, and the only part of this tool a stranger can reach. Run as its own
+    // process: it accepts reports and appends them, and it never reads or writes the queue.
+    const { url } = await serveIntake(spoolPath, Number(flag("port", "8081")),
+      flag("rate-limit") ? { rateLimit: { mode: flag("rate-limit") as "global" | "per-peer",
+        perMinute: Number(flag("per-minute", "600")) } } : {});
+    out(`report intake on ${url}`,
+      `spool     ${spoolPath}`,
+      `limiter   ${flag("rate-limit") || "global at 600/min (the default)"}`,
+      "reports   PUBLIC posts only; an encrypted object is refused with the reason, not dropped",
+      "",
+      "This process never touches the queue. Run `ingest` to fold what it collects into one.");
+    break;
+  }
+
+  case "ingest": {
+    const q = load(queuePath);
+    const { filed, skipped } = ingest(spoolPath, q);
+    // SAVE BEFORE CLEARING, always. The other order loses every report in the window between,
+    // and the reports lost are ones a reporter was told had been filed.
+    save(queuePath, q);
+    clearSpool(spoolPath);
+    out(`Filed ${filed} report${filed === 1 ? "" : "s"}.`
+      + (skipped ? ` Skipped ${skipped} unreadable line${skipped === 1 ? "" : "s"}.` : ""),
+      `${q.pending().length} review${q.pending().length === 1 ? "" : "s"} now waiting.`);
+    break;
+  }
+
   case "report": {
     const q = load(queuePath);
     const period = monthOf(rest[0] ?? "");
@@ -130,7 +163,10 @@ switch (command) {
       "  decide <blobId> removed|kept <category>",
       "  remove <blobId> --vault URL --removal-token-file FILE",
       "  report <YYYY-MM>               the transparency report for a month",
+      "  intake --port N                the public report endpoint (its own process)",
+      "  ingest                         fold filed reports into the queue",
       "",
-      `  --queue PATH                   where the queue lives (${queuePath})`);
+      `  --queue PATH                   where the queue lives (${queuePath})`,
+      `  --spool PATH                   where intake appends reports (${spoolPath})`);
     if (command) process.exitCode = 1;
 }
