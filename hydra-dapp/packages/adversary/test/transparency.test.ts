@@ -184,6 +184,32 @@ test("NO COMBINATION OF PUBLISHED FIGURES LANDS BELOW THE FLOOR", () => {
   assert.ok(out.figures.some((f) => f.label.includes("kept") && f.shown === `fewer than ${FLOOR}`));
 });
 
+test("BANDING THE REPORT VOLUME WOULD NOT RESCUE IT — the reason it stays unpublished", () => {
+  // Written because the proposal is a good one and was made: publish "reports received" on the
+  // same floor as the cells, and the residual becomes a range instead of a value. It does not,
+  // and the reason generalises past this case: `band` suppresses only what is BELOW the floor,
+  // so a figure large enough to be worth publishing is published EXACTLY and banding it is the
+  // identity function. This test is the arithmetic, so nobody has to re-run the experiment.
+  const cells = [7, 2, 6];            // the third is the suppressed one
+  const volume = cells.reduce((a, b) => a + b, 0);
+  assert.equal(band(volume), String(volume),
+    "band() now hides a figure above the floor, and this whole argument needs redoing");
+  assert.equal(volume - cells[0] - cells[2], cells[1],
+    "the residual no longer equals the suppressed cell — recheck the fixture");
+
+  // And the report does not publish it. Asserted on the FIGURES rather than the prose, because
+  // prose is not a mechanism.
+  const q = new Reports();
+  q.file("pub:0", "b", 0);
+  q.decide("pub:0", "removed", "impersonation", 0);
+  const out = report(q.decisions(), 99, ALL);
+  assert.ok(!out.figures.some((f) => /report/i.test(f.label)),
+    "the report volume is published as a figure again — it is differenceable against the cells");
+  // A coarser granularity is the thing that would work; it is a decision, not a default.
+  assert.ok(out.lines.some((l) => l.includes("below the floor")),
+    "the report no longer explains why the number a reader most wants is missing");
+});
+
 test("an empty period is published as empty, because a missing one is a signal", () => {
   // A report on a fixed schedule that slips, or a period silently skipped, says something — in the
   // same channel as a canary and with none of a canary's deliberateness. An empty report is data;

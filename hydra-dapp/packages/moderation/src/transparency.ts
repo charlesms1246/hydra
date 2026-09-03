@@ -118,9 +118,16 @@ export function report(
   // banded cell. An attacker cannot be sure whether they are reading the residual or the cell,
   // and a defence that rests on the attacker's uncertainty is not a defence.
   //
-  // So the report publishes ONE event set. Volume could be published on its own, at its own
-  // granularity, where nothing partitions alongside it — that is a decision with a stated cost
-  // rather than something to slip back in beside the cells.
+  // BANDING VOLUME DOES NOT RESCUE IT, which is the part worth writing down because the proposal
+  // is a reasonable one and it was made. `band` only suppresses values BELOW the floor; a volume
+  // large enough to be worth publishing is published EXACTLY, so banding it is the identity
+  // function and the residual stays a value rather than becoming a range. Measured, not reasoned:
+  // 15 reports against cells of 7, 2 and 6 still hands over the 2. See the guard in
+  // `transparency.test.ts`.
+  //
+  // What WOULD work is a coarser granularity — a volume rounded to a width of at least the floor
+  // makes the residual an interval — and that is a decision with its own cost, not something to
+  // slip back in beside the cells.
   void reportsReceivedThisPeriod;
   const figures = [...cells].sort(([a], [b]) => a.localeCompare(b))
     .map(([label, n]) => ({ label, shown: band(n) }));
@@ -145,7 +152,9 @@ export function report(
       "cell on its own; it does not survive subtraction, and a parent printed beside its children",
       "is a subtraction waiting to happen. For the same reason the number of reports received is",
       "not published here: reports and decisions are different sets of events, and printing both",
-      "lets the difference between them stand in for a suppressed cell.",
+      "lets the difference between them stand in for a suppressed cell. Banding that number does",
+      "not help, because a band only hides figures below the floor and a report volume worth",
+      "publishing is above it.",
       "",
       "Deletions of encrypted objects are not listed. Those are people deleting their own",
       "messages with a capability they hold, not decisions anyone made about them, and logging",
