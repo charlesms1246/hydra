@@ -10,9 +10,14 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 import { scheduleUpload, jitterWindowMs } from "../../channel/src/schedule.ts";
-import { coverPlan, coverBody, coverId, coverKey, COVER_RATE, coverLeadMs, anonymitySetFloor }
+import { coverPlan, coverBody, coverId, coverKey, COVER_RATE, coverLeadMs, anonymitySetFloor, NO_CHAIN }
   from "../../channel/src/cover.ts";
 import { best } from "../src/matchers.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
@@ -89,7 +94,7 @@ test("a decoy is indistinguishable from a real upload on the wire", () => {
   // Cover only covers if it looks the same. Same bucket length, and an id minted by the very
   // same function — not a second copy of it.
   for (const bucket of BUCKETS.slice(0, 3)) {
-    const body = coverBody(chan, bucket, 0);
+    const body = coverBody(chan, bucket, 0, NO_CHAIN);
     assert.equal(body.length, bucket);
     assert.equal(coverId(body), encryptedIdFor(body));
     assert.ok(coverId(body).startsWith("enc:"));
@@ -97,30 +102,30 @@ test("a decoy is indistinguishable from a real upload on the wire", () => {
   // A real upload in the same bucket has the same length, so length cannot separate them.
   const real = wireBytes(sealForChannel(chan, new Uint8Array(100))) as unknown as Uint8Array;
   assert.equal(real.length, BUCKETS[0]);
-  assert.equal(coverBody(chan, BUCKETS[0], 0).length, real.length);
+  assert.equal(coverBody(chan, BUCKETS[0], 0, NO_CHAIN).length, real.length);
   // Two decoys never repeat, or a repeated id would mark them — but they are DERIVED now, so
   // "never repeat" is a property of the index rather than of randomness. The same index gives
   // the same body deliberately: that is what lets the recipient ask for it, which is what stops
   // an operator identifying every decoy by the fact that nobody ever does.
-  assert.deepEqual(coverBody(chan, BUCKETS[0], 3), coverBody(chan, BUCKETS[0], 3));
-  const ids = new Set(Array.from({ length: 64 }, (_, i) => coverId(coverBody(chan, BUCKETS[0], i))));
+  assert.deepEqual(coverBody(chan, BUCKETS[0], 3, NO_CHAIN), coverBody(chan, BUCKETS[0], 3, NO_CHAIN));
+  const ids = new Set(Array.from({ length: 64 }, (_, i) => coverId(coverBody(chan, BUCKETS[0], i, NO_CHAIN))));
   assert.equal(ids.size, 64, "two decoy indices collided");
   // And a different channel's decoys are unrelated, or one conversation's cover would mark
   // another's — the bodies come from the channel's own cover key.
   const other = channelSecret(vaultRoot, "alice→carol");
-  assert.notDeepEqual(coverBody(other, BUCKETS[0], 3), coverBody(chan, BUCKETS[0], 3));
+  assert.notDeepEqual(coverBody(other, BUCKETS[0], 3, NO_CHAIN), coverBody(chan, BUCKETS[0], 3, NO_CHAIN));
 });
 
 test("cover is per bucket, and mixing sizes is not covered", () => {
   // The limitation, asserted so it is not forgotten: a decoy in the 1 KiB bucket does nothing
   // for a 64 KiB message. An operator filters by size first and the cover evaporates.
-  const small = coverBody(chan, BUCKETS[0], 0);
+  const small = coverBody(chan, BUCKETS[0], 0, NO_CHAIN);
   const large = wireBytes(sealForChannel(chan, new Uint8Array(20_000))) as unknown as Uint8Array;
   assert.notEqual(small.length, large.length,
     "if these were equal the per-bucket caveat would be unnecessary");
   assert.equal(large.length, BUCKETS[3]);
   // Which is why coverBody takes a bucket rather than choosing one.
-  assert.equal(coverBody(chan, BUCKETS[3], 0).length, large.length);
+  assert.equal(coverBody(chan, BUCKETS[3], 0, NO_CHAIN).length, large.length);
 });
 
 test("a cover rate of zero is refused rather than silently meaning none", () => {
@@ -266,4 +271,44 @@ test("the lead is the jitter window exactly, and that is what makes the floor a 
   // And a much shorter one pushes below the floor, which is its own exploitable signal.
   assert.ok(attack(W / 8) < atWindow * 0.85,
     "a much shorter lead should fall below the floor");
+});
+
+
+test("NO_CHAIN never reaches production, because the type cannot tell it from a real salt", () => {
+  // `salt` is required, which stops a call site OMITTING it. It cannot stop one passing the
+  // spelled-out absence, and `NO_CHAIN` restores exactly the two-device collision `0033` closed —
+  // so the last step of that guarantee is this grep.
+  //
+  // Named rather than a bare `0n` precisely so it is greppable: a magic zero would be invisible
+  // here and the guarantee would be back to convention.
+  const roots = ["client", "cli", "channel", "handshake", "vault-client"];
+  const offenders: string[] = [];
+  for (const root of roots) {
+    const dir = join(HERE, "..", "..", root, "src");
+    if (!existsSync(dir)) continue;
+    for (const file of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
+      // `cover.ts` DEFINES it, and its own doc comment names it. Everything else is a use.
+      if (root === "channel" && file === "cover.ts") continue;
+      const src = readFileSync(join(dir, file), "utf8");
+      for (const [i, line] of src.split("\n").entries()) {
+        if (/\bNO_CHAIN\b/.test(line) && !line.trimStart().startsWith("*")) {
+          offenders.push(`${root}/src/${file}:${i + 1}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(offenders, [],
+    "production code reached for the no-chain salt, which mints decoys two devices share:\n"
+    + offenders.join("\n"));
+});
+
+test("every production decoy is salted by something that came off the chain", () => {
+  // The other half: not merely "not NO_CHAIN", but that the value passed is the commitment. There
+  // is one production call site and this pins what it passes, because a future refactor reaching
+  // for `seq` — which is what two devices share — is the exact mistake the mutation test models.
+  const src = readFileSync(join(HERE, "..", "..", "cli", "src", "commands.ts"), "utf8");
+  const calls = src.split("\n").filter((l) => /coverBody\(/.test(l) && !l.trimStart().startsWith("*"));
+  assert.equal(calls.length, 1, `expected one production coverBody call, found ${calls.length}`);
+  assert.match(calls[0], /,\s*commitment\s*\)/,
+    `the production decoy is not salted by the commitment: ${calls[0].trim()}`);
 });

@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import { send, cover, openChannel } from "../../client/src/session.ts";
 import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
 import { serve } from "../../vault-server/src/http.ts";
-import { coverBody, coverId, COVER_RATE } from "../../channel/src/cover.ts";
+import { coverBody, coverId, COVER_RATE, NO_CHAIN } from "../../channel/src/cover.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { recoverBlobId } from "../../channel/src/pointer.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
@@ -155,7 +155,7 @@ test("the vault, served over HTTP, accepts the whole session and reveals nothing
     for (const a of arrivals) {
       const body = a.real
         ? send(config, new TextEncoder().encode(`message number ${a.seq}`), a.seq, a.seq * BLOCK, lcg(1)).body
-        : coverBody(channel, BUCKETS[0], a.seq >= 0 ? a.seq : i);
+        : coverBody(channel, BUCKETS[0], a.seq >= 0 ? a.seq : i, NO_CHAIN);
       const res = await fetch(`${url}${ENCRYPTED_ENDPOINT}/${a.real ? a.id : coverId(body)}`, {
         method: "PUT",
         headers: { "x-hydra-invite": `inv-${i++}` },
@@ -264,7 +264,7 @@ test("without the bucket carried, the same attack succeeds every time", () => {
   const channel = openChannel(vaultRoot, "alice→bob");
   // Cover, but all of it in the wrong band.
   for (let i = 0; i < COVER_RATE * sent.length; i++) {
-    const body = coverBody(channel, BUCKETS[0], 0);
+    const body = coverBody(channel, BUCKETS[0], 0, NO_CHAIN);
     arrivals.push({ at: random() * 8 * BLOCK, id: coverId(body), bytes: body.length, real: false, seq: -1 });
   }
   const large = sent[2].body.length;

@@ -32,7 +32,7 @@ import { initiate, bundleFor } from "../../handshake/src/x3dh.ts";
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
 import { padTo, unpad, bucketFor, BUCKETS, SEAL_OVERHEAD } from "../../vault-client/src/buckets.ts";
 import { channelSecret } from "../../channel/src/pointer.ts";
-import { COVER_RATE, coverBody, coverId } from "../../channel/src/cover.ts";
+import { COVER_RATE, coverBody, coverId, NO_CHAIN } from "../../channel/src/cover.ts";
 import { jitterWindowMs, MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import { rootSeed, entropyFrom, derive, VAULT_DOMAIN, fromTestVector} from "../../identity/src/domains.ts";
 
@@ -150,7 +150,7 @@ test("everything the table claims is observable actually is", async () => {
       // Milliseconds apart, which is what sequential HTTP requests are. Uploading them at one
       // timestamp would make the batch findable by equality and prove nothing about a client.
       tick += 40;
-      const body = coverBody(channel, bytes(blob).length, k);
+      const body = coverBody(channel, bytes(blob).length, k, NO_CHAIN);
       onDisk.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: coverId(body), body, invite: burstInvites[k + 1] });
     }
     for (const k of onDisk.observedKeys()) observed.add(k);
@@ -740,7 +740,7 @@ test("a hand-flushed batch is recoverable from the record alone, and a spread cl
     vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: real.id, body: bytes(real), invite: "b0" });
     for (let k = 0; k < COVER_RATE; k++) {
       tick += spacing;
-      const body = coverBody(chan, bytes(real).length, k);
+      const body = coverBody(chan, bytes(real).length, k, NO_CHAIN);
       vault.handle({ op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: coverId(body), body, invite: `b${k + 1}` });
     }
     return vault;

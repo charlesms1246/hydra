@@ -225,24 +225,27 @@ export function anonymitySetFloor(config: CoverConfig): number {
  * decoys — without coordinating, without a device identifier, and without the recipient needing
  * to know a second client exists.
  *
- * A caller that omits the salt gets the old derivation. That is not a compatibility shim: the
- * harnesses in `adversary/` that measure cover as a size or a keystream have no chain and no
- * commitment, and making them invent one would be making them measure a fixture.
+ * THE SALT IS REQUIRED, and a caller with no chain says {@link NO_CHAIN} rather than omitting it.
+ *
+ * It was optional, defaulting to the old unsalted derivation, and that is the wrong shape for a
+ * security-relevant argument: a production call site could drop it on one branch and nothing
+ * would fail — the decoys would simply go back to colliding across devices, silently. A default
+ * that restores the vulnerable behaviour makes the guarantee conventional. Required makes it
+ * structural, and `cover.test.ts` additionally refuses `NO_CHAIN` anywhere under `client/` or
+ * `cli/`, because the type system cannot tell a real salt from a spelled-out absence.
  */
 export function coverBody(
   channel: Secret<typeof VAULT_DOMAIN>,
   bucket: number,
   index: number,
-  salt?: bigint,
+  salt: bigint,
 ): Uint8Array {
   if (!Number.isInteger(index) || index < 0) {
     throw new Error("a decoy index is a non-negative integer");
   }
   // THE SALT IS THE ON-CHAIN COMMITMENT, and it is what stops two devices minting the same
   // decoys. See the note on `decisions/0023`'s residual below.
-  const key = expose(
-    subKey(coverKey(channel), salt === undefined ? `body/${bucket}` : `body/${bucket}/${salt}`),
-    VAULT_DOMAIN);
+  const key = expose(subKey(coverKey(channel), `body/${bucket}/${salt}`), VAULT_DOMAIN);
   const iv = Buffer.alloc(16);
   iv.writeUInt32BE(index, 12);
   const c = createCipheriv("aes-256-ctr", key, iv);
@@ -256,6 +259,18 @@ export function coverBody(
  * It calls `vault-client`'s own constructor rather than repeating it. A second copy of that
  * line would make decoys filterable the moment the two drifted, and nothing would fail.
  */
+/**
+ * The salt for a caller that has no chain to read a commitment from.
+ *
+ * Only the harnesses in `adversary/` that measure cover as a size or a keystream. Making them
+ * invent a commitment would be making them measure a fixture, so the absence is spelled instead —
+ * and being a named export rather than a bare `0n` is what lets a guard find it.
+ *
+ * NEVER VALID IN PRODUCTION. Two devices sharing an identity would mint the same decoys again,
+ * which is the whole of `decisions/0033`.
+ */
+export const NO_CHAIN = 0n;
+
 export function coverId(body: Uint8Array): string {
   return encryptedIdFor(body);
 }
