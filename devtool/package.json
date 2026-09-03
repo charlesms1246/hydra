@@ -2,7 +2,7 @@
   "name": "hydra-devtool",
   "version": "0.1.0",
   "description": "A local STRK20 privacy stack, and tooling that computes what a transaction actually discloses",
-  "license": "Apache-2.0",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/charlesms1246/hydra.git"
@@ -24,6 +24,8 @@
     "!packages/*/node_modules"
   ],
   "scripts": {
-    "test": "for t in packages/leak/test/run.mjs packages/linter/test/run.mjs packages/mcp/test/run.mjs packages/tui/test/render.mjs; do if [ -f \"$t\" ]; then echo \"--- $t\"; node \"$t\" || exit 1; fi; done"
+    "test": "for t in packages/leak/test/run.mjs packages/linter/test/run.mjs packages/mcp/test/run.mjs packages/tui/test/render.mjs; do if [ -f \"$t\" ]; then echo \"--- $t\"; node \"$t\" || exit 1; fi; done",
+    "prepack": "cp ../README.md ../LICENSE .",
+    "postpack": "rm -f README.md LICENSE"
   }
 }
