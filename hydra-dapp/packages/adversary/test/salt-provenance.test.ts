@@ -25,6 +25,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { send, openChannel } from "../../client/src/session.ts";
+import { sealForChannel } from "../../vault-client/src/blobs.ts";
 import { coverBody, coverId, saltFrom, isCommitment } from "../../channel/src/cover.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import { ephemeral } from "../../handshake/src/authorship.ts";
@@ -94,4 +95,39 @@ test("THE COMMITMENT IS COMPUTED LOCALLY, so nothing about it needed a chain", (
   const blind = 0x1234_5678_9abc_def0_1234n;
   const hash = contentHashFor(new TextEncoder().encode("anything"));
   assert.equal(commit(blind, hash), commit(blind, hash));
+});
+
+test("NO DERIVED VALUE CAN BE THE SALT, because the whole seal is deterministic by design", () => {
+  // **THE STRUCTURAL ANSWER, and it is why two separate proposals to derive the salt both failed.**
+  //
+  // The first was a content hash. The second — mine, while looking for a way to avoid spending
+  // header bytes — was a hash of the CIPHERTEXT, on the reasoning that a ciphertext carries a
+  // random nonce. It does not: `sealForChannel` derives the nonce as `HMAC(key, padded)`, a
+  // synthetic IV, deliberately, so that content addressing is stable and a nonce cannot be reused
+  // catastrophically.
+  //
+  // So the seal is deterministic end to end, and **every "derive it from what we already have"
+  // answer reduces to the content.** Only an explicitly random value separates two devices, and a
+  // random value cannot be derived — by definition. It has to travel.
+  //
+  // That is not a preference between two designs. It is the reason there is only one.
+  const shared = rootOf(12);
+  const text = new TextEncoder().encode("ok");
+  const one = sealForChannel(config(shared).channel, text);
+  const two = sealForChannel(config(shared).channel, text);
+
+  assert.equal(one.id, two.id,
+    "the seal is no longer deterministic. If a fresh random nonce has been introduced, content "
+    + "addressing is no longer stable — and the argument above needs redoing, because a "
+    + "ciphertext-derived salt would then be viable");
+  assert.deepEqual(Buffer.from(one.ciphertext as unknown as Uint8Array),
+    Buffer.from(two.ciphertext as unknown as Uint8Array));
+
+  // Which is exactly why `decisions/0033` needed a random blind: everything else in this pipeline
+  // is deterministic on purpose, so the blind is the only randomness two devices do not share.
+  const a = send(config(shared), text, 0, 0, () => 0.5);
+  const b = send(config(shared), text, 0, 0, () => 0.5);
+  assert.notEqual(a.calldata[1], b.calldata[1],
+    "the commitment is the same for two sends of identical content, so the blind is not random "
+    + "and nothing in this pipeline separates two devices");
 });
