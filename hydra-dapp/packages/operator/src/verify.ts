@@ -10,12 +10,14 @@
  * forbids that dependency in both directions. Extracting a shared chain client is the tidy answer
  * and it is a refactor across two packages for one JSON-RPC call, so this is that one call.
  *
- * NOT COVERED BY THE HERMETIC SUITE, and said plainly rather than left to be discovered. Everything
- * below the network boundary is tested — the request this builds, and the answers it accepts and
- * refuses — but whether a real Starknet account replies as expected is only knowable against a real
- * chain, and `npm test` excludes anything that needs one. The failure mode this leaves open is the
- * one worth naming: an account contract whose `is_valid_signature` returns something other than the
- * two shapes below would be read as a REFUSAL, which fails closed.
+ * COVERED AGAINST A REAL CHAIN by `live-appeal-verify.test.ts`, and it had to be. The hermetic
+ * tests here check the request this builds and the replies it accepts or refuses — against a stub,
+ * which is exactly the trap: **a stub cannot tell you that the shape it was copied from is wrong.**
+ * The selector below was the name rather than a felt when this shipped, every hermetic test agreed
+ * with it, and a real node answered `Invalid nibble found: 0x72`.
+ *
+ * What remains uncovered is narrower now: an account implementation whose `is_valid_signature`
+ * returns some third shape would be read as a REFUSAL, which fails closed.
  */
 
 /**
@@ -34,7 +36,20 @@ const VALID = new Set([
   "0x1",
 ]);
 
-const SELECTOR = "is_valid_signature";
+/**
+ * `starknet_keccak("is_valid_signature")` — keccak256 of the name, masked to 250 bits.
+ *
+ * A FELT, NOT THE NAME, and this was wrong when it shipped. `starknet_call` takes a selector as a
+ * field element, and passing the string got `Invalid nibble found: 0x72` — the `r` in
+ * "is_valid_signature" — from a real node. **Every hermetic test agreed with the bug**, because
+ * they asserted the request matched what the code built, and the code built the name. A stub
+ * cannot tell you the shape it was copied from is wrong.
+ *
+ * Derived rather than recalled. `live-record-anchor.ts` carries the same warning next to its own
+ * selectors: this is a 250-bit number, and a wrong one does not fail loudly — it fails as
+ * "entrypoint not found" or, worse, as somebody else's function.
+ */
+const SELECTOR = "0x28420862938116cb3bbdbedee07451ccc54d4e9412dbef71142ad1980a30941";
 
 /** The one JSON-RPC call this tool makes. Exported so a test can check what it builds. */
 export function verifyRequest(account: string, digest: string, signature: readonly string[]) {

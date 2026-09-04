@@ -94,7 +94,16 @@ test("A SIGNED ARTIFACT IS ACCEPTED, AND THE CHAIN IS WHAT IS ASKED", async () =
     assert.equal(asked.length, 1);
     const params = (asked[0] as { params: { request: Record<string, unknown> } }).params.request;
     assert.equal(params.contract_address, ACCOUNT);
-    assert.equal(params.entry_point_selector, "is_valid_signature");
+    // A FELT, NOT THE NAME, and asserted as a SHAPE rather than as a literal. The first version of
+    // this line checked `=== "is_valid_signature"` and passed, because it was written from the code
+    // and the code was wrong — a real node answered `Invalid nibble found: 0x72`. Copying the value
+    // out of the implementation is how a test comes to agree with a bug; checking that it is the
+    // kind of thing `starknet_call` accepts is a claim the implementation cannot satisfy by being
+    // wrong in the same way.
+    assert.match(String(params.entry_point_selector), /^0x[0-9a-f]+$/,
+      "the entry point selector is not a felt — starknet_call will refuse it outright");
+    assert.ok(BigInt(String(params.entry_point_selector)) < 1n << 250n,
+      "the selector is not masked to 250 bits, so it is not a starknet_keccak");
     assert.deepEqual(params.calldata, [`0x${appealDigest(id)}`, "0x2", "0xaaa", "0xbbb"]);
 
     // It survives the process, and shows up as outstanding.
