@@ -14,6 +14,13 @@ async function control(path, body, timeoutMs = 180000) {
   if (!st?.controlUrl) {
     return { ok: false, error: "no running stack — start one with `hydra-dev up` (or u in the TUI)" };
   }
+  if (st.rpcOverride) {
+    return {
+      ok: false,
+      error: `flows write, so they are devnet-only: --rpc/HYDRA_RPC is set to ${st.rpcOverride}, `
+        + "which is not a stack this tool controls. Unset it and run against a local stack.",
+    };
+  }
   const r = await fetchJson(`${st.controlUrl}/${path}`, { method: "POST", body: body ?? {}, timeoutMs });
   if (!r.ok) return { ok: false, error: r.json?.error ?? r.error ?? `http ${r.status}` };
   return r.json;

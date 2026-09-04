@@ -97,15 +97,21 @@ export async function status() {
   const agents = agentStatus();
   return {
     stack: st ? { startedAt: st.startedAt, poolAddress: st.poolAddress } : null,
-    devnet: { ...devnet, pid: st?.devnetPid ?? null, pidAlive: pidAlive(st?.devnetPid) },
+    devnet: { ...devnet, pid: st?.devnetPid ?? null, pidAlive: pidAlive(st?.devnetPid),
+      rpcOverride: st?.rpcOverride ?? null },
     indexer: { ...indexer, pid: st?.indexerPid ?? null, pidAlive: pidAlive(st?.indexerPid) },
     // With no recorded stack there is no prover, so there is no proving mode to report.
     // This used to answer "mock" regardless, which asserted a fact about a process that
     // does not exist — and `hydra-dev leak` then printed it as the proving configuration
     // in force. Same defect as leakConfig's old default, one layer down. ERRORS.md E-DEV15.
-    prover: st
-      ? { mode: st.proving ?? "mock", note: "mock proof provider — no proving service URL needed" }
-      : { mode: null, note: "no running stack — no prover, and no proving mode to report" },
+    // Gated on `st.proving` being DECLARED, not on `st` being truthy. `up` always writes
+    // proving:"mock" (up.mjs:142), so a real stack always declares it — while --rpc
+    // synthesises a state that has a URL and no prover, and `st ? …` reported "mock" for
+    // a machine running nothing. Same E-DEV15 defect, re-introduced by the override and
+    // caught by driving it. A mode nobody declared is not a mode.
+    prover: st?.proving
+      ? { mode: st.proving, note: "mock proof provider — no proving service URL needed" }
+      : { mode: null, note: "no prover — no running stack, so no proving mode to report" },
     agents: { ...agents, mcp: { ...agents.mcp, tools } },
     accounts: st?.accounts ?? [],
     tokens: st?.tokens ?? null,

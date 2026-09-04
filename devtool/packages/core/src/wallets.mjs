@@ -8,6 +8,11 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { rpc } from "./probe.mjs";
+
+/** Why a write path refuses an --rpc override. One wording, three call sites. */
+const REFUSAL_TEXT = (st) =>
+  `--rpc/HYDRA_RPC is set to ${st.rpcOverride}, which is not a stack this tool controls. ` +
+  "Unset it and run against a local stack.";
 import { readState, writeState, HYDRA_HOME } from "./state.mjs";
 
 /** ERC20 balanceOf, as a plain RPC call. Returns a decimal string, or null. */
@@ -71,6 +76,12 @@ export async function wallets() {
 export async function faucet({ address, amount = 1e18, unit = "FRI" }) {
   const st = await readState();
   if (!st) return { ok: false, error: "no running stack — run `hydra-dev up`" };
+  // Refused EXPLICITLY rather than left to fail. devnet_mint does not exist on a public
+  // node, so this would error anyway — but shipping a flag that lets a write path address
+  // mainnet and relying on the remote to say no is a footgun with a rationalisation.
+  if (st.rpcOverride) {
+    return { ok: false, error: `faucet writes, so it is devnet-only: ${REFUSAL_TEXT(st)}` };
+  }
   // starknet-devnet v0.8.0-rc.3 serves no REST /mint — it is the JSON-RPC method
   // `devnet_mint`, whose result is the same { new_balance, unit, tx_hash } this
   // already returns. The old POST /mint answered 404 against every real devnet;

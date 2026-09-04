@@ -16,12 +16,33 @@ export async function writeState(s) {
   await writeFile(STATE, JSON.stringify({ ...s, updatedAt: new Date().toISOString() }, null, 2));
 }
 
+/**
+ * `HYDRA_RPC` points the READ commands at any Starknet node.
+ *
+ * core/src/chain.mjs was always RPC-generic — it reads whatever URL the state carries, and
+ * `devnetUrl` is a name rather than a constraint. Verified against Sepolia and mainnet.
+ * Without this there was no supported way to say so: reaching a public node meant
+ * hand-writing a state file, so a real capability was unreachable from the README.
+ *
+ * `rpcOverride` is carried on the state so WRITE paths can refuse it. A flag that let
+ * `faucet` or the control API address a public node would be a shipped footgun, and
+ * "the RPC would reject it anyway" is not a defence — see wallets.mjs and transact.mjs.
+ */
+export function rpcOverride() {
+  return process.env.HYDRA_RPC || null;
+}
+
 export async function readState() {
+  const override = rpcOverride();
+  let st = null;
   try {
-    return JSON.parse(await readFile(STATE, "utf8"));
+    st = JSON.parse(await readFile(STATE, "utf8"));
   } catch {
-    return null;
+    st = null;
   }
+  if (!override) return st;
+  // Usable with no stack at all: reading a public node needs a URL and nothing else.
+  return { ...(st ?? {}), devnetUrl: override, rpcOverride: override };
 }
 
 export async function clearState() {

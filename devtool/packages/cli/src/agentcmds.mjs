@@ -16,6 +16,16 @@ import { check } from "./doctor.mjs";
 // Three states, matching theme.mjs glyph(): serving-and-current, serving-but-behind, absent.
 const dot = (up, warn) => (up ? "●" : warn ? "◐" : "○");
 
+/** `0x534e5f4d41494e` -> `SN_MAIN`. Falls back to the hex if it is not printable ASCII. */
+function decodeChainId(hex) {
+  try {
+    const s = Buffer.from(String(hex).replace(/^0x/, ""), "hex").toString("ascii");
+    return /^[\x20-\x7e]+$/.test(s) ? s : String(hex);
+  } catch {
+    return String(hex);
+  }
+}
+
 /**
  * The configuration `hydra-dev up` actually runs, declared honestly. It lives here,
  * not in the TUI, because `hydra-dev leak --json` and the TUI's disclosure matrix
@@ -75,8 +85,17 @@ export const COMMANDS = {
     run: async () => status(),
     render: (s) => {
       const L = [];
-      L.push(`  ${dot(s.devnet.up)} devnet    ${s.devnet.up ? s.devnet.url : "down"}` +
-        (s.devnet.blockNumber !== null && s.devnet.up ? `   block ${s.devnet.blockNumber}` : ""));
+      // "devnet" is a label this tool never read. With --rpc the node may be mainnet or
+      // Sepolia, and printing `● devnet https://…/mainnet` asserts a network nobody
+      // checked — E-DEV15 in a different field. Say "node" whenever the URL was supplied
+      // rather than started by `up`, and print the chain id, which IS read.
+      const netLabel = s.devnet.rpcOverride ? "node  " : "devnet";
+      // Decoded: a chain id is an ASCII short string, and `0x534e5f4d41494e` on screen
+      // makes a reader look it up to learn which network they just read.
+      const chain = s.devnet.chainId ? `   chain ${decodeChainId(s.devnet.chainId)}` : "";
+      L.push(`  ${dot(s.devnet.up)} ${netLabel}    ${s.devnet.up ? s.devnet.url : "down"}` +
+        (s.devnet.blockNumber !== null && s.devnet.up ? `   block ${s.devnet.blockNumber}` : "") +
+        (s.devnet.up ? chain : ""));
       // Reachable-but-lagging gets its own dot: green would hide it, red would say
       // "restart me" about a service that is answering.
       L.push(`  ${dot(s.indexer.up && s.indexer.healthy, s.indexer.up)} indexer   ` +

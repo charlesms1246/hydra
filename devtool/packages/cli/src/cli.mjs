@@ -12,8 +12,32 @@ import { COMMANDS, runCommand, LEAK_ACTIONS } from "./agentcmds.mjs";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-const args = argv.slice(1);
 const asJson = argv.includes("--json");
+
+// `--rpc <url>` is sugar for HYDRA_RPC, so both spellings hit one code path in state.mjs.
+// Stripped from `args` so a command never sees it as a positional.
+const rpcAt = argv.indexOf("--rpc");
+if (rpcAt !== -1) {
+  const url = argv[rpcAt + 1];
+  if (!url || url.startsWith("-")) {
+    console.error("  --rpc needs a URL, e.g. --rpc https://api.cartridge.gg/x/starknet/mainnet\n");
+    process.exit(2);
+  }
+  process.env.HYDRA_RPC = url;
+}
+const args = argv.slice(1).filter((a, i, all) => a !== "--rpc" && all[i - 1] !== "--rpc");
+
+// The stack lifecycle owns the state file; pointing it at someone else's node is
+// meaningless at best. Refused here rather than deeper, so the message names the command.
+const LOCAL_ONLY = ["up", "down", "init", "bootstrap", "faucet"];
+if (process.env.HYDRA_RPC && LOCAL_ONLY.includes(cmd)) {
+  // Name the spelling the caller actually used — saying "--rpc" at someone who set
+  // HYDRA_RPC sends them looking for a flag they never typed.
+  const via = rpcAt !== -1 ? "--rpc" : "HYDRA_RPC";
+  console.error(`\n  \`hydra-dev ${cmd}\` writes, so it runs against a local stack and cannot take ${via}.`);
+  console.error(`  ${via} is for the read commands: tx, blocks, status, devnet, indexer.\n`);
+  process.exit(2);
+}
 
 function usage() {
   const pad = (s) => s.padEnd(18);
@@ -38,7 +62,12 @@ ${Object.entries(COMMANDS).map(([n, c]) => `    ${pad("hydra-dev " + n)}  ${c.he
     hydra-dev faucet --address 0x34ba… --amount 1e18
     hydra-dev tx 0x07f1…
 
+  Read commands take --rpc <url> (or HYDRA_RPC) to address any Starknet node:
+    hydra-dev tx 0x… --rpc https://api.cartridge.gg/x/starknet/mainnet
+  Write commands — up, down, init, bootstrap, faucet — refuse it.
+
   HYDRA_UPSTREAM   path to a starknet-privacy checkout
+  HYDRA_RPC        read commands address this node instead of the local stack
   HYDRA_HOME       where the running stack records itself (default ~/.hydra)
 `);
 }
