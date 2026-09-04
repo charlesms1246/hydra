@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { starknet } from "../../cli/src/chain.ts";
+import { bundleFromChain } from "../../cli/src/commands.ts";
 import { NODE_OBSERVABLE, NODE_OBSERVABLE_IDS, NODE_NOT_OBSERVABLE, nodeWhyOf }
   from "../../cli/src/node-view.ts";
 
@@ -57,6 +58,13 @@ const read = async () => {
   // asks who published. `decisions/0029`'s crowd needs it; the row exists because the node sees
   // it happen.
   await chain.publishers!(1, 1);
+  // AND A BUNDLE LOOKUP, because `node.recordLookup` is only producible when a client asks a node
+  // about a named address. It is the step `decisions/0038` found had no path at all, so the row
+  // and the capture arrived together — which is the only order that keeps a table honest.
+  await bundleFromChain({
+    rpcUrl: "https://node.example/rpc", contract: CONTRACT, fromBlock: FROM_BLOCK,
+    accountsFile: "/dev/null", account: "a", network: "sepolia",
+  } as never, 0x2afa2039an, fetchImpl).catch(() => undefined);
   return { seen, events };
 };
 
@@ -75,6 +83,11 @@ function observedKeys(seen: readonly Seen[]): string[] {
       if (f.address) keys.add("node.readRange");
     }
     if (r.method === "starknet_getBlockWithTxs") keys.add("node.blockScan");
+    // A call naming an address in its calldata is the node learning who you asked about. Keyed on
+    // the CALLDATA rather than on the selector: the row is about the address travelling, and a
+    // future lookup through a different entry point discloses exactly the same thing.
+    if (r.method === "starknet_call"
+      && (r.params.request?.calldata ?? []).length > 0) keys.add("node.recordLookup");
   }
   // Asserted from the code path rather than captured — see the header.
   const chainSrc = readFileSync(

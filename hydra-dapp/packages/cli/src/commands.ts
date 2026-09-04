@@ -24,7 +24,7 @@ import { keyFor, packChain, forgetOldSkipped } from "../../handshake/src/ratchet
 import { newDhState, receiveKey, ratchetPublic, decodeHeader }
   from "../../handshake/src/dh-ratchet.ts";
 import { signedBy, ephemeral, unframe, verifyAuthorship } from "../../handshake/src/authorship.ts";
-import { recordFor, encodeRecord, decodeRecord, verifyRecord, RECORD_FELTS }
+import { recordFor, encodeRecord, decodeRecord, verifyRecord, bundleOf, RECORD_FELTS }
   from "../../handshake/src/record.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
@@ -34,6 +34,7 @@ import { deleteHashFor } from "../../vault-server/src/delete-hash.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
 import { prune, accuracyAgainst, covering } from "../../channel/src/crowd.ts";
 import { postPublic, fetchPublic } from "../../client/src/public.ts";
+import { mainIdCall, readRecordCall, decodeRecordReply } from "./anchor.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
 import { openForChannel, plaintextOf, openHeader, bodyOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
 import { MAX_BODY } from "../../vault-server/src/http.ts";
@@ -632,6 +633,65 @@ export async function fetchPosts(
     missing,
     substituted,
   };
+}
+
+/**
+ * Read somebody's prekey bundle off the chain, given their address.
+ *
+ * THE STEP THAT HAD NO PATH. `decisions/0038` step 3: a bundle could only reach a stranger out of
+ * band, so **a source needed a prior relationship with the organisation they were anonymously
+ * contacting** — the same shape as the invite gate, a prerequisite sitting in front of the surface
+ * and quietly undoing its premise.
+ *
+ * Composition rather than new protocol. `decisions/0031` verified the identity contract's data ABI
+ * against live mainnet and Sepolia and landed a real record; `BundleRecord` already carries the
+ * identity key, the signing key, the signed prekey and its signature; and `bundleOf` **verifies
+ * before it returns**, refusing a record whose anchor signature does not name the address it was
+ * read from. That last part is the whole attack: a bundle read from a record nobody verified is a
+ * stranger's key with an organisation's name on it.
+ *
+ * IDENTITY KEY AND SIGNED PREKEY ONLY. One-time prekeys stay in the vault — a pool of them on chain
+ * is a different thing with a different cost, and `HYDRA_HANDOFF` is explicit about the split. A
+ * bundle without a one-time key has no replay resistance, which `hydra bundle` already says, and
+ * this path says it too.
+ *
+ * WHAT IT DISCLOSES, and it is a genuine improvement rather than a shuffle. Fetching a bundle from
+ * a VAULT tells the vault's operator — plausibly the organisation you are considering contacting —
+ * that you looked, before you have decided to. Reading a record tells an RPC NODE which address you
+ * asked about, and **you choose the node**, so you can look somebody up without telling them you
+ * were considering it. `node.recordLookup` carries the row.
+ */
+export async function bundleFromChain(
+  state: State,
+  address: bigint,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Bundle> {
+  const network = state.network ?? "sepolia";
+  const call = async (request: ReturnType<typeof mainIdCall>) => {
+    const res = await fetchImpl(state.rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "starknet_call",
+        params: { request, block_id: "latest" },
+      }),
+    });
+    const body = await res.json() as { result?: string[]; error?: unknown };
+    if (body.error) throw new Error(`the node refused the read: ${JSON.stringify(body.error)}`);
+    if (!body.result) throw new Error("the node returned no result");
+    return body.result;
+  };
+
+  const id = BigInt((await call(mainIdCall(address, network)))[0] ?? "0x0");
+  // NO id CHECK HERE ON PURPOSE. `readRecordCall` already refuses a non-positive or oversized id —
+  // zero reads as absent on this contract, so reading slot zero would believe whatever is there.
+  // A second copy of that check at this call site is the crowd's parallel-implementation mistake
+  // in miniature: two places to get one rule right, with nothing forcing them to agree.
+  const felts = decodeRecordReply(await call(readRecordCall(id, network)));
+  if (!felts) throw new Error(`0x${address.toString(16)} owns identity ${id} and has published no `
+    + "bundle record under it — there is nothing here to open a conversation with");
+  // `bundleOf` verifies the anchor signature against THIS address before returning anything.
+  return bundleOf(decodeRecord(felts), address);
 }
 
 export function linkabilityOf(state: State, name: string): {

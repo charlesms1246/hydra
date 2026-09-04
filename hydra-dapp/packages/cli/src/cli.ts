@@ -39,6 +39,7 @@ import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
   fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
   myRecord, anchorPeer, anchorOf, recordFelts, drain, linkabilityOf, post, fetchPosts,
+  bundleFromChain,
   encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
 import { chainFor } from "./chain.ts";
@@ -164,6 +165,33 @@ switch (command) {
     console.log("anyone who fetched your old bundle and has not had their prekey message");
     console.log("collected can no longer reach you on it. that is the point: the key that");
     console.log("would have opened those conversations does not exist any more.");
+    break;
+  }
+
+  case "lookup": {
+    // The step `decisions/0038` found had no path. A bundle could only reach a stranger out of
+    // band, so a source needed a prior relationship with the organisation they were anonymously
+    // contacting — a prerequisite sitting in front of the surface, undoing its premise.
+    const state = load();
+    const [where] = positional;
+    if (!where) usage();
+    const bundle = await bundleFromChain(state, BigInt(where));
+    console.log(encode(bundle));
+    console.error("");
+    console.error(`bundle for ${where}, fingerprint ${fingerprint(bundle)}`);
+    console.error("the record's signature names that address, so this is their key and not");
+    console.error("somebody else's under their name. what it does NOT tell you is that the");
+    console.error("address is the organisation you mean — that is still a question you answer");
+    console.error("somewhere else.");
+    console.error("");
+    console.error("NO ONE-TIME PREKEY. those stay in the vault, so a conversation opened from a");
+    console.error("chain record alone has no replay resistance: someone who records your prekey");
+    console.error("message can present it again. ask them for a bundle if that matters.");
+    console.error("");
+    console.error("WHO SAW THIS: the RPC node you are configured against, which now knows your");
+    console.error("address asked about theirs. that is better than fetching from their vault —");
+    console.error("which would tell THEM you were considering it — and it is not nothing. you");
+    console.error("choose the node; they do not. see `hydra disclose` and decisions/0038.");
     break;
   }
 

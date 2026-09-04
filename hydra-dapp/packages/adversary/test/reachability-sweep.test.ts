@@ -98,7 +98,6 @@ const REACHED_ONLY_BY_TESTS: Record<string, string> = {
   rootBytes: "used in-file by the DH root step; exported so the root derivation is assertable",
   adoptPoolKey: "used in-file; exported so I1 can assert the adopt path exists and is domain-checked",
   components: "used in-file by links; exported so the decomposition is assertable on its own",
-  bundleOf: "used in-file by the record builder; exported so the bundle shape is checkable",
 
   // Alternative compositions kept because a test asserts a property of the whole that the shipped
   // path reaches by a different route. `linkability` is the case that produced a real finding: the
@@ -107,14 +106,16 @@ const REACHED_ONLY_BY_TESTS: Record<string, string> = {
     + "sends, so it calls the shared `covering` predicate rather than this composition",
   regularity: "a pruning statistic used in-file by prune; exported so the rule is testable alone",
 
-  // The anchor write path, deliberately unwired: `hydra record` prints the felts and refuses to
-  // write, because which account pays is exactly the link the record creates.
+  // The anchor WRITE path, deliberately unwired: `hydra record` prints the felts and refuses to
+  // write, because which account pays is exactly the link the record creates. The READ path used
+  // to be listed here too — `bundleOf`, `readRecordCall`, `decodeRecordReply`, `assertUsableId` —
+  // and `hydra lookup` wired all four up. The stale-exemption check is what said so, on the same
+  // run, which is the half of this guard that stops the list decaying into permission slips.
   writeRecordCalldata: "builds calldata for the identity contract's setter; no CLI case calls it "
     + "— `hydra record` prints the felts and returns without a transaction",
-  readRecordCall: "same group; its only caller outside itself is the live anchor test",
-  decodeRecordReply: "same group — decodes what the identity contract returns for a record",
   identityContract: "same group — the deployed contract address per network",
-  assertUsableId: "same group — an id guard for the write path",
+  assertUsableId: "called by `readRecordCall` in-file, which is the single place the id rule is "
+    + "written; `bundleFromChain` deliberately does not repeat the check at its call site",
   feltFromShortString: "same group — network name to felt",
 
   // Prekey delivery, and THIS BLOCK'S FIRST REASON WAS FALSE. It said "delivery is unbuilt by

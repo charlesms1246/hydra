@@ -133,6 +133,33 @@ export function writeRecordCalldata(id: bigint, felts: readonly bigint[]): strin
  * the writer for a truncation the reader invented. Asking for exactly `RECORD_FELTS` cannot do
  * that: the length is ours, not the data's.
  */
+/**
+ * `starknet_keccak("get_main_id")` — an address to the Starknet ID identity it owns.
+ *
+ * DERIVED, NOT RECALLED, like every selector here. It is a 250-bit number, and a wrong one does not
+ * fail loudly: it fails as "entrypoint not found" or, worse, as somebody else's function. This one
+ * is also confirmed present in the deployed class's external entry points — see
+ * `live-record-anchor.test.ts`, which has been reading it off mainnet since `decisions/0031`.
+ */
+const GET_MAIN_ID = "0x108d63199bb92aa213225174d82be925dc326995019eb66c83b1cc38b90642e";
+
+/**
+ * The call that turns an address into the identity id its record lives under.
+ *
+ * The first half of looking somebody up by address, which is the thing that had no path: a bundle
+ * could only reach a stranger out of band, so a source had to already have a relationship with the
+ * organisation they were anonymously contacting. See `decisions/0038` step 3.
+ */
+export function mainIdCall(address: bigint, network: string): {
+  contract_address: string; entry_point_selector: string; calldata: string[];
+} {
+  return {
+    contract_address: identityContract(network),
+    entry_point_selector: GET_MAIN_ID,
+    calldata: [`0x${address.toString(16)}`],
+  };
+}
+
 export function readRecordCall(id: bigint, network: string): {
   contract_address: string; entry_point_selector: string; calldata: string[];
 } {
