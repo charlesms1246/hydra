@@ -61,7 +61,7 @@ export function leakConfig(s) {
  * packages/leak returns for an absent field, and which the header comment above and
  * packages/core/src/flows.mjs:118-124 both already required.
  */
-const LEAK_ACTIONS = {
+export const LEAK_ACTIONS = {
   register: { type: "register" },
   deposit: { type: "deposit", token: "STRK", amount: "100" },
   transfer: { type: "transfer", token: "STRK", amount: "50", counterparty: "bob" },
@@ -185,7 +185,10 @@ export const COMMANDS = {
       if (r.error) return `  ${r.error}`;
       const cell = (w) => String(w).padEnd(26);
       const L = [
-        `  ${r.disclosures[0].action.type} · discovery ${r.config.discovery} · proving ${r.config.proving}` +
+        // `?? "UNKNOWN"` for the same reason ConfigStrip does it: leakConfig omits
+        // `proving` when no stack was read, and interpolating it raw printed
+        // "proving undefined". ERRORS.md E-DEV15.
+        `  ${r.disclosures[0].action.type} · discovery ${r.config.discovery} · proving ${r.config.proving ?? "UNKNOWN"}` +
         ` · network ${r.config.network ?? "UNKNOWN"} · upstream ${r.upstreamCommit.slice(0, 8)}`,
         "",
         `  ${"".padEnd(28)}${r.fields.map(cell).join("")}`,

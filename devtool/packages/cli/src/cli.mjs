@@ -8,7 +8,7 @@
  */
 
 import { check, report } from "./doctor.mjs";
-import { COMMANDS, runCommand } from "./agentcmds.mjs";
+import { COMMANDS, runCommand, LEAK_ACTIONS } from "./agentcmds.mjs";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -27,6 +27,8 @@ function usage() {
     hydra-dev down            stop a running stack
     hydra-dev init dapp       scaffold the STRK20 starter kit against this stack
     hydra-dev lint <path>     flag STRK20 configurations that disclose more than intended
+    hydra-dev leak <tx.json>  disclosure set for a planned tx — takes network: mainnet
+                              also: --example shield|private-transfer|shadow-dapp-call
 
   Status — every one of these takes --json for agents
 ${Object.entries(COMMANDS).map(([n, c]) => `    ${pad("hydra-dev " + n)}  ${c.help}`).join("\n")}
@@ -74,6 +76,18 @@ if (cmd === undefined || cmd === "tui") {
 } else if (cmd === "init") {
   const { initDapp } = await import("./init.mjs");
   process.exit((await initDapp(args)) ? 0 : 1);
+} else if (cmd === "leak" && args.length && !(args[0] in LEAK_ACTIONS)) {
+  // `hydra-dev leak <action>` reports a declared shape under the LOCAL stack's config,
+  // which omits `network` and so can never describe mainnet. A tx.json can declare
+  // `network: "mainnet"`, and packages/leak already ships the reader and three mainnet
+  // examples — it just had no entry point, because its `bin` sits in a nested
+  // `private: true` manifest npm does not read on install. Same defect as `hydra-lint`
+  // had, in the other half of the product. ERRORS.md E-DEV17.
+  //
+  // Delegated rather than re-implemented, for the reason `lint` is: one copy of the
+  // report rendering, the exit codes and the UNKNOWN vocabulary.
+  process.argv = [process.argv[0], process.argv[1], ...args];
+  await import("../../leak/src/cli.mjs");
 } else if (cmd === "lint") {
   // The linter resolves `typescript` from its own directory, so an uninstalled
   // linter is a missing package rather than a broken import path.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * hydra-leak — prints the disclosure set of a planned transaction.
+ * hydra-dev leak — prints the disclosure set of a planned transaction.
  *
  * Exit codes: 0 report produced, 2 bad invocation. There is deliberately no non-zero
  * "leaky" exit: a disclosure set is a description, not a verdict, and UNKNOWN cells are
@@ -21,10 +21,10 @@ const asJson = argv.includes("--json");
 const positional = argv.filter((a) => a !== "--json");
 
 function usage(msg) {
-  if (msg) console.error(`hydra-leak: ${msg}`);
-  console.error("usage: hydra-leak <tx.json> [--json]");
-  console.error("       hydra-leak --example <name> [--json]");
-  console.error("       hydra-leak - [--json]        (read JSON from stdin)");
+  if (msg) console.error(`hydra-dev leak: ${msg}`);
+  console.error("usage: hydra-dev leak <tx.json> [--json]");
+  console.error("       hydra-dev leak --example <name> [--json]");
+  console.error("       hydra-dev leak - [--json]        (read JSON from stdin)");
   let names = [];
   try {
     names = readdirSync(examplesDir)
@@ -90,7 +90,7 @@ const wrap = (s, indent) =>
     .trimEnd()
     .replace(/\n\s*$/, "");
 
-console.log(`\nhydra-leak — disclosure set for ${label}`);
+console.log(`\nhydra-dev leak — disclosure set for ${label}`);
 console.log(`upstream ${report.upstreamCommit}`);
 console.log(
   `config: ${JSON.stringify({
