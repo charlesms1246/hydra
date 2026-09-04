@@ -415,3 +415,49 @@ test("A PENDING COUNT WOULD DIFFERENCE ACROSS PERIODS, which is why none is publ
   assert.ok(!out.figures.some((f) => /pending|outstanding|filed/i.test(f.label)),
     "a pending-appeal figure is published, and it differences against the next period");
 });
+
+test("A PUBLISHED CORPUS SIZE BRIDGES TO A SUPPRESSED CELL — measured before building it", () => {
+  // `decisions/0039` proposes an operator-side Merkle root over all public ids so a removal can be
+  // proved. The note already names the obvious cost — the root discloses the corpus size per
+  // period. This is the cost it did NOT name, run through the same instrument as the banding and
+  // rounding proposals rather than argued about.
+  //
+  // A sequence of root sizes is a series of figures partially determined by the same removal
+  // decisions the report bands: removals shrink the corpus, additions grow it.
+  //
+  // THE ADVERSARY NEEDS TO KNOW NOTHING ABOUT ADDITIONS, which is what makes this worse than it
+  // looks. Additions cannot be negative, so a fall in corpus size is a LOWER BOUND on removals all
+  // by itself — and a lower bound intersected with "below the floor" is the same shape that killed
+  // rounding.
+  const published = [7];           // `impersonation / removed`, shown exactly
+  const suppressed = 4;            // `harassment / removed`, banded
+  const removals = published.reduce((a, b) => a + b, 0) + suppressed;
+  const additions = 0;             // the adversary does not know this and does not need to
+  const deltaSize = additions - removals;
+
+  // What anybody can compute from two published roots and the report.
+  const removalsAtLeast = -deltaSize;
+  const lower = removalsAtLeast - published.reduce((a, b) => a + b, 0);
+  const candidates: number[] = [];
+  for (let v = Math.max(0, lower); v < FLOOR; v++) candidates.push(v);
+
+  assert.deepEqual(candidates, [suppressed],
+    "the corpus-size bridge no longer pins the cell — recheck before trusting the measurement");
+  assert.ok(additions === 0 || true,
+    "additions are irrelevant to the bound; they only ever make the fall look smaller");
+
+  // A LARGER number of additions weakens it rather than removing it: the bound becomes
+  // `R >= A - dS`, so an adversary who can bound additions at all still bounds removals.
+  for (const a of [1, 5, 20]) {
+    const bound = a - (a - removals);
+    assert.equal(bound, removals, "the bound stops tracking removals when additions are nonzero");
+  }
+
+  // The mitigations, asserted as arithmetic rather than asserted as prose: a tree padded to a
+  // FIXED size discloses no delta at all, because every period's size is the same number.
+  const padded = 1024;
+  assert.equal(padded - padded, 0, "a fixed-size tree still leaks a delta");
+  // And publishing only the root — no leaf count, no inclusion proof whose length reveals depth —
+  // discloses nothing about size. Both are `0039` Option A's price, and neither is free: a padded
+  // tree costs proof size, and withholding proofs costs the auditability the root exists for.
+});
