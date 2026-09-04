@@ -353,7 +353,20 @@ export class Vault {
     // The ids the caller asked for that were REMOVED UNDER PROCESS rather than merely absent. Only
     // ids the caller already named are answered about, so this discloses nothing to somebody
     // fishing — and the people who hold a real id are the participants.
-    const removed = r.ids.filter((id) => this.#compelled.has(id));
+    // ENCRYPTED IDS ONLY, and the endpoint prefix is checked rather than assumed. Nothing can
+    // compel a public object — `compel` refuses one — so `#compelled` only ever holds `enc:` ids,
+    // and without this filter a read on the PUBLIC endpoint naming such an id would answer about
+    // it. That would be a contradiction rather than an inconsistency:
+    //
+    // The public path answers removed, expired and never-posted IDENTICALLY ON PURPOSE, and the
+    // client says so. Telling a holder of an ENCRYPTED id that it was removed discloses nothing to
+    // anyone not already entitled — only channel members know that id. A PUBLIC id is a public
+    // value, so the same answer would let anybody enumerate which public objects were taken down:
+    // a disclosure the operator would be making on the subject's behalf rather than the subject's.
+    //
+    // The two answers now live in one codebase, so what keeps them apart is this line and the test
+    // that fails without it, not the fact that only encrypted objects can be compelled today.
+    const removed = r.ids.filter((id) => id.startsWith(prefix) && this.#compelled.has(id));
     return { ok: true, op: "fetch", found, ...(removed.length ? { removed } : {}) };
   }
 

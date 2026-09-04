@@ -187,3 +187,45 @@ test("the secret is longer than a removal secret, and neither mint takes a value
       false);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test("THE PUBLIC PATH'S INDISTINGUISHABILITY IS INTACT — the two answers must not meet", async () => {
+  // `hydra fetch` tells a user the vault answers removed, expired and never-posted identically,
+  // on purpose, for PUBLIC objects. `D6` makes a compelled removal answer `removed`. Those are
+  // only compatible because compulsion reaches the encrypted class alone:
+  //
+  //   - An ENCRYPTED id is known to channel members and nobody else, so telling a holder it was
+  //     removed discloses nothing to anyone not already entitled to know.
+  //   - A PUBLIC id is a public value. The same answer would let anybody enumerate which public
+  //     objects were taken down — a disclosure the operator makes on the subject's behalf.
+  //
+  // Asserted rather than inferred from "compel refuses a public object", because the two answers
+  // now live in one codebase and nothing but this keeps them apart.
+  await withVault(async ({ url, enc, pub, vault, del }) => {
+    await del(enc, {
+      "x-hydra-compelled": PROCESS_SECRET, "x-hydra-process-reference": "case 9",
+    });
+    assert.equal(vault.compelledRemovals().length, 1);
+
+    // A public read naming the compelled ENCRYPTED id must not answer about it. The id is on the
+    // wrong endpoint, and a caller who has it learned it somewhere this vault is not responsible
+    // for — it must still not be confirmed here.
+    const crossed = await (await fetch(`${url}${PUBLIC_ENDPOINT}`,
+      { method: "POST", body: JSON.stringify([pub, enc]) })).json() as
+      { found: Record<string, string>; removed?: string[] };
+    assert.equal(crossed.removed, undefined,
+      "a read on the PUBLIC endpoint answered about a compelled encrypted object — the two "
+      + "classes' answers have met, and a public id would then be enumerable the same way");
+
+    // And a public object that really is gone answers as a plain miss, exactly as before: removed,
+    // expired and never-posted stay indistinguishable on that path.
+    const takenDown = await fetch(`${url}${PUBLIC_ENDPOINT}/${pub}`,
+      { method: "DELETE", headers: { "x-hydra-removal": REMOVAL_SECRET } });
+    assert.equal(takenDown.status, 200);
+    const after = await (await fetch(`${url}${PUBLIC_ENDPOINT}`,
+      { method: "POST", body: JSON.stringify([pub, "pub:neverexisted"]) })).json() as
+      { found: Record<string, string>; removed?: string[] };
+    assert.deepEqual(after.found, {});
+    assert.equal(after.removed, undefined,
+      "a public takedown became distinguishable from an object that never existed");
+  });
+});
