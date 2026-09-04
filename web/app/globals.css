@@ -458,10 +458,13 @@ body.has-canvas .field {
  * ------------------------------------------------------------------------------------------ */
 
 .claims {
+  border-top: 1px solid var(--g-12);
+}
+
+.claim-run {
   list-style: none;
   padding: 0;
   margin: 0;
-  border-top: 1px solid var(--g-12);
 }
 
 .claim {
@@ -474,18 +477,20 @@ body.has-canvas .field {
 
 @media (min-width: 60rem) {
   .claim {
-    grid-template-columns: 3.5rem minmax(0, 1fr) 18rem;
+    grid-template-columns: 9rem minmax(0, 1fr) 17rem;
     align-items: start;
     gap: 2rem;
   }
 }
 
+/* Wide enough for an id rather than a two-digit number — it is the row's name, not its position. */
 .claim-index {
   font-family: var(--mono);
   font-size: 0.6875rem;
-  color: var(--g-32);
-  padding-top: 0.5em;
-  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  color: var(--g-48);
+  padding-top: 0.45em;
+  word-break: break-word;
 }
 
 .claim-says {
@@ -1352,4 +1357,44 @@ html[data-build="public"] .wordmark {
   .panels-wide {
     grid-template-columns: 1fr;
   }
+}
+
+/*
+ * The band that breaks a run of claims from one source.
+ *
+ * Not a heading — a rule with a name on it, in the same register as `SEC-0n`. It has to read as
+ * apparatus rather than as content, because the content is the claims and a band that competed
+ * with them would be this page deciding what matters.
+ */
+.claim-band {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 2.5rem 0 0.75rem;
+  border-bottom: 1px solid var(--g-20);
+}
+
+.claim-band span {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.16em;
+  color: var(--g-48);
+  text-transform: uppercase;
+}
+
+.claim-band::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--g-12);
+}
+
+/* The first band sits directly under the section rule and needs no extra air. */
+.claims > .claim-band:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.claim-band {
+  margin: 0;
 }

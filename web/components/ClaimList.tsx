@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { Claim } from "../../hydra-dapp/packages/claims/src/statement.ts";
 
 /**
@@ -21,18 +22,64 @@ import type { Claim } from "../../hydra-dapp/packages/claims/src/statement.ts";
  * cannot honour is better than one that offers a 404 — particularly this page, whose entire
  * argument is that what it says can be checked.
  */
+/** The file a claim's citation leads with — the grouping key, taken from generated data. */
+const sourceOf = (from: string) => from.replace(/\s*\([^)]*\)/g, "").split(",")[0].trim();
+
+/**
+ * The claim's own id, from the parenthesised half of its citation.
+ *
+ * **This is what goes in the left column, instead of a serial number.** Sixteen consecutive claims
+ * open with "Whoever runs the storage server can see", so a reader scanning the left edge of the
+ * table gets `01 02 03…`, which tells them nothing, and then eleven identical words before the
+ * content starts. `blob.expiry`, `upload.burst`, `read.hit`, `transport.peer` is an index of what
+ * each row is *about* — the differentiator, at the place the eye lands first.
+ *
+ * It is generated data, and short enough that the provenance check reads it as a label rather than
+ * as prose. Claims without an id keep the number.
+ */
+const idOf = (from: string) => /\(([^),]+)\)/.exec(from)?.[1] ?? null;
+
 export function ClaimList({ claims }: { claims: readonly Claim[] }) {
+  /*
+   * Split into runs by source file, and emit each run as its own generated block with the band
+   * OUTSIDE it.
+   *
+   * The band's text is derived from a citation — a prefix of `from`, not a value `statement()`
+   * produced — so putting it inside a `data-generated` block made the provenance check fail, and
+   * correctly: that check exists so a marked block cannot carry text the generator did not write,
+   * and a substring of a citation is exactly the kind of near-miss it should refuse.
+   *
+   * The fix is not to widen the check. It is to put the band where it belongs — **the claims are
+   * generated, the apparatus around them is not**, and the markup now says so.
+   */
+  const groups: { source: string; items: { c: Claim; n: number }[] }[] = [];
+  claims.forEach((c, i) => {
+    const source = sourceOf(c.from);
+    const last = groups[groups.length - 1];
+    if (last && last.source === source) last.items.push({ c, n: i + 1 });
+    else groups.push({ source, items: [{ c, n: i + 1 }] });
+  });
+
   return (
-    <ul className="claims" data-generated="statement">
-      {claims.map((c, i) => (
-        <li className={c.complete ? "claim" : "claim partial"} key={c.from + i}>
-          <span className="claim-index" aria-hidden>
-            {String(i + 1).padStart(2, "0")}
-          </span>
-          <span className="claim-says">{c.says}</span>
-          <span className="claim-from">{c.from}</span>
-        </li>
+    <div className="claims">
+      {groups.map((g, gi) => (
+        <Fragment key={g.source + gi}>
+          <p className="claim-band" aria-hidden>
+            <span>{g.source}</span>
+          </p>
+          <ul className="claim-run" data-generated="statement">
+            {g.items.map(({ c, n }) => (
+              <li className={c.complete ? "claim" : "claim partial"} key={c.from + n}>
+                <span className="claim-index" aria-hidden>
+                  {idOf(c.from) ?? String(n).padStart(2, "0")}
+                </span>
+                <span className="claim-says">{c.says}</span>
+                <span className="claim-from">{c.from}</span>
+              </li>
+            ))}
+          </ul>
+        </Fragment>
       ))}
-    </ul>
+    </div>
   );
 }
