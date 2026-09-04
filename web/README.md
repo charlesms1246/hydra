@@ -115,14 +115,28 @@ GitHub Pages included.
 ## The mark
 
 `public/hydra.svg`, and `app/icon.svg` which is the same file recoloured to the accent. Used in
-the nav bar and as the favicon.
+the nav bar and as the favicon **of the local build only** — `npm run build:public` substitutes
+`>|<`, the reference's own glyph, and preflight refuses to make a public build while the file is
+present.
 
-**It is Marvel's HYDRA insignia, and it is not in the repository.** That is a third party's
-trademark rather than a licence anybody here holds, so it gets the same treatment as the wordmark
-face: gitignored, checked by `scripts/preflight.ts`, present on the machine that builds. It is
-fine for looking at what the design does and it is not fine to publish. **Before this site goes
-anywhere public it needs replacing with a mark this project owns.** Tracked as a deployment
-blocker alongside the font licence.
+**It is Marvel's HYDRA insignia.** A third party's trademark rather than a licence anybody here
+holds, so it is gitignored and never served from a public build.
+
+**This is not a deployment blocker, and it used to say it was.** That wording predated
+`build:public`: publication is now handled, mechanically, by a guard that fails rather than by
+somebody remembering. What is actually unresolved is different and smaller — *this project has no
+mark of its own.*
+
+**And that hold has no lift condition, which this file should say rather than imply otherwise.**
+The font's blocker can be discharged: transfer the personal-use licence. This one cannot. The mark
+cannot be licensed at any price, so the only path is replacement, and **nobody has been asked to
+draw one.** Writing it as "tracked alongside the font licence" implied a future in which it
+resolves the same way, and there is no such future without somebody deciding to commission a mark.
+
+The user has chosen to keep it for now and that decision is not being re-litigated here. The point
+of the paragraph is that **a blocking condition with no satisfiable lift is a deletion wearing
+caution's clothes** — durable, because nobody argues with caution — and this file should not
+present one as though it were on a track.
 
 ## Design
 
