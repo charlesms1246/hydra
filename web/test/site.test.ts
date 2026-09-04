@@ -80,6 +80,13 @@ before(() => {
  * So nothing is stripped. Every claim `statement()` produces is subtracted by value from the
  * whole document, scripts included, and whatever remains is prose a person wrote — wherever the
  * bundler chose to put it, in whatever encoding.
+ *
+ * **The limit of subtracting by value, considered and accepted.** A hand-written sentence
+ * IDENTICAL to a generated one is subtracted along with it, so an asserted copy of a claim would
+ * escape this check. On the landing page it cannot happen: that page carries no generated claim
+ * at all, and the may-link-may-not-quote test below fails if one appears — which is the surface
+ * that matters, being entirely hand-written. On `/disclosures/` a duplicate would slip through,
+ * and what it buys somebody is a second copy of a sentence the statement already produced.
  */
 function normalise(raw: string): string {
   return raw
@@ -354,11 +361,16 @@ test("no key material or key-derivation code reaches the exported site", () => {
  * three known crossings, all of them upstream of this package and none of them reachable from a
  * browser today. The list is a tripwire, not permission: anything NEW fails.
  *
- * WHAT SHOULD HAPPEN: `statement.ts` reaches this code to quote five bucket sizes and a cover
- * rate. `channel/src/note.ts` pulls in `identity/src/domains.ts`, which holds `POOL_DOMAIN`,
- * `VAULT_DOMAIN` and `derive()` — the derivation for both keys I6 names. A constants module that
- * does not drag key derivation behind it would empty this list, and then it should be deleted
- * and the assertion made absolute. Tracked with hydra-dd.
+ * TWO OF THE THREE ARE ALREADY GONE. `c1962af` extracted `channel/src/constants.ts`, so quoting
+ * a cover rate no longer drags in `identity/src/domains.ts` — which holds `POOL_DOMAIN`,
+ * `VAULT_DOMAIN` and `derive()`, the derivation for both keys I6 names — and `coverLeadMs` moved
+ * to a module importing only `node:crypto`.
+ *
+ * WHAT IS LEFT is one import: `statement.ts` takes `BUCKETS` from `vault-client/src/buckets.ts`
+ * to say how many size bands there are. That file imports NOTHING — it is five integers and
+ * three pure functions, no key material on any path — so what remains is a package-boundary
+ * violation rather than a key-exposure one. When those constants move too, delete this list and
+ * make the assertion absolute.
  */
 const KNOWN_CROSSINGS = ["hydra-dapp/packages/vault-client/src/buckets.ts"];
 
