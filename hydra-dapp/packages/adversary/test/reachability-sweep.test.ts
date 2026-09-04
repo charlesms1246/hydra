@@ -56,6 +56,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { codeOf } from "../src/prose.ts";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGES = join(HERE, "..", "..");
 
@@ -182,10 +184,7 @@ function scan(): { testOnly: Found[]; internal: Found[]; dead: Found[] } {
   // any line containing a URL — `http://127.0.0.1:8080` is not a comment — and that silently HID
   // real callers, which is the worse direction for this guard. A trailing comment after code is
   // left in; it is a much rarer way to name a symbol you are not calling.
-  const strip = (src: string) => src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
-  const text = new Map(files.map((p) => [p, strip(readFileSync(p, "utf8"))]));
+  const text = new Map(files.map((p) => [p, codeOf(readFileSync(p, "utf8"))]));
 
   const exports = new Map<string, string>();
   const decl = /^export\s+(?:declare\s+)?(?:async\s+)?(?:abstract\s+class|class|function)\s+([A-Za-z_$][\w$]*)/gm;

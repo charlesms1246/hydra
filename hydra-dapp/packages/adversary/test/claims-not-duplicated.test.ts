@@ -11,6 +11,14 @@
  *   - `0033` fixed the two-device cover collision, the TUI was updated, and **the CLI kept warning
  *     about identical cover.** Same defect, opposite direction — so it is not one careless file.
  *
+ * **WHAT THIS INSTRUMENT CANNOT SEE: a paraphrase.** It matches strings, so a sentence making the
+ * same claim in different words passes it — and one did, immediately. The CLI's usage block still
+ * read *"signed: only you could have, and it is provable"*, a fourth copy of the signing claim,
+ * worded differently enough to be invisible here. That is the boundary of string matching rather
+ * than a defect in this check, and it is why `no-invented-claims.test.ts` exists: it forbids
+ * claim-shaped LANGUAGE outside the claims module, so a front end cannot invent one whatever words
+ * it chooses. Read the two together; neither is coverage on its own.
+ *
  * A TEST WAS PINNING ONE OF THE LIES. `tui-conversation.test.ts` asserted the compose line said
  * "anyone holding your bundle can prove it", so the false claim had a guard keeping it in place.
  * That is why this file checks the SHAPE — one source, both readers — rather than adding a fourth
@@ -23,6 +31,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { WARNINGS } from "../../claims/src/warnings.ts";
+import { codeOf } from "../src/prose.ts";
 
 const PACKAGES = join(import.meta.dirname, "..", "..");
 /** The two front ends. Both must render every claim; neither may restate one. */
@@ -35,15 +44,10 @@ const sourcesOf = (pkg: string) => {
     .map((f) => ({ path: `${pkg}/src/${f}`, text: readFileSync(join(dir, f), "utf8") }));
 };
 
-/** Code only. A comment quoting a claim it is explaining must not read as a restatement. */
-const code = (text: string) => text
-  .replace(/\/\*[\s\S]*?\*\//g, "")
-  .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
-
 test("EVERY FRONT END RENDERS THE SAME CLAIMS, from the same place", () => {
   assert.ok(WARNINGS.length >= 4, "the claim set shrank — check nothing was quietly inlined again");
   const rendering = new Map(FRONT_ENDS.map((pkg) => [pkg,
-    sourcesOf(pkg).map((f) => code(f.text)).join("\n")]));
+    sourcesOf(pkg).map((f) => codeOf(f.text)).join("\n")]));
 
   // A claim shown by one front end and not the other is the drift itself. `SECOND_CLIENT` is the
   // case that proves the direction runs both ways — the CLI was the stale one there.
@@ -76,7 +80,7 @@ test("NEITHER FRONT END RESTATES A CLAIM IN ITS OWN WORDS", () => {
   for (const pkg of FRONT_ENDS) {
     for (const file of sourcesOf(pkg)) {
       for (const phrase of phrases) {
-        assert.ok(!code(file.text).includes(phrase),
+        assert.ok(!codeOf(file.text).includes(phrase),
           `${file.path} states "${phrase}" itself. Claims come from claims/src/warnings.ts so the `
           + "two front ends cannot disagree — this one has its own copy again.");
       }

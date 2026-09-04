@@ -16,6 +16,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { codeOf } from "../src/prose.ts";
+
 const CLI = join(import.meta.dirname, "..", "..", "cli", "src", "cli.ts");
 const source = readFileSync(CLI, "utf8");
 
@@ -51,10 +53,7 @@ test("the help renders to the end of its own comment, not to a line number", () 
   // while explaining why it went, and the first version of this assertion fired on that. Sixth
   // time an accurate explanation has broken a guard here — the rule is the same every time, and
   // it is that a guard must measure the code and never the writing about it.
-  const code = source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
-  assert.ok(!/slice\(3, \d+\)/.test(code),
+  assert.ok(!/slice\(3, \d+\)/.test(codeOf(source)),
     "usage() slices a hardcoded line range again — commands added below the cut vanish silently");
   assert.match(help, /hydra status/, "the last line of the help block is not being rendered");
 });

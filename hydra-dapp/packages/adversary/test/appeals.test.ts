@@ -21,6 +21,7 @@ import { Appeals, appealStatement, appealDigest } from "../../moderation/src/app
 import { MODERATION_OBSERVABLE, MODERATION_OBSERVABLE_IDS }
   from "../../moderation/src/observations.ts";
 import { Reports } from "../../moderation/src/reports.ts";
+import { unquoted } from "../src/prose.ts";
 
 const yes = async () => true;
 const no = async () => false;
@@ -184,7 +185,7 @@ test("the moderation table names every surface moderation actually has", () => {
   // is correcting and a guard that greps the raw text fires on the correction itself. Fourth time
   // an accurate explanation has broken a guard here — `grep()` in the mechanism checks strips
   // comments for the same reason. What must be absent is the CLAIM, not the string.
-  const asserted = published.why.replace(/`[^`]*`/g, "");
+  const asserted = unquoted(published.why);
   assert.ok(!/commitment still stands/.test(asserted),
     "the row claims an on-chain commitment that a public post does not create");
   assert.match(published.why, /decisions\/0039/, "the row does not point at the open decision");
