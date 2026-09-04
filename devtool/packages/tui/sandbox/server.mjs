@@ -6,6 +6,33 @@
  * the TUI can reach the world through the real @hydra/core — real probe.mjs timeouts,
  * real u256 balance parsing, real error shapes — rather than through a stubbed core that
  * could drift from what ships.
+ *
+ * WHAT THIS IS NOT: it is not evidence that any request it answers is a request devnet
+ * would answer. Every route here was written to match what the code sends, so it agrees
+ * with the code by construction and cannot discriminate against a wrong call. Two bugs
+ * lived behind exactly that on 2026-09-04 — a `POST /mint` devnet has not served since
+ * v0.8.0-rc.3, and a `starknet_getTransactionByHash` param arity real devnet rejects —
+ * both green here the whole time. See ERRORS.md E-DEV11.
+ *
+ * So a passing sandbox test says the TUI renders a response correctly. It says nothing
+ * about whether that response is one the real world produces. Only a live drive does.
+ *
+ * Audited against starknet-devnet v0.8.0-rc.3 on 2026-09-04, request by request. Findings,
+ * in the three states worth distinguishing:
+ *
+ *   CONTRADICTS reality (bug)   POST /mint; getTransactionByHash [hash]. Both now fixed
+ *                               in core/, and this file follows the fixed shapes.
+ *   NARROWER than reality (ok)  starknet_call and getTransactionReceipt return a subset of
+ *                               the real fields — verified to cover every field the code
+ *                               reads. Narrowing is fine when it is checked and written down.
+ *   NEVER COMPARED (the trap)   what both bugs were. Nothing is knowingly in this state now;
+ *                               anything added here should be driven against the real
+ *                               service before it is relied on.
+ *
+ * /health matches upstream handlers.rs:43-52 and config.rs:139, and is the one surface
+ * corroborated twice — by reading upstream and by a live drive of the real service.
+ * The control API's `publish` action is deliberately unimplemented: a coverage gap that
+ * creates no false confidence, which is different from a wrong answer.
  */
 
 import { createServer } from "node:http";
@@ -64,7 +91,9 @@ function rpcResult(w, method, params) {
     }
     // The sender lives here and nowhere else, which is why chain.mjs reads it.
     case "starknet_getTransactionByHash": {
-      const rec = w.txs.get(params?.[0]);
+      // Named params, matching core/src/chain.mjs — devnet rejects [hash] and a real
+      // node rejects [hash, []]; only { transaction_hash } satisfies both.
+      const rec = w.txs.get(params?.transaction_hash ?? params?.[0]);
       if (!rec) throw new Error("Transaction hash not found");
       return {
         transaction_hash: params[0],
@@ -74,6 +103,17 @@ function rpcResult(w, method, params) {
         nonce: "0x" + rec.blockNumber.toString(16),
         calldata: ["0x1", "0x0", "0x0", "0x0"],
       };
+    }
+    // starknet-devnet v0.8.0-rc.3 serves minting as this RPC method, not POST /mint.
+    // The /mint route below is kept only so an older caller gets a clear failure.
+    case "devnet_mint": {
+      const address = params?.address ?? params?.[0]?.address;
+      const acct = w.accounts.find((a) => felt(a.address) === felt(address ?? "0x0"));
+      if (!acct) throw new Error("Account not found");
+      const tok = w.tokens.STRK;
+      w.balances[acct.address][tok] += BigInt(params?.amount ?? params?.[0]?.amount ?? 0);
+      w.note(`faucet -> ${acct.name}`);
+      return { new_balance: String(w.balances[acct.address][tok]), unit: "FRI", tx_hash: w.hash() };
     }
     default:
       throw new Error(`unsupported method: ${method}`);
@@ -156,11 +196,11 @@ export async function startServer(w) {
         });
       }
 
+      // Real devnet v0.8.0-rc.3 has no REST /mint and answers 404. This fake used to
+      // serve it — which is precisely why the 404 went unnoticed until a live drive.
+      // Kept as a 404 so the fixture agrees with reality instead of contradicting it.
       if (url.pathname === "/mint") {
-        const acct = w.accounts.find((a) => BigInt(a.address) === BigInt(body.address ?? "0x0"));
-        if (acct) w.balances[acct.address][w.tokens.STRK] += BigInt(body.amount ?? 0);
-        w.note(`faucet -> ${acct?.name ?? body.address}`);
-        return send(200, { new_balance: String(w.balances[acct?.address]?.[w.tokens.STRK] ?? 0), unit: "FRI" });
+        return send(404, { error: "no such route: /mint — use the devnet_mint JSON-RPC method" });
       }
 
       if (url.pathname === "/log") return send(200, { log: w.log });
