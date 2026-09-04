@@ -1,6 +1,12 @@
 /**
  * The simulated world, over the wire.
  *
+ * A FIXTURE AGREES WITH REALITY, NOT WITH THE CODE UNDER TEST. That is the rule, and
+ * both bugs found on 2026-09-04 existed because this file broke it: each route was
+ * written to match what the caller sent, so it tracked the implementation and was
+ * green forever without ever being evidence. When core/ was fixed, this file became
+ * wrong — and the correction was toward devnet, not back toward the new code.
+ *
  * One HTTP server plays three roles the real stack splits across processes: devnet's
  * JSON-RPC, the discovery service's /health, and `hydra-dev up`'s control API. It exists so
  * the TUI can reach the world through the real @hydra/core — real probe.mjs timeouts,
