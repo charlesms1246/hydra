@@ -121,7 +121,16 @@ export function Solids() {
      * masthead, gone by the time anybody is reading.
      */
     const hero = !!document.querySelector(".hero");
-    const rest = hero ? REST_OPACITY : REST_OPACITY * 0.45;
+
+    /*
+     * Narrow viewports get it fainter still, and this has to be decided HERE rather than in CSS:
+     * the draw loop writes `style.opacity` every frame, so an inline value beats any stylesheet
+     * rule and a `@media` block for this silently does nothing. Found by rendering the site in
+     * 390px iframes — the field is sized to span the viewport, so at that width its glyphs are
+     * the same size as the body text and sit directly behind it.
+     */
+    const narrow = window.matchMedia("(max-width: 48rem)").matches;
+    const rest = REST_OPACITY * (hero ? 1 : 0.45) * (narrow ? 0.4 : 1);
     const exitViewports = hero ? EXIT_VIEWPORTS : EXIT_VIEWPORTS * 0.45;
 
     let renderer: THREE.WebGLRenderer;

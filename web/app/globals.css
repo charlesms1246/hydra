@@ -1114,3 +1114,45 @@ body.has-canvas .field {
   padding: 0.1em 0.35em;
   border-radius: 2px;
 }
+
+/* --------------------------------------------------------------------------------------------
+ * Narrow viewports.
+ *
+ * Found by rendering the site in 390px iframes — media queries key off a frame's own width, so
+ * an iframe is a faithful narrow viewport when the window will not resize. Three defects, all of
+ * them the chrome winning a fight it should lose:
+ * ------------------------------------------------------------------------------------------ */
+
+@media (max-width: 48rem) {
+  /*
+   * The corner letters and crosshairs sat ON the prose — "R" over a paragraph on `/pitch/`, "A"
+   * over one on `/about/`. They are a printer's mark: at desktop widths there is margin for them
+   * to occupy, and at 390px there is none, so the mark is competing with the text it frames.
+   * A registration mark that obscures the plate is not a registration mark.
+   */
+  .frame {
+    display: none;
+  }
+
+  /*
+   * The section tick sits under the rule at the far left. When a title wraps to two lines — which
+   * every long one does at this width — the two collide. The number above the title already says
+   * which section this is.
+   */
+  .section-tick {
+    display: none;
+  }
+
+  /*
+   * The field is sized to span the viewport, so at 390px the glyphs are the same size as the body
+   * text and sit directly behind it. Depth at desktop width, noise here.
+   */
+  /*
+   * `.field` only — `.solids` has its opacity written inline by the draw loop every frame, so a
+   * rule here would be overridden without warning. That one is handled in `Solids.tsx`, and the
+   * comment there says why.
+   */
+  .field {
+    opacity: 0.12;
+  }
+}
