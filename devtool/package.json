@@ -14,6 +14,11 @@
   "bin": {
     "hydra-dev": "packages/cli/src/cli.mjs"
   },
+  "exports": {
+    ".": "./packages/leak/src/leak.mjs",
+    "./facts": "./packages/leak/src/facts.mjs",
+    "./package.json": "./package.json"
+  },
   "files": [
     "packages/cli",
     "packages/core",
