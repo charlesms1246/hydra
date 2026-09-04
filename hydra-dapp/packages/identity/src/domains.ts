@@ -128,21 +128,7 @@ const external = (bytes: Uint8Array, provenance: string): ExternalBytes => {
 /** The operating system's CSPRNG. */
 export const fromOsRandom = (n = 32): ExternalBytes => external(randomBytes(n), "os random");
 
-/**
- * A wallet signature over a message this system chose.
- *
- * `message` is required and recorded because of the residual risk named in
- * `claude-docs/decisions/0001-key-domains.md`: if one signature ever feeds both the SDK's
- * viewing-key derivation and `rootSeed`, every domain check still passes and I1 is still
- * broken. Naming the message at the call site is what makes "a different signature over a
- * different message" reviewable rather than remembered.
- */
-export const fromWalletSignature = (signature: Uint8Array, message: string): ExternalBytes =>
-  external(signature, `wallet signature over ${JSON.stringify(message)}`);
 
-/** A hardware token or smartcard. */
-export const fromHardwareToken = (bytes: Uint8Array, device: string): ExternalBytes =>
-  external(bytes, `hardware token ${device}`);
 
 /**
  * A fixed vector, for tests.
@@ -165,7 +151,7 @@ export const fromTestVector = (bytes: Uint8Array, label: string): ExternalBytes 
  *
  * It is an entropy SOURCE rather than an adopt-style shortcut, so the delivered bytes are
  * stretched through `rootSeed`/`derive` like everything else and never become a `Secret`
- * directly. `peer` is recorded for the same reason `fromWalletSignature` records its message:
+ * directly. `peer` is recorded for the same reason a wallet signature records its message:
  * it makes "whose material is this" answerable at the call site rather than remembered.
  *
  * It cannot launder pool material. The bytes arrive out of an AES-GCM open under a key that

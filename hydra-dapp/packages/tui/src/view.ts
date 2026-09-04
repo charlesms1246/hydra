@@ -37,7 +37,7 @@ type Identity = { readonly fingerprint: string; readonly epoch: number; readonly
 let cached: { readonly key: string; readonly value: Identity } | null = null;
 
 /** The fingerprint over BOTH long-term keys — see `commands.ts`, which explains why both. */
-export function identityOf(state: State): Identity {
+function identityOf(state: State): Identity {
   const key = `${state.seedHex}:${state.prekeys.epoch}:${oneTimeRemaining(state.prekeys)}`;
   if (cached?.key === key) return cached.value;
   const root = derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromStoredSeed(

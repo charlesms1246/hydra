@@ -229,7 +229,7 @@ export function respondWith(
  * Split from the lookup so the store's deletion is the only way to lose a key: a caller cannot
  * reach this with material the store has destroyed, because it has to pass the bytes in.
  */
-export function respondUsing(
+function respondUsing(
   myVaultRoot: Secret<typeof VAULT_DOMAIN>,
   signedSeed: Uint8Array,
   oneTimeSeed: Uint8Array | null,

@@ -44,7 +44,7 @@ const MESSAGE = "hydra/ratchet/message-key";
 const STEP = "hydra/ratchet/chain-step";
 
 /** The key that seals one message. */
-export const messageKeyOf = (chain: Secret<typeof VAULT_DOMAIN>): Secret<typeof VAULT_DOMAIN> =>
+const messageKeyOf = (chain: Secret<typeof VAULT_DOMAIN>): Secret<typeof VAULT_DOMAIN> =>
   subKey(chain, MESSAGE);
 
 /** The next chain key. The caller is expected to stop holding the old one. */

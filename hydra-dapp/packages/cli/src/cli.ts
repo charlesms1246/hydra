@@ -120,9 +120,17 @@ switch (command) {
     console.error("anyone reading the chain — see `hydra disclose`. what it buys is that a");
     console.error("stranger can check a signature you made without ever talking to you.");
     console.error("");
-    console.error("this client does not write it. the identity contract's data ABI is not");
-    console.error("verified anywhere in this repo, and publishing under a guessed entrypoint is");
-    console.error("how a record ends up somewhere nobody looks. see claude-docs/decisions/0027.");
+    // WAS FALSE UNTIL THIS LINE. It told users the identity contract's data ABI is "not verified
+    // anywhere in this repo" — `decisions/0031` verified it against the deployed class and landed
+    // a record on Sepolia, so the client was reporting less confidence than it had, in a message
+    // whose whole job is to help somebody decide. A stale user-facing string is a claim, and this
+    // one was wrong in the direction that talks a user out of a thing that works.
+    console.error("this client does not write it, and that is a choice rather than a limitation.");
+    console.error("the write costs gas from an account, and which account pays is exactly the");
+    console.error("link this record creates — so it is yours to make deliberately, with the");
+    console.error("wallet you meant, rather than something a client does while you read the");
+    console.error("warning above. the ABI is verified against the deployed class and a record");
+    console.error("has been landed with it; see claude-docs/decisions/0031.");
     break;
   }
 

@@ -51,7 +51,7 @@ const STATEMENT = "hydra/authorship/signature/v1 ";
  * two different felts can produce the same bytes if the encoder is careless, and a signature
  * over an ambiguous encoding is a signature over more than one thing.
  */
-export function commitmentBytes(commitment: bigint): Buffer {
+function commitmentBytes(commitment: bigint): Buffer {
   if (commitment < 0n) throw new Error("a commitment is not negative");
   const hex = commitment.toString(16).padStart(64, "0");
   if (hex.length > 64) throw new Error("a commitment does not fit in 32 bytes");

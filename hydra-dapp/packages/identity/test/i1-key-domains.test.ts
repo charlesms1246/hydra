@@ -124,7 +124,14 @@ test("exactly one function mints a seed, and exactly one reads raw bytes", () =>
   // `(bytes, provenance)` pair, which meant `entropyFrom(expose(poolSecret, …), "wallet")`
   // compiled — the escrowed key becoming the root of a real identity, with a reassuring string
   // beside it. The count is asserted so a new adapter is a deliberate act.
-  // Six, and the last two were deliberate acts this line forced.
+  // FOUR NOW, and the reduction was as deliberate as the additions this line was written to
+  // force. `fromWalletSignature` and `fromHardwareToken` were removed because nothing ever called
+  // them — not a client, not a test — while the product's own UI told users in as many words that
+  // there is "no passphrase, no keychain, no hardware token". Code carrying a mechanism the
+  // product says it does not have is a claim in the opposite direction from every other finding
+  // here, and the direction does not make it harmless: someone reading the source concludes the
+  // capability exists. An entropy source is the most consequential thing to be wrong about,
+  // because it is where key material gets in.
   //
   // `fromChannelWrap` (X3DH) is the only adapter whose material this system did not choose: the
   // initiator picks 32 bytes and wraps them to the recipient's prekey bundle. `fromStoredSeed`
@@ -132,7 +139,7 @@ test("exactly one function mints a seed, and exactly one reads raw bytes", () =>
   //
   // Both are entropy SOURCES rather than adopt-style shortcuts, so the bytes are still
   // stretched through `rootSeed`/`derive` and never become a `Secret` directly.
-  assert.equal(count("^export const from[A-Z][a-zA-Z]* = "), 6,
+  assert.equal(count("^export const from[A-Z][a-zA-Z]* = "), 4,
     "the set of external entropy sources changed — each one is a way key material gets in");
   assert.equal(count("^export function entropyFrom\\b"), 1, "more than one entropy entry point");
   assert.equal(count("^export function expose\\b"), 1, "not exactly one place reads raw key bytes");
