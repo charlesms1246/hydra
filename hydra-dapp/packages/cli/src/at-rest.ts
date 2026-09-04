@@ -140,3 +140,43 @@ export const same = (a: string, b: string): boolean => {
   const y = Buffer.from(b.normalize("NFKC"), "utf8");
   return x.length === y.length && timingSafeEqual(x, y);
 };
+
+/**
+ * Read a passphrase from the terminal without echoing it.
+ *
+ * **A PROMPT, A FILE, OR A WARNING — NEVER SILENTLY THE ENVIRONMENT.** `HYDRA_PASSPHRASE` is set
+ * by `export HYDRA_PASSPHRASE=…` or by prefixing a command, and either lands in the shell history:
+ * **unencrypted, on the same disk as the encrypted state file.** The seizure case is the entire
+ * property this encryption buys, and that delivery hands over both halves at once.
+ *
+ * `authority.ts` already carries the argument, one mechanism over — *"a secret in argv is in the
+ * process table and in a shell history"* — and the removal token, the compelled token and now the
+ * invites all follow it. The client's own passphrase was the last secret that did not.
+ *
+ * Returns `null` when there is no terminal, so a caller can fall back and say why rather than
+ * hanging on a pipe that will never answer.
+ */
+export async function promptPassphrase(what = "passphrase"): Promise<string | null> {
+  const stdin = process.stdin as NodeJS.ReadStream & { setRawMode?: (on: boolean) => void };
+  if (!stdin.isTTY || typeof stdin.setRawMode !== "function") return null;
+  process.stderr.write(`${what}: `);
+  stdin.setRawMode(true);
+  stdin.resume();
+  try {
+    let typed = "";
+    for await (const chunk of stdin) {
+      for (const byte of chunk as Buffer) {
+        // Enter, in both line endings a terminal might send.
+        if (byte === 0x0d || byte === 0x0a) { process.stderr.write("\n"); return typed; }
+        // Ctrl-C: leave without a passphrase rather than returning a partial one.
+        if (byte === 0x03) { process.stderr.write("\n"); return null; }
+        if (byte === 0x7f) { typed = typed.slice(0, -1); continue; }
+        typed += String.fromCharCode(byte);
+      }
+    }
+    return typed;
+  } finally {
+    stdin.setRawMode(false);
+    stdin.pause();
+  }
+}

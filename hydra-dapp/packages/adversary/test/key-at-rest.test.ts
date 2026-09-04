@@ -162,3 +162,41 @@ test("THE EXPOSURE WINDOW IS STATED, and stated as what it actually is", async (
   // read past: encrypted at rest says nothing about a machine that is running.
   assert.match(text, /device seized while running\s+— NO/);
 });
+
+test("THE PASSPHRASE COMES FROM A FILE, not from the shell history", async () => {
+  // **THE ENVIRONMENT VARIABLE UNDOES THE PROPERTY IT PROTECTS.** `export HYDRA_PASSPHRASE=…` lands
+  // in the shell history — unencrypted, on the same disk as the encrypted state file — so the one
+  // threat encryption at rest exists for, a seized disk, would hand over both halves at once.
+  //
+  // `authority.ts` already carries the argument one mechanism over: "a secret in argv is in the
+  // process table and in a shell history". The removal token, the compelled token and the invites
+  // all follow it; the client's own passphrase was the last secret that did not.
+  await withHome(async (home) => {
+    await hydra(home, {}, "init");
+    const file = join(home, "phrase");
+    await writeFile(file, `${PHRASE}\n`);
+
+    await hydra(home, {}, "lock", "--i-have-written-the-phrase-down", "--passphrase-file", file);
+    const raw = await readFile(join(home, "state.json"), "utf8");
+    assert.ok(isEnvelope(JSON.parse(raw)), "--passphrase-file did not lock the state");
+
+    // And it opens with the file, with no environment variable anywhere.
+    await assert.doesNotReject(() => hydra(home, {}, "status", "--passphrase-file", file));
+  });
+});
+
+test("the environment variable still works and says what it costs", async () => {
+  // Kept for scripting, and treated the way `--invites` was: not removed, told the truth about.
+  await withHome(async (home) => {
+    await hydra(home, {}, "init");
+    const file = join(home, "phrase");
+    await writeFile(file, PHRASE);
+    await hydra(home, {}, "lock", "--i-have-written-the-phrase-down", "--passphrase-file", file);
+
+    const { stderr } = await hydra(home, { HYDRA_PASSPHRASE: PHRASE }, "status");
+    assert.match(stderr, /shell history/,
+      "reading the passphrase from the environment said nothing about where it ends up");
+    assert.match(stderr, /same disk as the file/);
+    assert.match(stderr, /--passphrase-file/, "the warning does not name the better option");
+  });
+});

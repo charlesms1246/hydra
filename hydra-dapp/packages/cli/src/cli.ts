@@ -60,8 +60,9 @@ import {
 import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
-import { load, save, exists, locked, STATE_FILE, PASSPHRASE_ENV } from "./state.ts";
-import { refusePassphrase } from "./at-rest.ts";
+import { load, save, exists, locked, usePassphrase, currentPassphrase,
+  passphraseFromEnvironment, STATE_FILE, PASSPHRASE_ENV } from "./state.ts";
+import { refusePassphrase, promptPassphrase } from "./at-rest.ts";
 
 const [command, ...rest] = process.argv.slice(2);
 
@@ -134,6 +135,39 @@ const die = (e: unknown): never => {
 };
 process.on("uncaughtException", die);
 process.on("unhandledRejection", die);
+
+/**
+ * Where the passphrase comes from, in order of preference.
+ *
+ * **NOT THE ENVIRONMENT FIRST.** `export HYDRA_PASSPHRASE=…` lands in the shell history —
+ * unencrypted, on the same disk as the encrypted state file — so the one threat this encryption
+ * exists for, a seized disk, would hand over both halves at once. `authority.ts` carries the same
+ * argument for the removal token: a secret in argv is in the process table and in a shell history.
+ *
+ * A file, then a terminal prompt, then the environment with a warning. The env var stays because
+ * scripting needs something, and it is treated the way `--invites` was: kept, and told the truth
+ * about.
+ */
+async function resolvePassphrase(): Promise<void> {
+  const file = flag("passphrase-file");
+  if (file) {
+    usePassphrase(readFileSync(file, "utf8").trim());
+    return;
+  }
+  const typed = await promptPassphrase();
+  if (typed !== null && typed.trim() !== "") {
+    usePassphrase(typed);
+    return;
+  }
+  if (passphraseFromEnvironment()) {
+    console.error(`WARNING: reading the passphrase from ${PASSPHRASE_ENV}. Setting it puts your`);
+    console.error("passphrase in your shell history — in the clear, on the same disk as the file");
+    console.error("it is protecting, which is exactly the case encryption at rest is for.");
+    console.error("Use --passphrase-file, or let it prompt.");
+  }
+}
+
+if (locked() || flag("passphrase-file")) await resolvePassphrase();
 
 switch (command) {
   case "init": {
@@ -495,8 +529,12 @@ switch (command) {
     // at all — which is why the destructive-operations table had no row for it. A table of
     // operations cannot see an omission.
     const state = load();
-    const secret = process.env[PASSPHRASE_ENV];
-    if (!secret) throw new Error(`set ${PASSPHRASE_ENV} to the passphrase you want to use`);
+    await resolvePassphrase();
+    const secret = currentPassphrase();
+    if (!secret) {
+      throw new Error("no passphrase given. Use --passphrase-file, or run this where it can "
+        + `prompt. ${PASSPHRASE_ENV} works too and puts it in your shell history.`);
+    }
     refusePassphrase(secret);
     if (!has("i-have-written-the-phrase-down")) {
       for (const line of KEY_LOCKED.full) console.error(line);

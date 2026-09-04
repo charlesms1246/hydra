@@ -295,7 +295,25 @@ export const STATE_VERSION = 1;
  */
 export const PASSPHRASE_ENV = "HYDRA_PASSPHRASE";
 
-const passphrase = (): string | undefined => process.env[PASSPHRASE_ENV] || undefined;
+let supplied: string | undefined;
+
+/**
+ * Install a passphrase read from a file or a prompt, in preference to the environment.
+ *
+ * The environment is the last resort and it is warned about, because `export HYDRA_PASSPHRASE=…`
+ * lands in the shell history — **unencrypted, on the same disk as the state file it is protecting**
+ * — which hands a seized disk both halves at once. See `at-rest.ts`.
+ */
+export const usePassphrase = (value: string): void => { supplied = value; };
+
+const passphrase = (): string | undefined => supplied || process.env[PASSPHRASE_ENV] || undefined;
+
+/** True when the only passphrase available came from the environment. Callers warn on it. */
+/** The passphrase in force, whatever supplied it. */
+export const currentPassphrase = (): string | undefined => passphrase();
+
+export const passphraseFromEnvironment = (): boolean =>
+  !supplied && Boolean(process.env[PASSPHRASE_ENV]);
 
 /** Whether the state on disk is locked. Answerable without the passphrase. */
 export function locked(): boolean {

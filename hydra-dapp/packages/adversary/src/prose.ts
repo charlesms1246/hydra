@@ -69,7 +69,13 @@ export const codeOf = (source: string): string => source
  * contain `${realCode}`, and removing it would hide the reference rather than the prose.
  */
 export const statementsOf = (source: string): string =>
-  codeOf(source).replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '""');
+  // `[^'\\\n]` — A STRING LITERAL MAY NOT SPAN A LINE, and leaving that out was a real bug. An
+  // apostrophe in prose (`"the operator's own"`) let the single-quote pattern match from there to
+  // the next apostrophe several lines later, **swallowing the newlines between them.** Any caller
+  // holding this view alongside `codeOf` then had two arrays whose indices no longer lined up, and
+  // the destructive-operations guard attributed two `delete` statements in `case "unlock"` to
+  // `case "accept"` two hundred lines earlier — a real operation credited to an unrelated one.
+  codeOf(source).replace(/"([^"\\\n]|\\.)*"|'([^'\\\n]|\\.)*'/g, '""');
 
 /**
  * A string with backtick-quoted spans removed.
