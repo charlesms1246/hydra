@@ -205,6 +205,7 @@ export class Vault {
       // of files nobody else can read.
       mkdirSync(this.#dir, { recursive: true, mode: 0o700 });
       this.#load();
+      this.#loadCompelled();
     }
   }
 
@@ -253,6 +254,45 @@ export class Vault {
       const at = join(this.#dir, name);
       writeFileSync(at, body as never, { mode: 0o600 });
       chmodSync(at, 0o600);
+    }
+  }
+
+  /**
+   * The compelled-removal tombstones, on disk beside the store.
+   *
+   * ONE FILE, REWRITTEN. There are only ever a handful of these — a bulk path does not exist, by
+   * design — so the simplicity is free, and a single file is one thing to hand to whoever audits
+   * the operator rather than a directory to reassemble.
+   *
+   * 0600, like everything else the vault writes. The file names ids the operator removed; it says
+   * nothing about content, because there is nothing about content to say.
+   *
+   * NOT UNDER THE `.json` SIDECAR CONVENTION. `#load` treats every `.json` in the directory as an
+   * object's metadata, so this deliberately does not end in `.json` — a tombstone parsed as an
+   * object would resurrect the id it exists to record the removal of.
+   */
+  static readonly COMPELLED_FILE = "compelled-removals";
+
+  #persistCompelled(): void {
+    if (!this.#dir) return;
+    const at = join(this.#dir, Vault.COMPELLED_FILE);
+    writeFileSync(at, JSON.stringify([...this.#compelled.values()]), { mode: 0o600 });
+    chmodSync(at, 0o600);
+  }
+
+  #loadCompelled(): void {
+    if (!this.#dir) return;
+    const at = join(this.#dir, Vault.COMPELLED_FILE);
+    if (!existsSync(at)) return;
+    try {
+      for (const r of JSON.parse(readFileSync(at, "utf8")) as CompelledRemoval[]) {
+        this.#compelled.set(r.blobId, r);
+      }
+    } catch {
+      // A corrupt tombstone file must not stop the vault serving, but it must not be silent
+      // either: losing these is losing the only thing that tells the affected parties why.
+      console.error(`the compelled-removal record at ${at} could not be read. Removals performed `
+        + "under legal process will look like ordinary absence to the people they happened to.");
     }
   }
 
@@ -472,6 +512,17 @@ export class Vault {
     this.#removals++;
     const record: CompelledRemoval = { blobId, at, reference, underProcess: true };
     this.#compelled.set(blobId, record);
+    // **THE TOMBSTONE HAS TO OUTLIVE THE PROCESS, and it did not.** `#compelled` was an in-memory
+    // Map, so a restart — a deploy, a crash, a reboot — silently reverted this removal to an
+    // ordinary absence. Driven live: after the vault was restarted, the affected party's client
+    // stopped saying anything about legal process and the message simply was not there.
+    //
+    // That is the one outcome this whole mechanism exists to prevent. `decisions/0035` and the
+    // `compelled.removal` row both rest on the removal being DISTINGUISHABLE FROM EXPIRY by the
+    // people it happened to, and the operator's own record survived while theirs did not — the
+    // asymmetry exactly backwards, with the party being audited keeping the evidence and the
+    // parties affected losing it.
+    this.#persistCompelled();
     return record;
   }
 

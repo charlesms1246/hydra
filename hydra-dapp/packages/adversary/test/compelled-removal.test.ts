@@ -14,6 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -228,4 +229,90 @@ test("THE PUBLIC PATH'S INDISTINGUISHABILITY IS INTACT — the two answers must 
     assert.equal(after.removed, undefined,
       "a public takedown became distinguishable from an object that never existed");
   });
+});
+
+/** Store an object the way a client does — through the request path, not a back door. */
+function putObject(vault: Vault, blobId: string, invite: string): void {
+  const res = vault.handle({
+    op: "upload", endpoint: ENCRYPTED_ENDPOINT, id: blobId,
+    body: new Uint8Array(BUCKETS[0]!), invite,
+  });
+  assert.ok(res.ok, `the vault refused the object (${JSON.stringify(res)})`);
+}
+
+/** True when the vault will not serve this id. */
+function gone(vault: Vault, blobId: string): boolean {
+  const res = vault.handle({ op: "fetch", endpoint: ENCRYPTED_ENDPOINT, ids: [blobId] });
+  return !(res.ok && res.op === "fetch" && res.found.get(blobId) !== undefined);
+}
+
+/**
+ * **THE TOMBSTONE MUST OUTLIVE THE PROCESS, AND IT DID NOT.**
+ *
+ * Found by driving compelled removal against a real vault process for the first time. `#compelled`
+ * was an in-memory `Map`, so a restart — a deploy, a crash, a reboot — silently reverted a
+ * compelled removal to an ordinary absence. Measured: the affected party's client reported the
+ * removal under legal process, the vault was restarted, and the next read said **nothing at all**.
+ * The message was simply not there.
+ *
+ * That is the single outcome the mechanism exists to prevent. `decisions/0035` and the
+ * `compelled.removal` row both rest on the removal being distinguishable from expiry **by the
+ * people it happened to** — and the operator's own record in `moderation-queue.json` survived the
+ * restart while theirs did not. **The party being audited kept the evidence; the parties affected
+ * lost it.**
+ *
+ * Not reachable by any hermetic test that builds one `Vault` and asks it questions: the defect is
+ * entirely in what does not cross a process boundary.
+ */
+test("A COMPELLED REMOVAL IS STILL A COMPELLED REMOVAL AFTER A RESTART", () => {
+  const dir = mkdtempSync(join(tmpdir(), "hydra-compelled-"));
+  const id = `${ENCRYPTED_ENDPOINT.slice(4)}:${"a".repeat(62)}`.replace(/^\//, "");
+  const blobId = `enc:${"a".repeat(62)}`;
+
+  const first = new Vault({ dir, invites: ["code"] });
+  putObject(first, blobId, "code");
+  assert.ok(first.compel(blobId, "CASE-1"), "the object was not there to compel");
+  assert.equal(first.compelledRemovals().length, 1);
+
+  // A NEW PROCESS over the same directory. This is the whole test.
+  const second = new Vault({ dir, invites: ["code"] });
+  const survived = second.compelledRemovals();
+  assert.equal(survived.length, 1,
+    "the compelled removal did not survive a restart, so it now looks like ordinary expiry to "
+    + "the people it happened to");
+  assert.equal(survived[0]!.blobId, blobId);
+  assert.equal(survived[0]!.reference, "CASE-1");
+  assert.equal(survived[0]!.underProcess, true);
+
+  // And the object really is gone — a tombstone that resurrected the bytes would be worse than
+  // no tombstone at all.
+  assert.equal(gone(second, blobId), true,
+    "a restart brought back an object removed under process");
+  void id;
+});
+
+test("the tombstone file is not mistaken for an object's metadata", () => {
+  // `#load` treats every `.json` in the store as a sidecar. A tombstone parsed as an object would
+  // resurrect the very id it exists to record the removal of, which is why it is not named `.json`.
+  const dir = mkdtempSync(join(tmpdir(), "hydra-compelled-"));
+  const blobId = `enc:${"b".repeat(62)}`;
+  const first = new Vault({ dir, invites: ["code"] });
+  putObject(first, blobId, "code");
+  first.compel(blobId, "CASE-2");
+
+  assert.ok(!Vault.COMPELLED_FILE.endsWith(".json"),
+    "the tombstone file ends in .json, so the loader will read it as an object sidecar");
+  const restarted = new Vault({ dir, invites: ["code"] });
+  assert.equal(gone(restarted, blobId), true);
+  assert.equal(restarted.compelledRemovals().length, 1);
+});
+
+test("a vault with no directory still compels, and simply keeps nothing", () => {
+  // The in-memory configuration is what every other test uses; persistence must not become a
+  // precondition for the mechanism working at all.
+  const v = new Vault({ invites: ["code"] });
+  const blobId = `enc:${"c".repeat(62)}`;
+  putObject(v, blobId, "code");
+  assert.ok(v.compel(blobId, "CASE-3"));
+  assert.equal(v.compelledRemovals().length, 1);
 });
