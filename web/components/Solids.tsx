@@ -39,6 +39,21 @@ import { AsciiEffect } from "three/examples/jsm/effects/AsciiEffect.js";
  * static drawing and every word of the page.
  *
  * Nothing is fetched. `three` is bundled from `node_modules` — no CDN, no texture, no request.
+ *
+ * ⛔ **THIS COMPONENT'S OPACITY CANNOT BE SET FROM CSS. Do not try.**
+ *
+ * The draw loop writes `mount.style.opacity` on every animation frame, and an inline style beats
+ * any stylesheet rule — so a `@media` block targeting `.solids` **silently does nothing**. There
+ * is no error, no warning, and no visible difference between "the rule is wrong" and "the rule is
+ * being overwritten sixty times a second".
+ *
+ * That already happened once: the fix for the field drowning body text at 390px was written as a
+ * media query, looked correct, and had no effect. It lives here now, in `rest`, alongside the
+ * hero and reduced-motion decisions.
+ *
+ * **It is a guard-shaped failure in CSS** — the fix appears to be in the place a person would
+ * naturally look for it, and is not. Every opacity decision for this element belongs in this
+ * file; `globals.css` carries a pointer saying so.
  */
 
 /** The ramp, darkest first. The reference's, minus the leading space so solids stay solid. */
