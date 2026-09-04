@@ -13,6 +13,20 @@
  * is listed with the capabilities it feeds, each pair has an assertion, and a **completeness
  * check** fails when a destructive operation appears in the client that this file does not name.
  * When the third one arrives it fails here rather than waiting for somebody to read it.
+ *
+ * **WHAT THIS TABLE CANNOT CATCH: a destructive OMISSION.** It enumerates operations and checks
+ * each against the capability it removes — so something destructive that is not an operation is
+ * invisible to it by construction, not by oversight.
+ *
+ * The instance that showed this: **forgetting the passphrase will destroy every conversation
+ * irreversibly**, because the seed regenerates every channel key ever agreed. It is the most
+ * destructive thing a user can do to themselves, it has no confirmation, and there is no row here
+ * because there is no operation to name. `decisions/0040` §5 treats making it one as the fix —
+ * named, with the consequence stated at the moment the passphrase is set rather than in
+ * documentation nobody reads at that moment.
+ *
+ * So a review question this file cannot ask for you: **is there a way to lose something that is
+ * not an operation?**
  */
 
 import { test } from "node:test";
