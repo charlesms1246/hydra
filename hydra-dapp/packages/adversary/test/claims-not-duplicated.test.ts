@@ -44,6 +44,25 @@ const sourcesOf = (pkg: string) => {
     .map((f) => ({ path: `${pkg}/src/${f}`, text: readFileSync(join(dir, f), "utf8") }));
 };
 
+/**
+ * Every package that could render a claim. Wider than any single claim's `surfaces`, because the
+ * check that a surface renders NOTHING it was not declared for needs somewhere to look.
+ */
+const ALL_SURFACES = ["cli", "tui", "client", "vault-server", "operator", "moderation"];
+
+test("NO CLAIM DECLARES ZERO SURFACES", () => {
+  // An unrendered claim is an unreachable mechanism, and this repo has a sweep for those. It is
+  // also the cheapest way to defeat the check below: a claim shown nowhere passes the
+  // every-declared-surface-renders-it test trivially.
+  for (const w of WARNINGS) {
+    assert.ok(w.surfaces.length > 0,
+      `${w.id} declares no surface, so nothing shows it and nothing checks it`);
+    for (const pkg of w.surfaces) {
+      assert.ok(ALL_SURFACES.includes(pkg), `${w.id} declares surface ${pkg}, which is not scanned`);
+    }
+  }
+});
+
 test("EVERY FRONT END RENDERS THE SAME CLAIMS, from the same place", () => {
   assert.ok(WARNINGS.length >= 4, "the claim set shrank — check nothing was quietly inlined again");
   // IMPORT LINES REMOVED BEFORE MATCHING. Without this the guard sees the symbol in the `import`
@@ -74,11 +93,42 @@ test("EVERY FRONT END RENDERS THE SAME CLAIMS, from the same place", () => {
     // claims belong to both clients and drifting between them is the defect; the vault's TLS claim
     // belongs to the vault. A rule that demanded all of them everywhere would be followed by
     // nobody.
+    // A NOTE FOR WHOEVER SEES THIS FAIL: the guard survived two incomplete mutations before it
+    // fired, and both times the guard was right. Removing the rendering from `view.ts` alone left
+    // `app.ts` still rendering it, so the PACKAGE still did — which is what this asks. Check the
+    // whole package before concluding the check is broken.
     const shown = w.surfaces.filter((pkg) => new RegExp(`\\b${symbol}\\b`).test(rendering.get(pkg)!));
     assert.deepEqual(shown, [...w.surfaces],
       `${w.id} is rendered by ${shown.join(", ") || "neither front end"} — a claim shown in one `
       + "interface and not the other is how all three of these drifted");
   }
+});
+
+test("NO SURFACE RENDERS A CLAIM IT IS NOT DECLARED FOR", () => {
+  // THE OTHER DIRECTION, and the one that makes `surfaces` load-bearing rather than decorative.
+  // Without it, `surfaces` is an escape hatch: narrowing a claim's list is a one-word way to
+  // silence a failure, and a new claim declaring `["cli"]` is exempt from the duplication check
+  // for free. Same both-ways discipline as the mechanism/assertion rule.
+  //
+  // NARROWING `surfaces` IS HOW THIS GUARD WOULD BE DEFEATED. It cannot be automated away — the
+  // intent is not in the diff — so it is written here for whoever reviews one: a claim losing a
+  // surface should be as deliberate an act as adding a line to the reachability allowlist.
+  const symbols = { SIGNED: "compose.signed", DENIABLE: "compose.deniable",
+    RECORD_NOT_WRITTEN: "record.notWritten", SECOND_CLIENT: "identity.secondClient",
+    TLS_TERMINATION: "vault.tlsTermination" };
+  const stray: string[] = [];
+  for (const pkg of ALL_SURFACES) {
+    let text = "";
+    try { text = sourcesOf(pkg).map((f) => codeOf(f.text)).join("\n"); } catch { continue; }
+    for (const [symbol, id] of Object.entries(symbols)) {
+      const declared = WARNINGS.find((w) => w.id === id)!.surfaces;
+      if (declared.includes(pkg)) continue;
+      if (new RegExp(`\\b${symbol}\\b`).test(text)) stray.push(`${pkg} renders ${id}`);
+    }
+  }
+  assert.deepEqual(stray, [],
+    "a package shows a claim its `surfaces` does not list — either the declaration is stale or "
+    + "the claim reached a surface nobody decided it should");
 });
 
 test("NEITHER FRONT END RESTATES A CLAIM IN ITS OWN WORDS", () => {

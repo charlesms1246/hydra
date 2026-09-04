@@ -14,6 +14,23 @@
  * everything else in those files is by definition prose — and prose must not claim.
  *
  * The difference between "the two UIs agree" and "neither UI is allowed to invent one".
+ *
+ * **THIS LIST IS THE SECOND LAYER, NOT THE DECIDER — AND THE RULE IT ENFORCES IS A REVIEW RULE.**
+ *
+ * A blocklist catches phrasings somebody anticipated. That is a property of blocklists rather than
+ * a defect in this one, and it is not fixable by adding halves: the vocabulary was demonstrably
+ * catching things and still missed *"cannot be linked"*, which had already shipped. Any phrasing
+ * you know to be missing you would simply add, so "also list what is missing" is circular. **The
+ * list will always be one novel phrasing behind.**
+ *
+ * So the load sits where it sits for `Salt`: on the type, with the grep as belt. Here the
+ * type-equivalent is GENERATION — a claim exists in `claims/` or it does not exist. This catches
+ * somebody who forgot; it does not decide what is allowed.
+ *
+ * **WHICH MAKES THE ANSWER AT REVIEW TIME ALWAYS THE SAME.** When a new user-facing sentence needs
+ * to make a claim, the answer is *add it to `claims/`* — never *reword it until this passes*. A
+ * check that can be satisfied by rephrasing teaches rephrasing, and a rephrased claim is still an
+ * asserted one, still drifting, and now invisible to the instrument that was supposed to see it.
  */
 
 import { test } from "node:test";
