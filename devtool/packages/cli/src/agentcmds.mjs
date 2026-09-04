@@ -31,9 +31,19 @@ const dot = (up, warn) => (up ? "●" : warn ? "◐" : "○");
  * `discovery` is "indexer-self-hosted" because packages/cli/src/control.mjs:36
  * constructs `new IndexerDiscoveryProvider(indexerUrl, poolAddress)` — two
  * arguments, so OHTTP is off — against the indexer `hydra-dev up` started.
+ *
+ * `proving` is OMITTED for the same reason as `network` when the stack could not be
+ * read. It used to default to "mock" on a failed status(), which was true only
+ * because `up` happens to configure a mock prover today — a value asserted rather
+ * than read, correct now, and silently wrong the moment proving mode becomes
+ * configurable. Omitted, leak.mjs:386-393 reports the prover's cells as undeclared
+ * rather than as mocked, which errs toward over-disclosure. Standing rule 6.
  */
 export function leakConfig(s) {
-  return { discovery: "indexer-self-hosted", proving: s?.prover?.mode ?? "mock" };
+  const config = { discovery: "indexer-self-hosted" };
+  const mode = s?.prover?.mode;
+  if (mode) config.proving = mode;
+  return config;
 }
 
 /**
