@@ -435,6 +435,24 @@ switch (command) {
       : "✓ signed — under the key they handshook with; it is not published, so only you can check it");
     console.log("? unverifiable — a key you both hold, so either of you could have written it");
     if (!at) console.log(`  \`hydra anchor ${name} 0xADDRESS FELT…\` if they have published a record`);
+    // REMOVED UNDER PROCESS, said plainly and every time. `read.hit` makes a miss
+    // indistinguishable from an object that expired or was never sent, which is what makes decoy
+    // padding free — and if that held here too, a compelled removal would be invisible to the
+    // people it happened to. See DECISIONS-NEEDED.md D6.
+    const taken = state.channels[name]?.removedUnderProcess ?? [];
+    if (taken.length) {
+      console.error("");
+      console.error(`${taken.length} message(s) in this conversation were REMOVED FROM THE VAULT`);
+      console.error("UNDER LEGAL PROCESS. that is not expiry and it is not deletion by either of");
+      console.error("you — an outside party required the operator to remove them, and the operator");
+      console.error("could not read what they were removing.");
+      console.error("");
+      console.error("what this does and does not tell you: the objects are gone from that vault,");
+      console.error("so neither of you can fetch them again. it says nothing about who asked, on");
+      console.error("what grounds, or whether anyone read them — the operator cannot know the last");
+      console.error("one either. if you still hold the plaintext locally, you still hold it.");
+      for (const id of taken) console.error(`  ${id}`);
+    }
     const foreign = foreignSends(state, name);
     if (foreign) {
       console.error("");

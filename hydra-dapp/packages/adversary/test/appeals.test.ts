@@ -152,7 +152,8 @@ test("the moderation table names every surface moderation actually has", () => {
   // record and not of the socket, and a table describing what is KEPT rather than what is SEEN
   // under-claims, which is the dangerous direction.
   assert.deepEqual([...MODERATION_OBSERVABLE_IDS].sort(),
-    ["appeal.filed", "decision.recorded", "report.connection", "report.filed", "report.published"]);
+    ["appeal.filed", "compelled.removal", "decision.recorded", "report.connection", "report.filed",
+      "report.published"]);
   for (const o of MODERATION_OBSERVABLE) {
     assert.ok(o.what.length > 20, `${o.id} has no description`);
     assert.ok(o.why.length > 60, `${o.id} has no reason`);
@@ -187,6 +188,16 @@ test("the moderation table names every surface moderation actually has", () => {
   assert.ok(!/commitment still stands/.test(asserted),
     "the row claims an on-chain commitment that a public post does not create");
   assert.match(published.why, /decisions\/0039/, "the row does not point at the open decision");
+
+  // `compelled.removal` must record the POSITION CHANGE rather than quietly agreeing with what was
+  // last built, and must not carry a field for content the operator cannot know.
+  const compelled = MODERATION_OBSERVABLE.find((o) => o.id === "compelled.removal")!;
+  assert.match(compelled.why, /POSITION IN .decisions\/0035. §1 CHANGED AND THE OLD REASONING WAS NOT WRONG/);
+  assert.match(compelled.why, /NO CLAIM ABOUT CONTENT/);
+  assert.match(compelled.why, /countable/i);
+  assert.match(compelled.what, /nothing else, ever/);
+  // The detectability constraint, which is what separates this from a backdoor with paperwork.
+  assert.match(compelled.why, /invisible to the people it happened to/);
 
   const conn = MODERATION_OBSERVABLE.find((o) => o.id === "report.connection")!;
   assert.match(conn.what, /network address/);

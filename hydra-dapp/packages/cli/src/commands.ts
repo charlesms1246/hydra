@@ -889,20 +889,27 @@ async function fetchIds(
   state: State,
   ids: readonly string[],
   fetchImpl: typeof fetch,
-): Promise<Record<string, string>> {
+): Promise<{ found: Record<string, string>; removed: string[] }> {
   // Sized by the encoded length rather than by a count, because that is what the vault limits.
   // A margin, since JSON adds punctuation this does not model exactly.
   const perId = ids.length ? JSON.stringify(ids).length / ids.length : 1;
   const chunk = Math.max(MIN_READ_BATCH, Math.floor((MAX_BODY * 0.9) / perId));
   const out: Record<string, string> = {};
+  // REMOVED UNDER PROCESS, kept separate from simply absent. A miss is indistinguishable from an
+  // object that expired or was never sent — that is `read.hit`, it is true, and it is what makes
+  // decoy padding free. **It must not be true for a compelled removal**, or the people it happened
+  // to never learn it did. See `DECISIONS-NEEDED.md` D6.
+  const removed: string[] = [];
   for (let i = 0; i < ids.length; i += chunk) {
     const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}`, {
       method: "POST", body: JSON.stringify(ids.slice(i, i + chunk)),
     });
     if (!res.ok) throw new Error(`the vault refused the read: ${await res.text()}`);
-    Object.assign(out, (await res.json() as { found: Record<string, string> }).found);
+    const body = await res.json() as { found: Record<string, string>; removed?: string[] };
+    Object.assign(out, body.found);
+    removed.push(...(body.removed ?? []));
   }
-  return out;
+  return { found: out, removed };
 }
 
 export async function readChannel(
@@ -973,7 +980,11 @@ export async function readChannel(
   for (const c of forMine) where.set(receive(mine, c.pointer, c.seq), { ...c, mine: true });
   for (const c of forTheirs) where.set(receive(theirs, c.pointer, c.seq), { ...c, mine: false });
 
-  const found = await fetchIds(state, ids, fetchImpl);
+  const { found, removed } = await fetchIds(state, ids, fetchImpl);
+  // Recorded on the channel rather than returned, so it survives the read that discovered it.
+  if (removed.length) {
+    entry.removedUnderProcess = [...new Set([...(entry.removedUnderProcess ?? []), ...removed])];
+  }
 
   const seen = new Set(entry.history.map((h) => h.id));
   for (const [id, b64] of Object.entries(found)) {

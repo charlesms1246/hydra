@@ -94,6 +94,7 @@ export function report(
   reportsReceivedThisPeriod: number,
   period: Period,
   appeals: readonly Appeal[] = [],
+  compelled: readonly { readonly at: number }[] = [],
 ): {
   readonly floor: number;
   readonly period: Period;
@@ -170,6 +171,20 @@ export function report(
     cells.set(key, (cells.get(key) ?? 0) + 1);
   }
 
+  // COMPELLED REMOVALS OF ENCRYPTED OBJECTS — `D6`. One cell, banded like everything else.
+  //
+  // It belongs here because the whole point of building this path in the open is that its use is
+  // COUNTABLE: an operator who complies off the record is the failure mode, and a number nobody
+  // publishes is a number nobody can hold them to. A period in which none happened publishes
+  // "fewer than 5", which includes zero — the band cannot be read as an admission.
+  //
+  // ONE FIGURE, NO PARTITION. There is no category and no outcome to break it down by, because
+  // there is nothing the operator knows about these objects to break it down WITH — they cannot
+  // read them. A partition would be an invitation to record a guess.
+  const compelledInPeriod =
+    compelled.filter((c) => c.at >= period.from && c.at < period.to).length;
+  if (compelledInPeriod > 0) cells.set("encrypted objects removed under legal process", compelledInPeriod);
+
   const figures = [...cells].sort(([a], [b]) => a.localeCompare(b))
     .map(([label, n]) => ({ label, shown: band(n) }));
 
@@ -216,6 +231,13 @@ export function report(
           "SELF-REPORTED: an operator who quietly dropped a post and never listed it here would",
           "look exactly like one who never received it. See decisions/0039."]
         : []),
+      "",
+      "Encrypted objects removed UNDER LEGAL PROCESS are counted above when there were any, and",
+      "the count is banded like every other figure, so a band there includes zero. This service",
+      "cannot read those objects and records no claim about what they were — only the id, the",
+      "date, and its own reference for the process served. The people in the affected",
+      "conversation are told by their own client, because a removal that looks like expiry is",
+      "invisible to them. See DECISIONS-NEEDED.md D6.",
       "",
       "Deletions of encrypted objects are not listed. Those are people deleting their own",
       "messages with a capability they hold, not decisions anyone made about them, and logging",

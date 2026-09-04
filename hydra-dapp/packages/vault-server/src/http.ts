@@ -27,6 +27,7 @@ import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT } from "./server.ts";
 import { RateLimiter, DEFAULT_RATE_LIMIT } from "./ratelimit.ts";
 import { authorises, type RemovalAuthority } from "./authority.ts";
 import { TREE_LEAVES } from "./root.ts";
+import { compels, type CompelledAuthority } from "./compelled.ts";
 import type { RateLimitConfig } from "./ratelimit.ts";
 import type { Endpoint } from "./server.ts";
 
@@ -106,6 +107,14 @@ export function serve(
      * OPERATOR performing the removal, whoever asked for it.
      */
     removalToken?: RemovalAuthority;
+    /**
+     * Authority to remove an ENCRYPTED object under legal process — `D6`.
+     *
+     * A separate option from `removalToken` because they are separate powers: possession of one
+     * must never imply the other, or routine public moderation escalates into reaching into
+     * private messages. Absent by default, and absence is a refusal.
+     */
+    compelledAuthority?: CompelledAuthority;
   } = {},
 ): Promise<{ url: string; server: Server; limiter: RateLimiter }> {
   // Defaults to `global`: a public service needs a limit, and the mode that needs no
@@ -185,7 +194,12 @@ export function serve(
             [...(reply as { found: ReadonlyMap<string, Uint8Array> }).found]
               .map(([k, v]) => [k, Buffer.from(v).toString("base64")]),
           );
-          return send(200, { found });
+          // `removed` rides alongside `found`: the ids the caller asked for that were removed
+          // UNDER PROCESS rather than merely absent. Omitted entirely when there are none, so an
+          // ordinary read is byte-identical to what it was before this existed — see `D6`, and the
+          // whole point is that these two cases must NOT answer alike.
+          const removed = (reply as { removed?: string[] }).removed;
+          return send(200, removed?.length ? { found, removed } : { found });
         }
 
         if (req.method === "DELETE") {
@@ -193,6 +207,26 @@ export function serve(
           // hashed and compared by the server, which holds no discretion over it — see
           // `decisions/0035` §1 and `channel/src/deletion.ts`.
           if (endpoint === ENCRYPTED_ENDPOINT) {
+            // COMPELLED REMOVAL, under its OWN authority and its own header — `D6`. Checked before
+            // the capability path so the two can never be confused, and refused outright when no
+            // compelled authority is configured, exactly as public takedown is: an operator who
+            // has not decided that they will comply with process has not decided that anyone may.
+            const compelling = req.headers["x-hydra-compelled"];
+            if (compelling !== undefined) {
+              const reference = req.headers["x-hydra-process-reference"];
+              if (!compels(compelling, options.compelledAuthority)) {
+                return send(404, { error: "no such object" });
+              }
+              if (typeof reference !== "string" || reference.trim() === "") {
+                // A compelled removal with no handle for the process served is an untraceable one,
+                // and an untraceable compelled removal is the thing this path exists to prevent.
+                return send(400, { error: "a compelled removal needs x-hydra-process-reference" });
+              }
+              const record = vault.compel(id, reference.trim());
+              return record
+                ? send(200, { ok: true, op: "compel", removed: true, at: record.at })
+                : send(404, { error: "no such object" });
+            }
             const offered = req.headers["x-hydra-delete"];
             const token = typeof offered === "string"
               ? new Uint8Array(Buffer.from(offered, "hex")) : undefined;

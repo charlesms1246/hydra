@@ -25,6 +25,7 @@ import { randomBytes } from "node:crypto";
 import { Vault } from "./server.ts";
 import { serve } from "./http.ts";
 import { removalAuthorityFromFile } from "./authority.ts";
+import { compelledAuthorityFromFile } from "./compelled.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import type { RateLimitConfig } from "./ratelimit.ts";
 
@@ -117,10 +118,22 @@ if (Boolean(tlsKey) !== Boolean(tlsCert)) {
 const removalTokenFile = flag("removal-token-file");
 const removalToken = removalTokenFile ? removalAuthorityFromFile(removalTokenFile) : undefined;
 
+/**
+ * Authority to remove an ENCRYPTED object under legal process — `D6`.
+ *
+ * A SEPARATE FLAG AND A SEPARATE FILE from `--removal-token-file`, because they are separate
+ * powers and configuring them should not feel like one act. Public takedown removes something
+ * everyone could already read; this reaches into a conversation this server cannot read. An
+ * operator who wants the first does not thereby get the second.
+ */
+const compelledFile = flag("compelled-token-file");
+const compelledAuthority = compelledFile ? compelledAuthorityFromFile(compelledFile) : undefined;
+
 const { url } = await serve(vault, Number(flag("port", "8080")), {
   observeTransport: args.includes("--observe-transport"),
   rateLimit,
   ...(removalToken ? { removalToken } : {}),
+  ...(compelledAuthority ? { compelledAuthority } : {}),
   ...(tlsKey ? { tls: { key: readFileSync(tlsKey), cert: readFileSync(tlsCert) } } : {}),
 });
 
@@ -140,6 +153,14 @@ console.log(removalToken
     + "          removable this way — they are deleted by capability, see decisions/0035"
   : "takedown  public takedown DISABLED — no --removal-token-file, so DELETE is refused. The\n"
     + "          moderation pipeline cannot remove anything from this vault.");
+// The most consequential capability this server can be configured with, announced like the rest.
+// An operator reading their own startup output should be able to see that it is off.
+console.log(compelledAuthority
+  ? "compelled  ENABLED (--compelled-token-file). One ENCRYPTED object per request, under a\n"
+    + "           process reference that is recorded. This server still cannot read what it\n"
+    + "           deletes and records no claim about it — see DECISIONS-NEEDED.md D6."
+  : "compelled  DISABLED — no --compelled-token-file. Encrypted objects can only be deleted by\n"
+    + "           whoever holds their capability. No process served here can remove one.");
 if (args.includes("--observe-transport")) console.log("transport observation is ON");
 if (args.includes("--observe-reads")) console.log("read logging is ON");
 console.log(tlsKey

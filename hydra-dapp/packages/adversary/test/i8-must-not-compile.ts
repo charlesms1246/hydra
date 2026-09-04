@@ -17,6 +17,8 @@
 import { serve } from "../../vault-server/src/http.ts";
 import { removalAuthorityFromFile, authorises } from "../../vault-server/src/authority.ts";
 import type { RemovalAuthority } from "../../vault-server/src/authority.ts";
+import { compelledAuthorityFromFile } from "../../vault-server/src/compelled.ts";
+import type { CompelledAuthority } from "../../vault-server/src/compelled.ts";
 import { Vault } from "../../vault-server/src/server.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { deleteToken } from "../../channel/src/deletion.ts";
@@ -57,6 +59,21 @@ const declared: RemovalAuthority = "a-long-enough-operator-secret";
 //    `authorises` takes `unknown` on the OFFERED side deliberately — that is a header, and it is
 //    the runtime half of the boundary — but the authority side is typed.
 authorises("whatever a caller sent", "a-long-enough-operator-secret");
+
+// 7. A REMOVAL AUTHORITY WHERE A COMPELLED ONE IS WANTED. The two are different powers — public
+//    takedown removes something everyone could already read; compelled removal reaches into a
+//    conversation the operator cannot read — and possession of one must never imply the other, or
+//    routine moderation escalates into reaching into private messages.
+await serve(vault, 0, { compelledAuthority: real });
+
+// 8. And the reverse, which is the one that matters more: a compelled authority must not be
+//    usable as a routine takedown secret either. Neither direction, not once.
+const process: CompelledAuthority = compelledAuthorityFromFile("/tmp/compelled.token");
+await serve(vault, 0, { removalToken: process });
+
+// 9. Declaring one, the same way route 5 declares a removal authority. The brand is a unique
+//    symbol in another module, so the shape cannot be written out from here.
+const declaredProcess: CompelledAuthority = "a-long-enough-compelled-removal-secret";
 
 // NOT here, deliberately: `authorises(someString, real)`. That compiles, and should — comparing an
 // untrusted header against a real authority is exactly what the server does on every DELETE.

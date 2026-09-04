@@ -146,7 +146,7 @@ test("NO ROUTE FROM A USER'S VALUE TO REMOVAL AUTHORITY COMPILES", () => {
   }
   const { uncovered, orphans, routes } =
     uncoveredRoutes(out, "i8-must-not-compile", join(HERE, "i8-must-not-compile.ts"));
-  assert.ok(routes.length >= 6, `only ${routes.length} numbered routes in the fixture`);
+  assert.ok(routes.length >= 9, `only ${routes.length} numbered routes in the fixture`);
   // Every numbered attempt on its own. A total cannot say WHICH route was rejected, and the one
   // that quietly compiles here is the one that hands a user's client authority over anyone's post.
   assert.deepEqual(uncovered.map((r) => r.label), [],

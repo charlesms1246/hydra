@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { OBSERVABLE_IDS } from "./observations.ts";
 import { deleteHashFor, deleteHashMatches } from "./delete-hash.ts";
 import { rootOf, proofFor, type Proof } from "./root.ts";
+import type { CompelledRemoval } from "./compelled.ts";
 
 /**
  * The smallest encrypted read this vault will serve.
@@ -179,6 +180,8 @@ export type VaultOptions = {
 export class Vault {
   readonly #objects = new Map<string, Stored>();
   readonly #invites: Set<string>;
+  /** Tombstones. See {@link Vault.compel} — the mark that distinguishes removal from expiry. */
+  readonly #compelled = new Map<string, CompelledRemoval>();
   readonly #reads: ReadRecord[] = [];
   readonly #transport: TransportRecord[] = [];
   #invitesRedeemed = 0;
@@ -347,7 +350,11 @@ export class Vault {
     if (this.#observeReads) {
       this.#reads.push({ at: this.#now(), ids: [...r.ids], hits, endpoint: r.endpoint });
     }
-    return { ok: true, op: "fetch", found };
+    // The ids the caller asked for that were REMOVED UNDER PROCESS rather than merely absent. Only
+    // ids the caller already named are answered about, so this discloses nothing to somebody
+    // fishing — and the people who hold a real id are the participants.
+    const removed = r.ids.filter((id) => this.#compelled.has(id));
+    return { ok: true, op: "fetch", found, ...(removed.length ? { removed } : {}) };
   }
 
   #remove(r: RemoveRequest): Response {
@@ -403,6 +410,43 @@ export class Vault {
    * the ids in order to commit to them would need an enumeration endpoint, and that would turn a
    * store you must know an id to read into an index — which `hydra post` promises there is not.
    */
+  /**
+   * Remove one encrypted object under legal process, leaving a mark that says so.
+   *
+   * THE TOMBSTONE IS THE POINT, and it is the constraint that made this work rather than a wiring
+   * job. A compelled removal that looks identical to expiry is invisible to the people it happened
+   * to — which would make this a backdoor with paperwork. `read.hit` says a miss is
+   * indistinguishable from an object that expired or was never sent, and that is true and is what
+   * makes decoy padding free; **it must stop being true for this one case**, or nobody ever learns.
+   *
+   * It does not cost the padding property. A decoy id is one nobody removed, so it still answers
+   * as a plain miss; only the participants of a real conversation hold the id that answers
+   * `removed`, and they are exactly the people entitled to know.
+   *
+   * A CAPABILITY DELETE LEAVES NO TOMBSTONE, deliberately. That is a participant deleting their
+   * own message, and advertising it to their counterparty would turn a private act into a
+   * notification. An outside party reaching in is disclosed; a participant acting is not.
+   */
+  compel(blobId: string, reference: string, at = this.#now()): CompelledRemoval | null {
+    const o = this.#objects.get(blobId);
+    // PER ID, AND ENCRYPTED ONLY. The public class already has an operator takedown with its own
+    // authority; letting this one reach it would collapse two powers that are kept apart on
+    // purpose. A missing object records nothing — there is no way to tombstone something that was
+    // never here, and inventing one would let anyone with the authority manufacture evidence.
+    if (!o || o.class === "public") return null;
+    this.#objects.delete(blobId);
+    this.#unlink(blobId);
+    this.#removals++;
+    const record: CompelledRemoval = { blobId, at, reference, underProcess: true };
+    this.#compelled.set(blobId, record);
+    return record;
+  }
+
+  /** Every compelled removal this vault has performed. The id and the process; never the content. */
+  compelledRemovals(): CompelledRemoval[] {
+    return [...this.#compelled.values()];
+  }
+
   publicRoot(): string {
     return rootOf(this.#publicIds());
   }

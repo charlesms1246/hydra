@@ -30,6 +30,8 @@ import { report as transparencyReport, type Period } from "../../moderation/src/
 
 export type { Decision, Review, Period, Appeal };
 export { summarise, transparencyReport, appealDigest, Reports };
+export { compelledAuthorityFromFile } from "../../vault-server/src/compelled.ts";
+export type { CompelledRemoval } from "../../vault-server/src/compelled.ts";
 
 /**
  * Fold a spool of filed reports into the queue.

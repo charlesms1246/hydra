@@ -47,6 +47,15 @@ export type PendingUpload = {
 };
 
 export type ChannelState = {
+  /**
+   * Ids in this channel that the vault reported REMOVED UNDER LEGAL PROCESS — `D6`.
+   *
+   * Persisted rather than reported once, because a compelled removal is not news that expires: a
+   * user who reads the conversation again next month should still be told, and a notice they
+   * happened not to be looking at is a notice they never got.
+   */
+  removedUnderProcess?: string[];
+
   readonly peer: string;
   /**
    * Which end of the handshake this is.

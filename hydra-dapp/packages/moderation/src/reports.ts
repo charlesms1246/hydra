@@ -21,6 +21,7 @@
 import { randomBytes } from "node:crypto";
 
 import { Appeals, type Appeal } from "./appeals.ts";
+import type { CompelledRemoval } from "../../vault-server/src/compelled.ts";
 
 /** One report as filed. No reporter identity is stored — see `Decision` and `decisions/0035` §7. */
 export type Report = { readonly body: string; readonly at: number };
@@ -119,6 +120,17 @@ export class Reports {
    * rename, which makes one file's contents consistent by construction.
    */
   readonly appeals = new Appeals();
+
+  /**
+   * Compelled removals of ENCRYPTED objects — `D6`.
+   *
+   * Recorded here, with the decisions, because the operator performs them through their own tool
+   * and the transparency report is generated from this file. Four fields and no fifth: the id, the
+   * date, the operator's reference for the process served, and a marker. **Never a claim about
+   * content** — an operator asserting what an encrypted object contained is asserting something
+   * they cannot know, and a field for it is a field that will eventually hold a guess.
+   */
+  readonly #compelled: CompelledRemoval[] = [];
 
   /**
    * Period keys whose transparency report has been generated.
@@ -236,6 +248,16 @@ export class Reports {
     return before - this.#decided.length;
   }
 
+  /** Record a compelled removal the operator has already performed against the vault. */
+  recordCompelled(r: CompelledRemoval): void {
+    this.#compelled.push(r);
+  }
+
+  /** Every compelled removal, for the report to count. */
+  compelled(): readonly CompelledRemoval[] {
+    return this.#compelled;
+  }
+
   /** Every decision made, for the transparency report to be generated from. */
   decisions(): readonly Decision[] {
     return this.#decided;
@@ -285,12 +307,13 @@ export class Reports {
       received: [...this.#received],
       appeals: this.appeals.filed(),
       published: [...this.#published],
+      compelled: [...this.#compelled],
     };
   }
 
   /** The inverse of {@link snapshot}. Unknown versions are refused rather than guessed at. */
   static restore(s: Snapshot): Reports {
-    if (![SNAPSHOT_VERSION, 1, 2].includes(s.version)) {
+    if (![SNAPSHOT_VERSION, 1, 2, 3].includes(s.version)) {
       throw new Error(`this queue was written by version ${s.version}, and this is `
         + `${SNAPSHOT_VERSION}. Refusing to guess at the difference — a queue read wrong is a `
         + "review that does not happen.");
@@ -301,6 +324,7 @@ export class Reports {
     for (const [k, n] of s.received) q.#received.set(k, n);
     q.appeals.restore(s.appeals ?? []);
     for (const p of s.published ?? []) q.#published.add(p);
+    q.#compelled.push(...(s.compelled ?? []));
     return q;
   }
 }
@@ -308,12 +332,12 @@ export class Reports {
 /**
  * Bumped whenever the shape below changes. See {@link Reports.restore}.
  *
- * 3 added `published`; 2 added `appeals`. Older files are MIGRATED rather than refused — an operator whose queue
+ * 4 added `compelled`; 3 added `published`; 2 added `appeals`. Older files are MIGRATED rather than refused — an operator whose queue
  * predates appeals has a queue with no appeals in it, which is exactly what the empty default
  * means. Refusing would be the version field doing harm: it exists to stop a shape being GUESSED
  * at, not to destroy a file whose difference is known exactly.
  */
-export const SNAPSHOT_VERSION = 3;
+export const SNAPSHOT_VERSION = 4;
 
 /** The queue as plain JSON. Every field here is a retention decision — see {@link Reports.snapshot}. */
 export type Snapshot = {
@@ -325,6 +349,8 @@ export type Snapshot = {
   readonly appeals?: readonly Appeal[];
   /** Absent before version 3. Period keys already reported on — see {@link Reports.expire}. */
   readonly published?: readonly string[];
+  /** Absent before version 4. Compelled removals — see `D6`. */
+  readonly compelled?: readonly CompelledRemoval[];
 };
 
 /**

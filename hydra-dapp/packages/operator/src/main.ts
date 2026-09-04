@@ -32,6 +32,7 @@ import { removalAuthorityFromFile } from "../../vault-server/src/authority.ts";
 import { load, save, ingest, clearSpool, summarise, transparencyReport, appealDigest, Reports,
   type Period } from "./queue.ts";
 import { verifierAgainst } from "./verify.ts";
+import { compelledAuthorityFromFile } from "./queue.ts";
 import { serveIntake } from "./intake.ts";
 
 const args = process.argv.slice(2);
@@ -227,6 +228,51 @@ switch (command) {
     break;
   }
 
+  case "compel": {
+    // REMOVING AN ENCRYPTED OBJECT UNDER LEGAL PROCESS — `DECISIONS-NEEDED.md` D6, and every part
+    // of this shape is a constraint rather than a convenience.
+    //
+    // ONE ID. There is no channel form and no bulk form, because a bulk path is the thing that
+    // gets demanded and a capability that acts on one named object is one whose use is countable.
+    // A REFERENCE IS REQUIRED, so an audit can be joined to paperwork outside this system; without
+    // it a compelled removal is untraceable, which is the outcome this path exists to prevent.
+    const [blobId, reference] = rest;
+    const vault = flag("vault");
+    const tokenFile = flag("compelled-token-file");
+    if (!blobId || !reference) throw new Error("compel <blobId> <process-reference> --vault URL");
+    if (!blobId.startsWith("enc:")) {
+      throw new Error("compel is for ENCRYPTED objects. A public post is taken down with `remove`, "
+        + "under a different authority — the two powers are kept apart on purpose.");
+    }
+    if (!vault) throw new Error("--vault is the vault to remove from");
+    if (!tokenFile) throw new Error("--compelled-token-file holds the compelled-removal secret");
+    const authority = compelledAuthorityFromFile(tokenFile);
+    const res = await fetch(`${vault}/v1/enc/${blobId}`, {
+      method: "DELETE",
+      headers: { "x-hydra-compelled": authority, "x-hydra-process-reference": reference },
+    });
+    if (!res.ok) {
+      out(`The vault refused (${res.status}). It does not distinguish a wrong secret from an`,
+        "object that is not there, so check both.");
+      process.exitCode = 1;
+      break;
+    }
+    const { at } = await res.json() as { at: number };
+    const q = load(queuePath);
+    q.recordCompelled({ blobId, at, reference, underProcess: true });
+    save(queuePath, q);
+    out(`Removed under process: ${blobId} (${reference}).`,
+      "",
+      "RECORDED, AND COUNTED IN THE NEXT TRANSPARENCY REPORT. What is written down is the id, the",
+      "date and your reference — nothing about what the object was, because you cannot know that",
+      "and a record inviting you to say would eventually hold a guess.",
+      "",
+      "The people in that conversation will be told by their own client that a message was removed",
+      "under legal process rather than expired. That is deliberate: a removal indistinguishable",
+      "from expiry is invisible to the people it happened to.");
+    break;
+  }
+
   case "report": {
     const q = load(queuePath);
     const period = monthOf(rest[0] ?? "");
@@ -242,7 +288,7 @@ switch (command) {
     // see `transparency.ts`. Passed because the signature takes it; if it is ever published it
     // must be a decision made there, not a value that leaked through here.
     out(...transparencyReport(q.decisions(), q.receivedIn(period.from), period,
-      q.appeals.filed()).lines);
+      q.appeals.filed(), q.compelled()).lines);
     out("", root
       ? `Public corpus commitment for this period:\n  ${root}\n\n`
         + "Every public object this vault held is in the tree behind that root, padded to a fixed\n"
@@ -281,6 +327,7 @@ switch (command) {
       "  appeals                        appeals waiting on a decision",
       "  appeal <decisionId> <account> --signature-file F --rpc URL",
       "  appeal-resolve <decisionId> <account> upheld|denied",
+      "  compel <blobId> <process-reference> --vault URL --compelled-token-file F",
       "",
       `  --queue PATH                   where the queue lives (${queuePath})`,
       `  --spool PATH                   where intake appends reports (${spoolPath})`);

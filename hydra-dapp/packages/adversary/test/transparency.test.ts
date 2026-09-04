@@ -461,3 +461,98 @@ test("A PUBLISHED CORPUS SIZE BRIDGES TO A SUPPRESSED CELL — measured before b
   // discloses nothing about size. Both are `0039` Option A's price, and neither is free: a padded
   // tree costs proof size, and withholding proofs costs the auditability the root exists for.
 });
+
+test("THE COMPELLED-REMOVAL CELL DOES NOT BRIDGE — and the instrument needed sharpening first", () => {
+  // `D6` puts a count of compelled encrypted removals on the report. Another figure over related
+  // events, and the last three of those all bridged, so it went through the instrument before
+  // anybody saw it rather than after.
+  //
+  // IT FIRED, AND IT WAS WRONG — which is the finding. With cells 7 and 6 published, a suppressed
+  // cell of 2, and 9 compelled removals, `9 − 7 = 2` reaches the suppressed value. But that is a
+  // COINCIDENCE OF THE FIXTURE, not a structure: change 9 to 10 and it evaporates.
+  //
+  // The distinction matters and the earlier form could not make it. Report volume bridged
+  // STRUCTURALLY — the cells summed to it by construction, so the residual WAS the cell whatever
+  // the numbers were. A coincidence is different in kind: the attacker has no reason to believe
+  // that particular difference means anything, and every value they could compute is equally
+  // available. Treating the two alike would forbid publishing any figure that ever happens to
+  // differ from another by a small number, which is every figure.
+  //
+  // So the sharpened property is: **is the suppressed value reachable FOR EVERY value the new
+  // figure could take?** If yes it is structural and must not be published. If it only happens at
+  // particular values, the figure carries no information about the cell.
+  const published = [7, 6];
+  const suppressed = 2;
+  const reaches = (extra: number) => {
+    const known = [...published, extra];
+    const seen = new Set<number>();
+    for (let mask = 1; mask < 1 << known.length; mask++) {
+      for (let signs = 0; signs < 1 << known.length; signs++) {
+        let total = 0;
+        for (let i = 0; i < known.length; i++) {
+          if (!(mask & (1 << i))) continue;
+          total += (signs & (1 << i)) ? -known[i] : known[i];
+        }
+        seen.add(total);
+      }
+    }
+    return seen.has(suppressed);
+  };
+
+  const hits = Array.from({ length: 40 }, (_, c) => c).filter(reaches);
+  assert.ok(hits.length > 0, "the fixture no longer exhibits the coincidence this test is about");
+  assert.ok(hits.length < 40,
+    "the suppressed cell is reachable whatever the compelled count is — that is STRUCTURAL and "
+    + "the figure must not be published");
+
+  // CALIBRATION, because a sharper instrument that only ever says "fine" is not an instrument. Run
+  // the case already known to be structural — report volume — through the same test and it must
+  // come back structural. Volume is not free to vary: it IS the cells plus the suppressed value,
+  // so for every hypothetical v the attacker computes `v = volume − published`, always.
+  const volumeReaches = (v: number) => {
+    const known = [...published, published.reduce((a, b) => a + b, 0) + v];
+    const seen = new Set<number>();
+    for (let mask = 1; mask < 1 << known.length; mask++) {
+      for (let signs = 0; signs < 1 << known.length; signs++) {
+        let total = 0;
+        for (let i = 0; i < known.length; i++) {
+          if (!(mask & (1 << i))) continue;
+          total += (signs & (1 << i)) ? -known[i] : known[i];
+        }
+        seen.add(total);
+      }
+    }
+    return seen.has(v);
+  };
+  const volumeHits = Array.from({ length: FLOOR }, (_, v) => v).filter(volumeReaches);
+  assert.equal(volumeHits.length, FLOOR,
+    "the sharpened instrument no longer classifies report volume as structural, so it has been "
+    + "sharpened into uselessness — it must still refuse the case that is genuinely unsafe");
+
+  // And the structural reason it cannot be structural: compelled removals are of the ENCRYPTED
+  // class, and every other cell counts decisions about the PUBLIC class. They share no events, so
+  // no sum or difference of decision cells relates to this count in either direction.
+  const q = new Reports();
+  const shape: [string, "removed" | "kept"][] = [
+    ...Array.from({ length: 7 }, () => ["impersonation", "removed"] as [string, "removed"]),
+    ...Array.from({ length: 2 }, () => ["impersonation", "kept"] as [string, "kept"]),
+    ...Array.from({ length: 6 }, () => ["harassment", "removed"] as [string, "removed"]),
+  ];
+  shape.forEach(([category, outcome], i) => {
+    q.file(`pub:${i}`, "b", i);
+    q.decide(`pub:${i}`, outcome, category, i);
+  });
+  const out = report(q.decisions(), q.receivedIn(0), ALL, [],
+    Array.from({ length: 10 }, (_, i) => ({ at: i })));
+  assert.ok(out.figures.some((f) => f.label.includes("legal process") && f.shown === "10"));
+
+  // A period with none publishes NOTHING rather than a zero, and the prose carries the band's
+  // meaning so an absent cell cannot be read as an admission.
+  const quiet = report(q.decisions(), q.receivedIn(0), ALL, [], []);
+  assert.ok(!quiet.figures.some((f) => f.label.includes("legal process")));
+  assert.ok(quiet.lines.some((l) => l.includes("a band there includes zero")));
+
+  // ONE figure, no partition: there is nothing the operator knows about these objects to break
+  // them down by, and a partition would invite recording a guess.
+  assert.equal(out.figures.filter((f) => f.label.includes("legal process")).length, 1);
+});
