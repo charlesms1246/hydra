@@ -151,6 +151,56 @@ export const TLS_TERMINATION: Warning = {
   ],
 };
 
+/**
+ * The root key on disk, in the two states it can be in — `decisions/0040`.
+ *
+ * TWO CLAIMS RATHER THAN ONE WITH A CONDITION, because the surfaces render whichever is true and a
+ * claim that changes its own meaning is one nobody can check. The old text was hand-written in
+ * three places and said the key is "in the clear" unconditionally; the moment encryption shipped
+ * that would have been false in all three, and a test was already defending it.
+ */
+export const KEY_IN_CLEAR: Warning = {
+  id: "identity.keyInClear",
+  surfaces: ["cli", "tui"],
+  because: "decisions/0040 — the state file is plaintext until `hydra lock` is run",
+  short: "your root key is on disk in the clear — `hydra lock` encrypts it",
+  full: [
+    "Your root key is in the state file, in the clear, mode 0600 and nothing else. No passphrase,",
+    "no keychain. Anyone who reads that file reads every past and future conversation, because the",
+    "seed regenerates every channel key ever agreed.",
+    "",
+    "`hydra lock` encrypts it with a passphrase. Read what that does and does not buy before you",
+    "rely on it — it protects a disk, not a running machine.",
+  ],
+};
+
+/**
+ * What locking actually buys, stated as the three cases rather than as a feeling.
+ *
+ * The middle row is the one people get wrong, and it is the reason this is generated: a claim that
+ * says "encrypted" without saying "in memory while it runs" is read as covering the case it does
+ * not cover.
+ */
+export const KEY_LOCKED: Warning = {
+  id: "identity.keyLocked",
+  surfaces: ["cli", "tui"],
+  because: "decisions/0040 §1 — scrypt + AES-256-GCM over the whole state file",
+  short: "your root key is encrypted at rest — this protects a seized disk, not a running machine",
+  full: [
+    "Your state file is encrypted with your passphrase: the root key and every message in it.",
+    "",
+    "WHAT THAT BUYS, EXACTLY:",
+    "  device seized powered off, or imaged   — yes, this is the case it is for",
+    "  device seized while running            — NO, the key is in memory once you have unlocked",
+    "  device seized unlocked                 — no, and neither does anything else here",
+    "",
+    "There is no recovery. The passphrase is the only way in — a path that did not need it would",
+    "be a second way in, and one held anywhere else would be escrow. A phrase you wrote down is a",
+    "second copy of the secret, not a backup.",
+  ],
+};
+
 /** Every warning both front ends must render identically. The guard iterates this. */
 export const WARNINGS: readonly Warning[] =
-  [SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, TLS_TERMINATION];
+  [SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, TLS_TERMINATION,
+    KEY_IN_CLEAR, KEY_LOCKED];

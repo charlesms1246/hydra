@@ -21,6 +21,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { isEnvelope, open as openEnvelope, seal } from "./at-rest.ts";
 import type { PrekeyStore } from "../../handshake/src/prekeys.ts";
 import type { DhState } from "../../handshake/src/dh-ratchet.ts";
 import { homedir } from "node:os";
@@ -219,6 +220,14 @@ export type ReceivedMessage = {
 
 export type State = {
   /**
+   * Whether this client should keep its state encrypted — `decisions/0040`.
+   *
+   * Set by `hydra lock` and never cleared by an ordinary save: a write must not silently downgrade
+   * a locked file to plaintext.
+   */
+  lockedAtRest?: boolean;
+
+  /**
    * The shape this file is in. Absent means 1 — see {@link STATE_VERSION}.
    *
    * Optional in the type because every file written before this existed has no version, and a
@@ -272,6 +281,28 @@ export type State = {
  */
 export const STATE_VERSION = 1;
 
+/**
+ * Where the passphrase comes from.
+ *
+ * An environment variable, and NOT A PROMPT, in this commit. `hydra flush` is meant to run on a
+ * timer, unattended — `decisions/0011` says flush cadence *is* the timing defence — and **a prompt
+ * cannot be answered by a timer.** An agent holding the key with a stated idle timeout is what
+ * makes this usable and is the next piece; until it exists, an env var is the honest interim,
+ * because it is what a user would otherwise build themselves out of a shell alias.
+ *
+ * It is not free and the client says so where it is set: an environment variable is visible to
+ * anything else running as you, and it is in the shell history if it was typed rather than read.
+ */
+export const PASSPHRASE_ENV = "HYDRA_PASSPHRASE";
+
+const passphrase = (): string | undefined => process.env[PASSPHRASE_ENV] || undefined;
+
+/** Whether the state on disk is locked. Answerable without the passphrase. */
+export function locked(): boolean {
+  if (!existsSync(STATE_FILE)) return false;
+  try { return isEnvelope(JSON.parse(readFileSync(STATE_FILE, "utf8"))); } catch { return false; }
+}
+
 export function load(): State {
   if (!existsSync(STATE_FILE)) throw new Error(`no state at ${STATE_FILE} — run \`hydra init\` first`);
   let parsed: unknown;
@@ -287,6 +318,17 @@ export function load(): State {
   }
   if (parsed === null || typeof parsed !== "object") {
     throw new Error(`${STATE_FILE} does not contain a client state object`);
+  }
+  // LOCKED FILES ARE OPENED BEFORE ANYTHING ELSE LOOKS AT THEM, so no caller ever sees an
+  // envelope and mistakes it for a state with missing fields.
+  if (isEnvelope(parsed)) {
+    const secret = passphrase();
+    if (!secret) {
+      throw new Error(`${STATE_FILE} is locked. Set ${PASSPHRASE_ENV} to open it.\n\n`
+        + "There is no recovery: the passphrase is the only way in, and a path that did not need "
+        + "it would be a second way in. If you wrote the phrase down, that copy is what you need.");
+    }
+    parsed = JSON.parse(openEnvelope(parsed, secret)) as unknown;
   }
   const version = (parsed as { version?: unknown }).version ?? STATE_VERSION;
   if (version !== STATE_VERSION) {
@@ -307,8 +349,15 @@ export function save(state: State): void {
   // user has no state at all. `rename` is atomic within a filesystem, so a reader sees the old
   // file or the new one and never a half of either.
   const tmp = `${STATE_FILE}.writing`;
-  writeFileSync(tmp, `${JSON.stringify({ version: STATE_VERSION, ...state }, null, 2)}\n`,
-    { mode: 0o600 });
+  const plain = `${JSON.stringify({ version: STATE_VERSION, ...state }, null, 2)}\n`;
+  // LOCKED IF IT WAS LOCKED, OR IF A PASSPHRASE IS SET. A save must never silently downgrade a
+  // locked file to plaintext — that would remove the protection at the moment of an ordinary
+  // write, with nothing said. Opt-in, so an existing install is unaffected until `hydra lock`.
+  const secret = passphrase();
+  const body = secret && (locked() || state.lockedAtRest)
+    ? `${JSON.stringify(seal(plain, secret), null, 2)}\n`
+    : plain;
+  writeFileSync(tmp, body, { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, STATE_FILE);
   // Set explicitly as well as at creation: `writeFileSync`'s mode applies only when the file

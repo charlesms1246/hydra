@@ -35,7 +35,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { statementsOf } from "../src/prose.ts";
+import { codeOf, statementsOf } from "../src/prose.ts";
 
 import { forget, SKIPPED_KEEP } from "../../cli/src/commands.ts";
 import { newChain, keyFor, forgetOldSkipped } from "../../handshake/src/ratchet.ts";
@@ -59,6 +59,27 @@ const DESTRUCTIVE: readonly {
   readonly announces: boolean;
 }[] = [
   {
+    op: "lock",
+    destroys: "nothing on its own — and it CREATES a way to lose everything, which is why it is "
+      + "here. `decisions/0040` §5: forgetting the passphrase destroys every conversation "
+      + "permanently, because the seed regenerates every channel key ever agreed. That was an "
+      + "OMISSION rather than an operation, invisible to this table by construction, until it "
+      + "became one",
+    capability: "the passphrase, which exists only in the user's head and in whatever they wrote "
+      + "down. Nothing here holds a copy and nothing can: a recovery path that did not need it "
+      + "would be a second way in, and one held anywhere else would be escrow",
+    announces: true,
+  },
+  {
+    op: "unlock",
+    destroys: "the protection, not the data — it writes the root key and every message back to "
+      + "disk in the clear",
+    capability: "none; it removes one rather than spending one. Behind `--force`, and it prints "
+      + "what it is removing rather than reporting success, because turning a protection off "
+      + "should not read like turning a setting on",
+    announces: true,
+  },
+  {
     op: "forget",
     destroys: "a channel's history, which holds every object's id",
     capability: "the per-object delete token, derived from the channel secret AND the id",
@@ -74,13 +95,17 @@ const DESTRUCTIVE: readonly {
     announces: false,
   },
   {
-    op: "acrossSteps trim",
+    // NAMED BY THE IDENTIFIER, not by a phrase. These two read "acrossSteps trim" and "prekeys
+    // drop", which is what a person would call them and not what the completeness scan finds — so
+    // the accounted-for list had to repeat the identifiers beside the table, and the two could
+    // disagree. The description belongs in `destroys`, which is where somebody reads it anyway.
+    op: "parkThrough",
     destroys: "message keys parked when a DH ratchet step abandoned a chain",
     capability: "reading a straggler from a chain that has been stepped past",
     announces: false,
   },
   {
-    op: "prekeys drop",
+    op: "drop",
     destroys: "a prekey private, zeroed and removed on use or rotation",
     capability: "answering a handshake addressed to that prekey",
     // The whole point of the prekey store — a one-time key used twice is not one-time — and the
@@ -139,15 +164,29 @@ test("COMPLETENESS: no destructive operation exists that this file does not name
       // matched the sentence "do not delete it. A partial write…" inside an error message —
       // seventh time in this repo that prose has broken a guard about code, and the first where
       // the prose was a string literal rather than a comment. See `prose.ts`.
-      const src = statementsOf(readFileSync(join(dir, file), "utf8")).split("\n");
+      // TWO VIEWS OF THE SAME FILE, and needing both is the `codeOf` / `statementsOf` fork in
+      // practice. DETECTION uses statements with strings stripped, so the sentence "do not delete
+      // it" in an error message cannot match a `delete x.y` pattern. ATTRIBUTION uses strings
+      // intact, because `case "unlock":` IS a string literal — stripping it left `case "":` and
+      // the walk-back sailed past every case label to the nearest const, reporting `die`.
+      const raw = readFileSync(join(dir, file), "utf8");
+      const src = statementsOf(raw).split("\n");
+      const named = codeOf(raw).split("\n");
       src.forEach((line, i) => {
         if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
         if (!/\b(delete\s+\w+[.[]|\.history\s*=|\.skipped\s*=|\.pending\s*=|acrossSteps\[)/.test(line)) return;
         // The enclosing TOP-LEVEL declaration, at column zero. Walking back to the nearest
         // `const` of any kind finds the local variable on the line above instead, which is how
         // the first run of this reported `transport`, `done`, `key` and `res`.
+        // A `case "x":` COUNTS AS AN ENCLOSING SCOPE, and without that every destructive
+        // statement inside `cli.ts`'s switch was attributed to whichever top-level `const`
+        // happened to sit above the switch — the first run after `unlock` landed reported `die`,
+        // the error handler, because that was the nearest declaration. An operation misattributed
+        // to an unrelated name is a row nobody can check.
         for (let j = i; j >= 0; j--) {
-          const m = src[j].match(/^(?:export\s+)?(?:async\s+)?(?:function|const|class)\s+(\w+)/);
+          const c = named[j]?.match(/^\s*case "([a-z-]+)":/);
+          if (c) { found.add(c[1]); break; }
+          const m = named[j]?.match(/^(?:export\s+)?(?:async\s+)?(?:function|const|class)\s+(\w+)/);
           if (m) { found.add(m[1]); break; }
         }
       });
@@ -155,11 +194,13 @@ test("COMPLETENESS: no destructive operation exists that this file does not name
   }
   // Everything the table already accounts for, by the function that performs it.
   const named = new Set([
-    // In the table above, with a capability each.
-    "forget", "forgetOldSkipped", "keyOnTrial", "drop",
+    // DERIVED FROM THE TABLE, not repeated beside it. This list held "forget, forgetOldSkipped,
+    // keyOnTrial, drop" as literals, so adding a row above required editing here too and the two
+    // could disagree — the parallel-implementation shape, in a guard.
+    ...DESTRUCTIVE.map((d) => d.op),
     // Consume-on-use paths whose destruction IS the feature: a key used once, an invite spent, a
     // queued object uploaded. Each removes state and none removes an ability the caller still has.
-    "readChannel", "keyFor", "receiveKey", "step", "parkThrough", "flush", "rotatePrekey",
+    "readChannel", "keyFor", "receiveKey", "step", "flush", "rotatePrekey",
     "collect", "sendMessage", "drain", "openAndSend",
   ]);
   const unnamed = [...found].filter((f) => !named.has(f));
@@ -167,8 +208,15 @@ test("COMPLETENESS: no destructive operation exists that this file does not name
     "these destroy client state and are not accounted for in DESTRUCTIVE:\n"
     + `${unnamed.join(", ")}\n`
     + "Add each with the capability it feeds and whether it announces, or say why it feeds none.");
-  assert.equal(DESTRUCTIVE.filter((d) => d.announces).length, 1,
-    "exactly one destructive operation should need to announce; recheck the table");
+  // NAMED, NOT COUNTED. This was `=== 1`, pinned to when `forget` was the only operation that
+  // announced — so `lock` and `unlock` announcing, which is the right behaviour, broke it. A count
+  // cannot say WHICH, and the thing worth holding is that announcing is a deliberate property of
+  // a specific operation rather than a number that drifts up.
+  assert.deepEqual(DESTRUCTIVE.filter((d) => d.announces).map((d) => d.op).sort(),
+    ["forget", "lock", "unlock"],
+    "the set of operations that announce changed. Announcing is right when the user loses "
+    + "something they cannot get back; silence is right only when the destruction IS the feature, "
+    + "as with a key used once or an invite spent.");
   // And the table is not allowed to go empty or stale while the code grows.
   assert.ok(DESTRUCTIVE.length >= 5, "the table has shrunk; operations were removed, not accounted for");
 });

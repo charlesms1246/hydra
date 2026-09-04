@@ -16,10 +16,21 @@
  * So a claim depends on a VALUE rather than on the module that defines how keys are derived.
  * `cover.ts` and `note.ts` re-export these, so nothing that already imports them changes.
  *
- * NOT THE SAME AS `vault-server` IMPORTING `vault-client/src/buckets.ts`, which stays as it is: the
- * dependency there is right and only the package name is misleading, and nothing about it crosses
- * an invariant. This one crossed I6, which is what made the extraction worth doing rather than a
- * tidy.
+ * **A POSITION RECONSIDERED, SO THE EARLIER REASONING HERE DOES NOT READ AS STILL STANDING.** This
+ * file originally said `vault-server` importing `vault-client/src/buckets.ts` should be left alone:
+ * no invariant crossed, only a misleading package name, and extracting it would be a refactor in
+ * service of a tidy. That was right on what was known then.
+ *
+ * It stopped being right when a **second** cross-package consumer appeared. `BUCKETS` is now
+ * reached by `vault-server` and by `claims/src/statement.ts`, and the second sits on an I6
+ * boundary. A shared wire constant with two consumers, reaching into a package named for a third
+ * thing, is no longer a naming oddity — **it is the reason the boundary keeps getting crossed.** So
+ * `BUCKETS` lives here too, and the `vault-server` oddity resolves as a side effect rather than as
+ * the purpose.
+ *
+ * The severity was never the same as the first extraction and the distinction is worth keeping:
+ * `buckets.ts` imports nothing and holds five integers, so reaching it was a package-boundary
+ * violation rather than a key-exposure one. `cover.ts` and `note.ts` reached `derive()`.
  */
 
 /**
@@ -38,3 +49,12 @@ export const COVER_RATE = 4;
  * message — neither value says who it is for or what it says.
  */
 export const NOTE_FELTS = 2;
+
+/**
+ * The padding ladder every blob is rounded up to.
+ *
+ * Five sizes, quoted in the disclosure statement as what an operator learns about length: not the
+ * length, but which of five buckets it fell in. Both classes use the same ladder so that a public
+ * object and an encrypted one disclose length at the same granularity.
+ */
+export const BUCKETS: readonly number[] = [1024, 4096, 16384, 65536, 262144];

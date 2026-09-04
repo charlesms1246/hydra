@@ -30,8 +30,7 @@ import { NODE_OBSERVABLE, NODE_NOT_OBSERVABLE, nodeWhyOf } from "../../cli/src/n
 // `identity/src/domains.ts`, so quoting a cover rate used to drag the derivation for both key
 // classes I6 names into the marketing site's import graph. See `channel/src/constants.ts`.
 import { MIN_JITTER_BLOCKS, coverLeadMs } from "../../channel/src/schedule.ts";
-import { COVER_RATE, NOTE_FELTS } from "../../channel/src/constants.ts";
-import { BUCKETS } from "../../vault-client/src/buckets.ts";
+import { COVER_RATE, NOTE_FELTS, BUCKETS } from "../../channel/src/constants.ts";
 
 /** One thing the product tells the user, and the artifact that makes it true. */
 export type Claim = {

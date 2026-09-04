@@ -33,6 +33,8 @@
  *     hydra lookup 0xADDRESS                      > their bundle, off chain, without asking them
  *     hydra forget NAME [--before EVENT]          delete messages; the key is already gone
  *     hydra disclose [--cite]                     what everyone involved can see
+ *     hydra lock                                  encrypt the state file with a passphrase
+ *     hydra unlock --force                        write it back in the clear
  *     hydra status
  *
  *   --debug on any command prints the stack behind a failure as well as its message.
@@ -44,7 +46,7 @@
  */
 
 import { describePost, describeFetch } from "../../client/src/public.ts";
-import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT }
+import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED }
   from "../../claims/src/warnings.ts";
 import { verifyProof } from "../../vault-server/src/root.ts";
 import { readFileSync } from "node:fs";
@@ -58,7 +60,8 @@ import {
 import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
-import { load, save, exists, STATE_FILE } from "./state.ts";
+import { load, save, exists, locked, STATE_FILE, PASSPHRASE_ENV } from "./state.ts";
+import { refusePassphrase } from "./at-rest.ts";
 
 const [command, ...rest] = process.argv.slice(2);
 
@@ -70,7 +73,7 @@ const [command, ...rest] = process.argv.slice(2);
  * and `--force` is exactly the flag somebody reaches for when the safe path has already refused
  * them. A parser wrong about its own grammar fails on the command a user is most determined to run.
  */
-const BOOLEAN = new Set(["force", "cite", "debug"]);
+const BOOLEAN = new Set(["force", "cite", "debug", "i-have-written-the-phrase-down"]);
 
 /**
  * The value after `--name`, or the fallback.
@@ -486,6 +489,55 @@ switch (command) {
     break;
   }
 
+  case "lock": {
+    // A NAMED OPERATION WITH A CONFIRMATION, which is `decisions/0040` §5: forgetting the
+    // passphrase destroys every conversation irreversibly, and until now that was not an operation
+    // at all — which is why the destructive-operations table had no row for it. A table of
+    // operations cannot see an omission.
+    const state = load();
+    const secret = process.env[PASSPHRASE_ENV];
+    if (!secret) throw new Error(`set ${PASSPHRASE_ENV} to the passphrase you want to use`);
+    refusePassphrase(secret);
+    if (!has("i-have-written-the-phrase-down")) {
+      for (const line of KEY_LOCKED.full) console.error(line);
+      console.error("");
+      console.error("THIS IS THE DESTRUCTIVE PART, and it is destructive to YOU: if you forget the");
+      console.error("passphrase, every conversation in this file is gone permanently. The seed");
+      console.error("regenerates every channel key ever agreed, so losing it loses all of them —");
+      console.error("there is nothing anybody can do, here or anywhere.");
+      console.error("");
+      console.error("Write the phrase down somewhere physical first. That written copy is a SECOND");
+      console.error("COPY OF THE SECRET, not a backup: anyone who finds it has everything.");
+      console.error("");
+      console.error("Then run: hydra lock --i-have-written-the-phrase-down");
+      process.exit(2);
+    }
+    state.lockedAtRest = true;
+    save(state);
+    console.log("locked. every save from now writes the state encrypted.");
+    for (const line of KEY_LOCKED.full) console.log(line);
+    break;
+  }
+
+  case "unlock": {
+    // The reverse, and it announces what it removes rather than reporting success. Turning a
+    // protection off should not read like turning a setting on.
+    const state = load();
+    if (!locked() && !state.lockedAtRest) throw new Error("this state is not locked");
+    if (!has("force")) {
+      console.error("this writes your root key and every message back to disk in the clear.");
+      for (const line of KEY_IN_CLEAR.full) console.error(line);
+      console.error("");
+      console.error("run `hydra unlock --force` if that is what you want.");
+      process.exit(2);
+    }
+    delete state.lockedAtRest;
+    delete process.env[PASSPHRASE_ENV];
+    save(state);
+    console.log("unlocked. the state file is plaintext again.");
+    break;
+  }
+
   case "read": {
     const state = load();
     const [name] = positional;
@@ -596,8 +648,13 @@ switch (command) {
     console.log(`channels   ${Object.keys(state.channels).join(", ") || "(none)"}`);
     console.log(`pending    ${state.pending.length} uploads, ${state.invites.length} invites left`);
     console.log("");
+    // FROM `claims/src/warnings.ts`, and which one depends on what is actually true of the file
+    // on disk. The old line said the key is in a plaintext file unconditionally, which would have
+    // become false in three places the moment `hydra lock` shipped — and a test was defending it.
+    console.log(`at rest    ${(locked() || state.lockedAtRest ? KEY_LOCKED : KEY_IN_CLEAR).short}`);
+    console.log("");
     console.log("what this client does NOT do:");
-    console.log("  - it keeps your root key in a plaintext file (mode 0600, nothing else)");
+    console.log("  - it holds your root key in memory while it runs, whatever is on disk");
     console.log(`  - ${nextOneTime(state) === undefined ? "no" : "some"} one-time prekeys left; `
       + "a bundle without one has no replay resistance");
     console.log(state.controlUrl

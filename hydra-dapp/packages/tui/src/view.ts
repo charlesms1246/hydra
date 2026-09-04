@@ -26,7 +26,7 @@ import { linkabilityOf } from "../../cli/src/commands.ts";
 import { bundleFrom, oneTimeRemaining } from "../../handshake/src/prekeys.ts";
 import { derive, rootSeed, entropyFrom, fromStoredSeed, VAULT_DOMAIN } from "../../identity/src/domains.ts";
 import { STATE_FILE } from "../../cli/src/state.ts";
-import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT }
+import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED }
   from "../../claims/src/warnings.ts";
 import type { State } from "../../cli/src/state.ts";
 
@@ -244,9 +244,11 @@ function identity(m: Model, size: Size, height: number): string[] {
         + "press R.", size.cols - 4).map((l) => paint(l.replace(/\x1b\[[0-9;]*m/g, ""), "yellow"))
       : []),
     "",
-    ...note(`your root key is in ${STATE_FILE}, in the clear, mode 0600 and nothing else. `
-      + "no passphrase, no keychain, no hardware token. anyone who reads that file reads every "
-      + "past and future conversation. this is a client for a devnet and a testnet.",
+    // FROM `claims/src/warnings.ts`, and WHICH ONE depends on what is true of the file. This said
+    // the key is "in the clear" unconditionally, in three places, and a test defended it — so the
+    // moment `hydra lock` shipped it would have been false everywhere with a guard holding it in
+    // place. See `decisions/0040` §4.
+    ...note(`${STATE_FILE}: ${(m.state?.lockedAtRest ? KEY_LOCKED : KEY_IN_CLEAR).full.join(" ")}`,
       size.cols - 4),
     "",
     ...note("that file also holds every message you have sent or read, as text. it does not "

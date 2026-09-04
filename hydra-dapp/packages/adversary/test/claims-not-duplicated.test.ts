@@ -85,7 +85,8 @@ test("EVERY FRONT END RENDERS THE SAME CLAIMS, from the same place", () => {
   // case that proves the direction runs both ways — the CLI was the stale one there.
   const symbols = { "compose.signed": "SIGNED", "compose.deniable": "DENIABLE",
     "record.notWritten": "RECORD_NOT_WRITTEN", "identity.secondClient": "SECOND_CLIENT",
-    "vault.tlsTermination": "TLS_TERMINATION" };
+    "vault.tlsTermination": "TLS_TERMINATION",
+    "identity.keyInClear": "KEY_IN_CLEAR", "identity.keyLocked": "KEY_LOCKED" };
   for (const w of WARNINGS) {
     const symbol = symbols[w.id as keyof typeof symbols];
     assert.ok(symbol, `${w.id} has no symbol in this guard — add it, or the claim is unchecked`);
@@ -115,7 +116,8 @@ test("NO SURFACE RENDERS A CLAIM IT IS NOT DECLARED FOR", () => {
   // surface should be as deliberate an act as adding a line to the reachability allowlist.
   const symbols = { SIGNED: "compose.signed", DENIABLE: "compose.deniable",
     RECORD_NOT_WRITTEN: "record.notWritten", SECOND_CLIENT: "identity.secondClient",
-    TLS_TERMINATION: "vault.tlsTermination" };
+    TLS_TERMINATION: "vault.tlsTermination",
+    KEY_IN_CLEAR: "identity.keyInClear", KEY_LOCKED: "identity.keyLocked" };
   const stray: string[] = [];
   for (const pkg of ALL_SURFACES) {
     let text = "";

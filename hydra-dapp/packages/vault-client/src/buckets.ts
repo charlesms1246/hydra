@@ -21,7 +21,11 @@
  * that the overhead is bounded — the worst case is just under 4x, and the alternative (one
  * bucket for everything) costs the largest supported size on every message.
  */
-export const BUCKETS: readonly number[] = [1024, 4096, 16384, 65536, 262144];
+// Imported and re-exported: the value lives in a file that imports nothing, so a caller quoting it
+// drags nothing behind it. Two packages outside this one reach for it and one of them renders on
+// the site — see `channel/src/constants.ts`.
+import { BUCKETS } from "../../channel/src/constants.ts";
+export { BUCKETS };
 
 /** The 4-byte big-endian length prefix that makes padding removable. */
 export const LENGTH_PREFIX = 4;

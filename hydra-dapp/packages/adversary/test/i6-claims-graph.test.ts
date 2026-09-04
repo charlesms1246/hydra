@@ -52,7 +52,15 @@ const rel = (f: string) => f.slice(f.indexOf("packages/"));
 
 test("NO CLAIM RENDERED BY THE SITE CAN REACH KEY DERIVATION", () => {
   const graph = reachable(ENTRY);
-  assert.ok(graph.size > 5, `only ${graph.size} files walked — the graph walk is broken`);
+  // A FLOOR PLUS NAMED MEMBERS, not a count. The count was `> 5` and the graph legitimately shrank
+  // to five when `BUCKETS` moved — so a passing extraction broke the guard's sanity check, which is
+  // a magic number that must be updated in step with the code doing exactly what it always does.
+  // What the walk must find is that `statement.ts`'s own direct imports resolve.
+  assert.ok(graph.size >= 4, `only ${graph.size} files walked — the graph walk is broken`);
+  for (const must of ["observations.ts", "constants.ts", "statement.ts"]) {
+    assert.ok([...graph.keys()].some((f) => f.endsWith(must)),
+      `the walk did not reach ${must}, so it is not following imports`);
+  }
 
   for (const forbidden of FORBIDDEN) {
     const hit = [...graph.keys()].find((f) => f.endsWith(forbidden));
