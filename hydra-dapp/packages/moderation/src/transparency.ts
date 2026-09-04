@@ -198,6 +198,20 @@ export function report(
       "any other figure over the same events — however coarse — can be intersected with that",
       "range, and the intersection is sometimes a single value.",
       "",
+      // NAMED IN THE REPORT ITSELF, not merely returned beside it. `report.published` says this
+      // report discloses "the ids of removed public objects", and `removedIds` was computed and
+      // handed back while nothing printed it — so the disclosure table described a report nobody
+      // generated. Produced and not consumed, inside the surface built last.
+      ...(removed.length
+        ? ["", "Public objects removed in this period, by id:",
+          ...removed.map((d) => `  ${d.blobId}`),
+          "",
+          "These are named rather than counted. The object was public, so its id was already",
+          "public — it is how anyone fetched it. Naming it is what lets somebody check that a",
+          "removal we claim actually happened, and it is a permanent index of removed content,",
+          "which is the cost. Encrypted objects never appear here."]
+        : []),
+      "",
       "Deletions of encrypted objects are not listed. Those are people deleting their own",
       "messages with a capability they hold, not decisions anyone made about them, and logging",
       "them here would make a transparency report into a record of private deletions.",

@@ -100,12 +100,16 @@ const REACHED_ONLY_BY_TESTS: Record<string, string> = {
   assertUsableId: "same group — an id guard for the write path",
   feltFromShortString: "same group — network name to felt",
 
-  // Delivery. `decisions/0009` parks a mailbox a stranger can address; the pieces exist and the
-  // surface deliberately does not.
-  inboxSlot: "delivery is unbuilt by decision — see decisions/0009",
-  inboxSlots: "delivery is unbuilt by decision — see decisions/0009",
-  encodePrekey: "delivery is unbuilt by decision — see decisions/0009",
-  decodePrekey: "delivery is unbuilt by decision — see decisions/0009",
+  // Prekey delivery, and THIS BLOCK'S FIRST REASON WAS FALSE. It said "delivery is unbuilt by
+  // decision — see decisions/0009", which was true of `0009` and stopped being true at `0013`:
+  // `hydra invite` writes a prekey message into an inbox slot and `hydra collect` reads it. These
+  // four are in-file helpers of `deliver`/`collect` in the same module, like `coverKey`. An
+  // allowlist entry justifying an exemption with a stale reason is exactly the failure this list
+  // is supposed to make hard, and it survived because nobody had to re-read it.
+  inboxSlot: "used in-file by deliver/collect; exported so slot derivation is checkable alone",
+  inboxSlots: "used in-file by deliver/collect; exported so the slot set is assertable",
+  encodePrekey: "used in-file by deliver; exported so the wire encoding is testable on its own",
+  decodePrekey: "used in-file by collect; exported so a malformed slot can be tested directly",
 
   // Miscellaneous, each used in-file.
   LABELS: "key labels used in-file; exported so the domain separation is assertable",
