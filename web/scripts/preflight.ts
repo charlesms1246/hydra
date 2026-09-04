@@ -81,14 +81,11 @@ if (!existsSync(join(WEB, "art.txt"))) {
  * into key-handling code, so the failure arrives at the moment somebody adds the import rather
  * than at the end of a test run.
  */
-const KNOWN = ["hydra-dapp/packages/vault-client/src/buckets.ts"];
-const added = boundaryCrossings(ROOT, entryPoints(WEB))
-  .map((c) => c.file)
-  .filter((c) => !KNOWN.includes(c));
-if (added.length) {
+const crossings = boundaryCrossings(ROOT, entryPoints(WEB)).map((c) => c.file);
+if (crossings.length) {
   problems.push(
-    "a new path from web/ into identity or vault-client:\n"
-    + added.map((a) => `    ${a}`).join("\n")
+    "a path from web/ into identity or vault-client:\n"
+    + crossings.map((a) => `    ${a}`).join("\n")
     + "\n  I6: a browser context may hold neither the pool viewing key nor the vault content\n"
     + "  key. These packages hold the derivation for both.",
   );

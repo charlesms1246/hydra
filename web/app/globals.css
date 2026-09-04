@@ -670,7 +670,9 @@ body.has-canvas .field {
   background: var(--g-8);
   border: 1px solid var(--g-12);
   border-radius: 2px;
-  max-width: calc(100vw - 6rem);
+  /* 1rem of air each side, not 3. The pill is fixed and centred, so a generous reserve here is
+     3rem of unusable width on a phone for no benefit — nothing sits beside it. */
+  max-width: calc(100vw - 2rem);
 }
 
 .nav a {
@@ -843,4 +845,136 @@ body.has-canvas .field {
 .nav-mark:focus-visible img {
   filter: invert(38%) sepia(89%) saturate(4000%) hue-rotate(347deg) brightness(101%) contrast(101%);
   opacity: 1;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Captured terminal output.
+ *
+ * Real output, never typed by hand — `scripts/cli-surface.ts` runs the binary at build time. So
+ * this is styled as a quotation rather than as a picture of a terminal: no fake window chrome, no
+ * traffic-light dots, no blinking cursor. Dressing captured text up as a screenshot would make it
+ * indistinguishable from an invented one, which is the whole thing this page is avoiding.
+ * ------------------------------------------------------------------------------------------ */
+
+.terminal {
+  font-family: var(--mono);
+  font-size: clamp(0.6875rem, 1.05vw, 0.8125rem);
+  line-height: 1.7;
+  color: var(--g-80);
+  background: var(--g-4);
+  border: 1px solid var(--g-12);
+  border-left: 1px solid var(--accent);
+  padding: 1.5rem;
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 4;
+}
+
+.terminal code {
+  font: inherit;
+}
+
+.terminal-prompt {
+  color: var(--accent);
+}
+
+.capture-note {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  line-height: 1.7;
+  letter-spacing: 0.04em;
+  color: var(--g-48);
+  max-width: 52ch;
+  margin: 0 0 1.5rem;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Install steps
+ * ------------------------------------------------------------------------------------------ */
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-width: 62rem;
+  counter-reset: step;
+}
+
+.steps > li {
+  border-top: 1px solid var(--g-12);
+  padding: 2.5rem 0;
+}
+
+.steps > li:last-child {
+  border-bottom: 1px solid var(--g-12);
+}
+
+.step-label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.steps h3 {
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(1.25rem, 2.2vw, 1.75rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 1.25rem;
+}
+
+.steps p {
+  font-family: var(--serif);
+  font-size: 1.125rem;
+  line-height: 1.4;
+  color: var(--g-64);
+  margin: 1.25rem 0 0;
+  max-width: 58ch;
+}
+
+/* The dependency list, generated from the manifest. */
+.deps {
+  list-style: none;
+  padding: 0;
+  margin: 2rem 0 0;
+  display: grid;
+  gap: 0.25rem 2rem;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  max-width: 62rem;
+}
+
+.deps li {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--g-64);
+  border-bottom: 1px solid var(--g-12);
+  padding: 0.5rem 0;
+}
+
+/* Build-time only, so shown a step down the ramp rather than in a second colour. */
+.deps .dep-types {
+  color: var(--g-32);
+}
+
+.cta-inline {
+  margin-top: 1.25rem;
+}
+
+.cta-inline a {
+  font-size: 0.9375rem;
+}
+
+.why h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.why h3 a:hover,
+.why h3 a:focus-visible {
+  color: var(--accent);
 }

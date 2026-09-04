@@ -20,6 +20,22 @@
  * it, add it to `what` instead.
  */
 
+/**
+ * The measured values, imported rather than typed.
+ *
+ * **Four numbers were hand-written into the pitch copy below and every one of them was right.**
+ * That is the problem: right today, and asserted — if a default moves, the copy says something
+ * false and nothing here would notice, because the forbidden-word check reads words and these
+ * are numbers. An asserted measurement is the exact defect this project exists to prevent, and a
+ * marketing page is where it gets written by somebody who was not in the room when it was taken.
+ *
+ * So the sentences interpolate. The prose around them is hand-written; the figures are the same
+ * constants the disclosure statement quotes, and they cannot disagree.
+ */
+import { MEASURED } from "../hydra-dapp/packages/claims/src/statement.ts";
+
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+
 export const SITE = {
   name: "Hydra",
   tagline: "Private messaging on Starknet, where what leaks is computed rather than promised.",
@@ -134,6 +150,195 @@ export const SITE = {
     + "viewing key you did not choose. What that means in detail is on the disclosure page, "
     + "which is generated rather than written.",
   ],
+
+  /**
+   * PITCH. The persuasive page, and therefore the most dangerous one on the site.
+   *
+   * Everything here is hand-written except section 03, which renders the auditor claims from
+   * `statement()`. So the forbidden-word check is the only thing standing between this copy and
+   * an unmeasured claim, and it is load-bearing in a way it is not anywhere else.
+   *
+   * THE RULE THAT MAKES THIS WRITABLE: say what the project DOES, never what the reader GETS.
+   * "The numbers come from tests" is checkable. "Your messages are safe" is a promise nobody
+   * measured. Every sentence below is of the first kind, and if you cannot phrase an addition
+   * that way it is because the thing you want to say has not been measured yet.
+   */
+  pitch: {
+    lede: "Most privacy products ask you to believe a sentence somebody wrote. This one publishes "
+      + "the measurements, including the ones that are not flattering.",
+    problem: {
+      label: "THE PROBLEM",
+      title: "Content is the easy half",
+      body: [
+        "Encrypting a message is a solved problem. What survives encryption is the pattern: who "
+        + "contacted whom, when, how often, from where. That pattern is what an adversary "
+        + "actually works from, and it is the part most systems describe in the fewest words.",
+        "Putting any of it on a public chain changes the timescale of the problem. A pattern held "
+        + "by a company can be subpoenaed, leaked or discontinued. A pattern written to a chain "
+        + "is readable by anyone, permanently, including by people who have not thought of a "
+        + "reason to look yet.",
+      ],
+    },
+    /** Verbs, no adjectives. Every line here describes a mechanism, not an outcome. */
+    mechanism: {
+      label: "THE MECHANISM",
+      title: "What the system actually does",
+      body: [
+        "A message's pointer goes on Starknet's STRK20 privacy pool. Its contents go to a storage "
+        + `server as a sealed blob, padded to one of ${MEASURED.buckets.length} fixed sizes. The `
+        + `upload is delayed by up to ${MEASURED.jitterBlocks} blocks and mixed with `
+        + `${MEASURED.coverRate} decoy uploads, and the decoys are fetched by the recipient `
+        + "exactly the way real messages are.",
+        "You choose, per message, whether it carries a signature. A signed message can be proved "
+        + "to be yours and you cannot take that back. A deniable one carries no signature at all, "
+        + "so either party could have written it and neither can prove which.",
+      ],
+    },
+    /** A comparative dis-claim. It asserts nothing about Hydra, which is why it can be written. */
+    worseAt: {
+      label: "THE COMPARISON",
+      title: "What this is worse at",
+      body: [
+        "For ordinary encrypted chat between people who already know each other, Signal is better "
+        + "and it is not close. Sealed sender and private contact discovery beat anything that "
+        + "puts a pointer on a public chain, and no amount of cover traffic changes that. This "
+        + "project does not claim better metadata privacy than Signal and will not.",
+        "If what you want is a messenger, use that one. What is here is a different shape: a "
+        + "system whose disclosures are computed and published rather than described, built on a "
+        + "chain because the thing being built needs one.",
+      ],
+    },
+    /** The argument, made after the worst fact and the honest comparison rather than before. */
+    why: {
+      label: "THE ARGUMENT",
+      title: "Why it might still be worth it",
+      body: [
+        "Every guarantee this project makes is derived from a value some test already measures, "
+        + "and where a protection is partial the measurement is printed instead of a reassurance. "
+        + "A message sent well apart from any other is identified about "
+        + `${pct(MEASURED.isolatedMessageIdentified)} of the time. That is on the disclosure page `
+        + "because it is true, not because it is good.",
+        "The client renders the same statement this site does, from the same function, so the "
+        + "product and the marketing cannot drift apart. Every line names the file that makes it "
+        + "true, and a test fails if that path stops resolving. Nothing here asks for trust; it "
+        + "asks you to go and check.",
+      ],
+    },
+  },
+
+  /**
+   * INSTALL. Accurate today, which is awkward today.
+   *
+   * There is no published package: `@hydra-platform/cli` is `private: true` at version 0.0.0.
+   * **Do not write an install line that will work later.** An install page describing a package
+   * nobody can fetch is the most concrete false claim available to this site, and it is the one a
+   * reader tests first — within about ten seconds, at a shell prompt, and the answer is a 404.
+   *
+   * If that reads badly, that is information about readiness rather than a copy problem.
+   */
+  install: {
+    lede: "There is nothing to install yet. Both tools run from a checkout, and every command "
+      + "on this page was run in a fresh clone rather than on the machine that wrote it.",
+    /** Verified by running them. If you change these, run them. */
+    steps: [
+      {
+        label: "01",
+        title: "Clone it",
+        commands: ["git clone https://github.com/charlesms1246/hydra", "cd hydra"],
+        note: "Node 24 or later. Nothing else is needed on the machine.",
+      },
+      {
+        label: "02",
+        title: "The platform client",
+        commands: [
+          "npm install --prefix hydra-dapp/packages/channel",
+          "cd hydra-dapp/packages/cli",
+          "node src/cli.ts",
+        ],
+        note: "Run with no arguments and it prints every command. The install is in `channel` "
+          + "rather than here because that is the package that declares dependencies — the "
+          + "client itself has none, and skipping it fails on a missing `@scure/starknet` "
+          + "rather than on anything informative. It is `private: true` at version 0.0.0: there "
+          + "is no npm package, and `npm install hydra` fetches something that is not this. Its "
+          + "manifest reserves the name `hydra` for whenever there is something to publish, "
+          + "which is a note about the future rather than a command you can run.",
+      },
+      {
+        label: "03",
+        title: "The devtool",
+        commands: ["cd devtool", "node packages/cli/src/cli.mjs help"],
+        note: "No install needed for this one. A different tool for a different audience: it "
+          + "stands up a local STRK20 stack and computes what a transaction discloses. Its "
+          + "terminal interface needs `npm install --prefix packages/tui` as well. Publishable "
+          + "as `hydra-devtool`, and not yet published.",
+      },
+    ],
+
+    /**
+     * The warnings live HERE rather than behind a link.
+     *
+     * Somebody on this page is closer to running this than a reader anywhere else on the site,
+     * which makes it the right place for the readiness material and not the wrong one.
+     */
+    warnings: [
+      "This runs against a devnet and a testnet. It is not ready for anyone whose safety depends "
+      + "on it, and nothing about the install changes that.",
+      "Your root key is written as a plaintext file with mode 0600 — no passphrase, no keychain, "
+      + "no hardware token. Anyone who reads that file reads every past and future conversation, "
+      + "and the same file holds every message you have sent or read, as text.",
+      "Run one client per identity. Two copies of the same key file mint identical cover traffic, "
+      + "which is how a storage server tells cover from messages.",
+    ],
+    /**
+     * What stands behind this page, because it is the page that hands you a command to paste.
+     *
+     * Generated from `package.json` rather than typed, so it cannot describe a tree that is no
+     * longer the tree.
+     */
+    supplyChain: "This site is built from four runtime dependencies and four type packages. It "
+      + "ships no analytics and makes no third-party request. An install page is a supply-chain "
+      + "surface — it is where somebody gets a command they will paste into a terminal — so what "
+      + "stands behind it is listed rather than assumed.",
+  },
+
+  /** DEMO. Two tools, two pages, and a landing page that sends you to the right one. */
+  demo: {
+    lede: "Two tools, and they are for different people. Both run in a terminal; neither has a "
+      + "graphical interface, and nothing here is hosted.",
+    tools: [
+      {
+        id: "hydra",
+        href: "/demo/hydra/",
+        name: "hydra",
+        who: "For someone who wants to send a message",
+        body: "The platform client. A scriptable command line and a terminal interface over the "
+          + "same code, so the two cannot disagree about anything that matters.",
+      },
+      {
+        id: "hydra-dev",
+        href: "/demo/hydra-dev/",
+        name: "hydra-dev",
+        who: "For someone building on STRK20",
+        body: "The devtool. Stands up a local privacy stack — devnet, pool, discovery — and "
+          + "computes what a given transaction actually discloses.",
+      },
+    ],
+  },
+
+  /** ABOUT. Short, and the place the disclosure page hangs off. */
+  about: {
+    lede: "A messaging client built on Starknet's STRK20 privacy pool, and the tooling that "
+      + "measures what it leaks.",
+    body: [
+      "This project exists because of a habit rather than an idea. Privacy claims are generated "
+      + "from the code that makes them true and never written by hand — in the product, on this "
+      + "site, and in the same words in both places. Where a guarantee is partial it is published "
+      + "with the measurement attached.",
+      "It is not a company, and the section below says exactly what that means rather than "
+      + "repeating it here. One statement of a thing is a statement; two is a slogan, and this "
+      + "project has one place where each fact lives.",
+    ],
+  },
 
   links: [
     { label: "Source", href: "https://github.com/charlesms1246/hydra" },

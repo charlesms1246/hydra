@@ -61,6 +61,14 @@ function resolveSpecifier(fromFile: string, spec: string): string | null {
  * Only relative specifiers are followed. A bare specifier is a package from `node_modules`, and
  * the thing this guards against is reaching sideways into this repository's own key-handling
  * code — which is always a relative path from here.
+ *
+ * ⛔ **CITATIONS ARE TEXT AND ARE NOT FOLLOWED. Do not "fix" that.** `statement.ts` contains the
+ * string `vault-client/src/buckets.ts` inside a `from:` field — a path a READER opens, not an
+ * import a bundler resolves. This walks resolved import specifiers, so it does not see them, and
+ * that is correct: widening it to match paths in strings would flag a citation as a boundary
+ * crossing, stay red forever after a correct fix, and fail identically to a real violation.
+ * Verified after the crossings were closed — the cited files still exist on disk and the graph
+ * is empty anyway.
  */
 export function reachableFrom(entries: string[]): Set<string> {
   const seen = new Set<string>();

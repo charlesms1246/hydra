@@ -36,6 +36,20 @@ may not paraphrase it into something friendlier.
 
 Telemetry is off for this project — `npx next telemetry disable`, already run. Do not re-enable it.
 
+## What is not checked
+
+**There is no automated rendering check.** Every test here reads the built HTML, so a CSS
+regression that made a page unreadable would pass all twenty of them with every string present
+and correctly placed in the markup. Layout was verified by looking at it, on one machine, at one
+window size.
+
+That is an absence rather than a stub, and it is recorded rather than fixed on purpose: closing
+it means a headless browser in the dependency tree of a site whose argument includes how little
+it depends on. If it ever gets closed, close it with something that does not ship.
+
+Everything else runs against reality — the real `statement()`, the real binaries spawned at build
+time, the real `out/` directory, real `git ls-files`. No fixture, no golden file, no stub.
+
 ## Fonts
 
 Four faces, all self-hosted from `public/fonts/`.
@@ -58,6 +72,18 @@ To build: put your licensed copy at `public/fonts/NON-Natural-Grotesk-Regular.wo
 
 > **Open before this ships to anyone:** the personal-use licence needs transferring to whatever
 > entity ends up publishing this. Tracked as a deployment blocker.
+
+## Install commands are verified in a clone, not here
+
+`content.ts`'s install steps were once "verified by running them" — on this machine, where
+`hydra-dapp/packages/channel/node_modules` already existed. A fresh clone fails immediately on a
+missing `@scure/starknet`, so every reader's first command would have errored while the page
+said it worked.
+
+**If you change an install command, run it in `git clone`d copy in `/tmp`, not here.** The thing
+you test has to be the thing a reader gets. Note also that neither `hydra-dapp/packages/cli` nor
+`devtool` declares any dependencies — an `npm install` in either is a no-op, and the real one
+belongs in `channel`, a package the reader never stands in.
 
 ## The mark
 

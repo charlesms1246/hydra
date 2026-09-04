@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 
-import { statement } from "../../../hydra-dapp/packages/claims/src/statement.ts";
-import { SITE } from "../../content.ts";
-import { PageFrame } from "../../components/PageFrame.tsx";
-import { Nav } from "../../components/Nav.tsx";
-import { Section } from "../../components/Section.tsx";
-import { ClaimList } from "../../components/ClaimList.tsx";
-import { Auditor } from "../../components/Auditor.tsx";
-import { Footer } from "../../components/Footer.tsx";
+import { statement } from "../../../../hydra-dapp/packages/claims/src/statement.ts";
+import { SITE } from "../../../content.ts";
+import { PageFrame } from "../../../components/PageFrame.tsx";
+import { Nav } from "../../../components/Nav.tsx";
+import { Section } from "../../../components/Section.tsx";
+import { ClaimList } from "../../../components/ClaimList.tsx";
+import { Auditor } from "../../../components/Auditor.tsx";
+import { Footer } from "../../../components/Footer.tsx";
 
 /**
  * Everything the landing page does not say.
@@ -37,7 +37,7 @@ export default function Disclosures() {
   return (
     <>
       <PageFrame word={SITE.name.toUpperCase()} />
-      <Nav current="disclosures" />
+      <Nav current="about" />
 
       <main className="page">
         <header className="doc-head">

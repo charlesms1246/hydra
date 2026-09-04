@@ -23,8 +23,9 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { SITE } from "../content.ts";
-import { statement } from "../../hydra-dapp/packages/claims/src/statement.ts";
+import { statement, MEASURED } from "../../hydra-dapp/packages/claims/src/statement.ts";
 import { auditorClaims } from "../components/auditor-claims.ts";
+import { commandLines, commandSurface, TOOLS } from "../scripts/cli-surface.ts";
 import {
   boundaryCrossings,
   clientReachable,
@@ -36,28 +37,58 @@ const WEB = dirname(fileURLToPath(import.meta.url)).replace(/\/test$/, "");
 const ROOT = resolve(WEB, "..");
 const OUT = join(WEB, "out");
 
-/** The landing page: marketing, and no generated claims at all. */
+/**
+ * Every built page, enumerated from `out/` rather than listed.
+ *
+ * **There is no list of pages in this file, deliberately.** A hand-kept list is one somebody
+ * forgets to extend, and the page they forget is the page that escapes every check below. The
+ * site has seven routes today and will have more; enumerating the artifact means a new one is
+ * covered the moment it exists, without anybody remembering to add it.
+ *
+ * `Nav.tsx` keeps its own list of links, and the two views are independent on purpose: a page
+ * missing from the nav is still checked here, and a nav link to a page that does not exist is a
+ * broken link rather than an invisible one.
+ */
+type Page = { route: string; html: string };
+
+let pages: Page[] = [];
+/** The landing page, and the disclosure page, for the checks specific to each. */
 let home = "";
-/** The disclosure page: the generated statement, and the two hand-written warning lists. */
 let html = "";
-/** Prose a person wrote, across BOTH pages, scripts included. */
+/** Prose a person wrote, across EVERY page, scripts included. */
 let handWritten = "";
 let removedClaims = 0;
 
-before(() => {
-  const pages = { home: join(OUT, "index.html"), doc: join(OUT, "disclosures/index.html") };
-  for (const [name, path] of Object.entries(pages)) {
-    assert.ok(
-      existsSync(path),
-      `${name} is missing at ${path} — run \`npm test\`, which builds first`,
-    );
+function enumeratePages(dir: string, route = "/"): Page[] {
+  const out: Page[] = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) out.push(...enumeratePages(join(dir, e.name), `${route}${e.name}/`));
+    else if (e.name === "index.html") {
+      out.push({ route, html: readFileSync(join(dir, e.name), "utf8") });
+    }
   }
-  home = readFileSync(pages.home, "utf8");
-  html = readFileSync(pages.doc, "utf8");
-  // Both pages, because the forbidden-word rule is about anything a person wrote anywhere on
-  // this site. **The landing page is the more dangerous of the two**, now that the tables have
-  // moved: it is entirely hand-written, it has no generated block to hide behind, and every
-  // sentence on it was chosen to attract somebody.
+  return out;
+}
+
+before(() => {
+  assert.ok(existsSync(OUT), `${OUT} is missing — run \`npm test\`, which builds first`);
+  pages = enumeratePages(OUT);
+  // The vacuity half: an enumeration that finds nothing would pass every check below.
+  assert.ok(
+    pages.length >= 7,
+    `only found ${pages.length} built pages — the enumeration is not seeing the site`,
+  );
+  const find = (route: string) => {
+    const p = pages.find((x) => x.route === route);
+    assert.ok(p, `${route} is not in the build`);
+    return p.html;
+  };
+  home = find("/");
+  html = find("/about/disclosure/");
+  // EVERY page, because the forbidden-word rule is about anything a person wrote anywhere on
+  // this site. **`/pitch/` is now the most dangerous surface**: persuasive copy about a privacy
+  // product, hand-written apart from its auditor block, with this check the only thing between
+  // it and an unmeasured claim.
   ({ text: handWritten, removed: removedClaims } = handWrittenProse());
 });
 
@@ -105,8 +136,18 @@ function normalise(raw: string): string {
 function handWrittenProse(): { text: string; removed: number } {
   const s = statement();
   const generated = [...s.whoCanSeeWhat, ...s.whatIsPartial, ...s.whatWeCannotSee];
-  let text = `${normalise(home)}\n${normalise(html)}`;
+  let text = pages.map((p) => normalise(p.html)).join("\n");
   let removed = 0;
+  // The captured CLI output is subtracted too. It is not prose a person wrote — it is what the
+  // binary printed, checked against the binary below — so scanning it here would attribute
+  // another package's copy to this site's authors. What it DOES contain is checked separately
+  // and is a finding rather than a pass; see the CLI-language test.
+  for (const tool of ["hydra", "hydra-dev"] as const) {
+    text = text.split(normalise(commandSurface(tool))).join(" ");
+    for (const line of commandLines(tool)) {
+      if (line.trim().length > 12) text = text.split(normalise(line)).join(" ");
+    }
+  }
   for (const c of generated) {
     for (const piece of [c.says, c.from]) {
       if (text.includes(piece)) removed++;
@@ -138,30 +179,73 @@ test("every claim the statement makes is on the disclosure page", () => {
 });
 
 /**
- * The landing page is marketing and carries no generated claim.
+ * Quoting the statement is allowed anywhere. Paraphrasing it is caught everywhere.
  *
- * Not a style rule — it is the reason the split is safe. Moving the tables to their own page is
- * only honest if the landing page does not then paraphrase them into something friendlier, which
- * is the exact move this whole mechanism exists to prevent. So the landing page may LINK to the
- * statement and may not quote it: no claim text, and no citation either, because a citation with
- * no claim beside it is decoration borrowing the look of evidence.
+ * **This replaced a cruder rule, and the crude one forbade the honest act.** It used to be "only
+ * the disclosure page may carry generated claims," written when the split was landing-versus-
+ * disclosure. That prevented softening by preventing quotation — but it also made it impossible
+ * to put the auditor's graph-visibility line on `/pitch/`, which is a fact about Hydra rather
+ * than a comparison, so hand-writing it would be an asserted claim the check correctly refuses.
+ * Generated-on-the-page or absent-from-the-page, and absent was not acceptable.
+ *
+ * Softening was never caught by the page restriction anyway. It is caught by the forbidden-word
+ * check: a paraphrase is not identical to a claim, so it is not subtracted, so it stays in
+ * hand-written prose and gets read. The restriction was a blunt proxy for a property another
+ * instrument already held.
+ *
+ * So: any page may render claims, verbatim, inside a marked block — and the marker is itself
+ * checked, below.
  */
-test("the landing page quotes no claim and no citation", () => {
+test("any claim text on any page is inside a marked generated block", () => {
   const s = statement();
-  const text = normalise(home);
-  for (const claim of [...s.whoCanSeeWhat, ...s.whatIsPartial, ...s.whatWeCannotSee]) {
-    assert.ok(
-      !text.includes(claim.says),
-      `the landing page quotes a generated claim: "${claim.says.slice(0, 50)}…" — link to the `
-      + "disclosure page instead",
+  const all = [...s.whoCanSeeWhat, ...s.whatIsPartial, ...s.whatWeCannotSee];
+  for (const p of pages) {
+    const text = normalise(p.html);
+    const quoted = all.filter((c) => text.includes(c.says));
+    if (quoted.length === 0) continue;
+    assert.match(
+      p.html,
+      /data-generated="statement"/,
+      `${p.route} contains claim text with no generated block — a claim pasted into prose is an `
+      + "assertion wearing a citation's clothes",
     );
   }
-  assert.ok(
-    !/data-generated/.test(home),
-    "a generated block reached the landing page; the tables live at /disclosures/",
+});
+
+/**
+ * `data-generated` is a claim of provenance, so it is checked in both directions.
+ *
+ * The marker decides what the forbidden-word check does NOT read. The moment a marker controls
+ * what gets inspected, it needs its own guard — otherwise it is simply the way to smuggle
+ * hand-written copy past the instrument that exists to read it. Marking a block generated when
+ * it is not would be a more effective attack on this site than any wording.
+ *
+ * `statement` blocks must contain only sentences `statement()` produced. `cli` blocks must
+ * contain only what the binary printed; that is checked in the demo test further down.
+ */
+test("nothing inside a generated block is text the generator did not produce", () => {
+  const s = statement();
+  const produced = new Set(
+    [...s.whoCanSeeWhat, ...s.whatIsPartial, ...s.whatWeCannotSee].flatMap((c) => [c.says, c.from]),
   );
-  // And it must actually offer the way there, or the split is just a deletion.
-  assert.ok(home.includes('href="/disclosures/"'), "the landing page does not link to the disclosures");
+  for (const p of pages) {
+    // Each <p> and <span> inside a statement block, as rendered text.
+    const blocks = [...p.html.matchAll(
+      /<(\w+)[^>]*data-generated="statement"[^>]*>([\s\S]*?)<\/\1>/g,
+    )];
+    for (const [, , inner] of blocks) {
+      const cells = [...inner.matchAll(/<(?:p|span)[^>]*>([^<]+)<\/(?:p|span)>/g)]
+        .map((m) => normalise(m[1]).trim())
+        .filter((t) => t.length > 25); // skip indices like "01" and short labels
+      for (const cell of cells) {
+        assert.ok(
+          produced.has(cell),
+          `${p.route} has text inside a data-generated block that statement() never produced: `
+          + `"${cell.slice(0, 70)}…"`,
+        );
+      }
+    }
+  }
 });
 
 /**
@@ -277,7 +361,7 @@ test("nothing on the page names a company, an address or a canary", () => {
   // Section 07 is removed first: it is the page stating in as many words that there is no
   // company, no contact and no canary, and a check that trips on the denial would be reading the
   // sentence backwards.
-  let text = `${normalise(home)}\n${normalise(html)}`;
+  let text = pages.map((p) => normalise(p.html)).join("\n");
   for (const line of SITE.doesNotClaim) text = text.split(line).join("");
   text = text.toLowerCase();
   for (const implied of ["warrant canary", "all rights reserved", "©", "copyright ", " inc.", " ltd", "gmbh"]) {
@@ -295,17 +379,21 @@ test("nothing is fetched from anywhere else, on a page about who can see what", 
   // be deciding whether to leak to a newsroom; their IP and referrer are not ours to hand out.
   // The only external URLs allowed are the ones the footer links to, which a reader CHOOSES to
   // follow.
-  const urls = [...`${html}${home}`.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]);
+  const urls = pages.flatMap((p) =>
+    [...p.html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]),
+  );
   const external = urls.filter((u) => /^(https?:)?\/\//.test(u));
   const declared = new Set<string>(SITE.links.map((l) => l.href));
   for (const u of external) {
     assert.ok(declared.has(u), `${u} is fetched or linked and is not one of the declared links`);
   }
   // Preconnect and dns-prefetch are requests too, and they are easy to add without noticing.
-  assert.ok(
-    !/rel="(preconnect|dns-prefetch)"/i.test(html + home),
-    "a connection to a third party is hinted",
-  );
+  for (const p of pages) {
+    assert.ok(
+      !/rel="(preconnect|dns-prefetch)"/i.test(p.html),
+      `${p.route} hints a connection to a third party`,
+    );
+  }
   // Every font is served from this origin.
   for (const u of urls.filter((u) => u.endsWith(".woff2"))) {
     assert.ok(u.startsWith("/fonts/"), `font ${u} is not served from this origin`);
@@ -352,40 +440,26 @@ test("no key material or key-derivation code reaches the exported site", () => {
 /**
  * I6, as a property of the source.
  *
- * The check above is the one that matters today, and it passes because every component here is a
- * server component. **That is a property one `"use client"` directive destroys silently** — add
- * it to anything that imports `statement.ts` and the key-derivation module graph below is bundled
- * for the browser, with no error and nothing in the markup to suggest it.
+ * The check above is the one that matters today, and it passes because every page renders on the
+ * server. **That is a property one `"use client"` directive destroys silently** — add it to
+ * anything importing `statement.ts` and whatever that reaches is bundled for the browser, with no
+ * error and nothing in the markup to suggest it.
  *
- * So this asserts the structural fact instead of the incidental one. It currently FAILS OPEN on
- * three known crossings, all of them upstream of this package and none of them reachable from a
- * browser today. The list is a tripwire, not permission: anything NEW fails.
- *
- * TWO OF THE THREE ARE ALREADY GONE. `c1962af` extracted `channel/src/constants.ts`, so quoting
- * a cover rate no longer drags in `identity/src/domains.ts` — which holds `POOL_DOMAIN`,
- * `VAULT_DOMAIN` and `derive()`, the derivation for both keys I6 names — and `coverLeadMs` moved
- * to a module importing only `node:crypto`.
- *
- * WHAT IS LEFT is one import: `statement.ts` takes `BUCKETS` from `vault-client/src/buckets.ts`
- * to say how many size bands there are. That file imports NOTHING — it is five integers and
- * three pure functions, no key material on any path — so what remains is a package-boundary
- * violation rather than a key-exposure one. When those constants move too, delete this list and
- * make the assertion absolute.
+ * So this asserts the structural fact instead of the incidental one, **and it is now absolute.**
+ * It carried an exception list of three for most of a day: `identity/src/domains.ts` — which
+ * holds `POOL_DOMAIN`, `VAULT_DOMAIN` and `derive()`, the derivation for both keys I6 names —
+ * plus two `vault-client` modules, all reached because quoting a cover rate and a bucket count
+ * dragged them in. `channel/src/constants.ts` now holds those values and imports nothing, so the
+ * list is empty and the assertion needs no exceptions. An assertion with an exception list is one
+ * somebody eventually adds to; this one has nothing to add to.
  */
-const KNOWN_CROSSINGS = ["hydra-dapp/packages/vault-client/src/buckets.ts"];
-
-test("nothing new reaches identity or vault-client", () => {
-  const crossings = boundaryCrossings(ROOT, entryPoints(WEB)).map((c) => c.file);
-  const added = crossings.filter((c) => !KNOWN_CROSSINGS.includes(c));
+test("nothing reaches identity or vault-client", () => {
   assert.deepEqual(
-    added,
+    boundaryCrossings(ROOT, entryPoints(WEB)),
     [],
-    "a new path from web/ into identity or vault-client — I6 says a browser context may hold "
-    + "neither the pool viewing key nor the vault content key, and this is how one gets there",
+    "a path from web/ into identity or vault-client — I6 says a browser context may hold neither "
+    + "the pool viewing key nor the vault content key, and this is how one gets there",
   );
-  // And if a crossing is FIXED upstream, this fails too, so the list cannot rot into fiction.
-  const stale = KNOWN_CROSSINGS.filter((k) => !crossings.includes(k));
-  assert.deepEqual(stale, [], "a known crossing is gone — delete it from KNOWN_CROSSINGS");
 });
 
 /**
@@ -437,6 +511,127 @@ test("the build does not ignore type errors", () => {
     !/ignoreDuringBuilds\s*:\s*true/.test(config),
     "next.config.ts is ignoring lint errors — turn it back on",
   );
+});
+
+/**
+ * The demo shows what the tools print, and it is captured rather than written.
+ *
+ * **No hand-typed terminal output anywhere on this site, ever.** An invented transcript is
+ * indistinguishable from a real one and unfalsifiable by any guard here — it would be a false
+ * claim with better typography, on a site whose whole argument is that its claims come from the
+ * code. So the demo pages carry only what `scripts/cli-surface.ts` got by running the binary,
+ * and this checks the rendered block against a fresh capture.
+ */
+test("every terminal block on the site is output the tool actually produced", () => {
+  const demos = pages.filter((p) => /data-generated="cli"/.test(p.html));
+  assert.ok(demos.length >= 2, `expected both demo pages to carry a capture, found ${demos.length}`);
+
+  for (const p of demos) {
+    const tool = /data-tool="([^"]+)"/.exec(p.html)?.[1] as keyof typeof TOOLS | undefined;
+    assert.ok(tool && tool in TOOLS, `${p.route} marks a cli block with no known tool`);
+    const rendered = normalise(p.html);
+    for (const line of commandLines(tool!)) {
+      if (line.trim().length < 12) continue;
+      assert.ok(
+        rendered.includes(normalise(line).trimEnd()),
+        `${p.route} is missing a line ${tool} actually prints: "${line.trim().slice(0, 60)}…"`,
+      );
+    }
+  }
+});
+
+/**
+ * What the tools say about themselves, measured against this site's own rule.
+ *
+ * The captured help text is copy on this site. `hydra` used to describe the public class as
+ * **"anonymous posts"** — a privacy claim, in a word this project's own list refuses, with no
+ * measurement behind it and not one the statement produces. It was the CLI's wording rather than
+ * this site's, but it was on a public page either way and a reader cannot tell which package
+ * chose it.
+ *
+ * It was pinned here rather than dropped from the capture, because hiding a line from generated
+ * output is the same move as dropping the uncomfortable half of a disclosure table. **The pin's
+ * anti-rot half then caught the fix**: the line now reads "a post with no return channel", which
+ * describes the mechanism instead of asserting the property. The claim was conditional all along
+ * — publishing is unlinkable only from a fresh, unfunded account — so it belongs in the generated
+ * statement where it can carry its conditions, not in help text where it cannot.
+ *
+ * Both lists are empty and the assertion is effectively absolute. Anything new fails; anything
+ * listed that is no longer said also fails, so this cannot rot into fiction.
+ */
+const KNOWN_CLI_LANGUAGE: Record<string, string[]> = {
+  hydra: [],
+  "hydra-dev": [],
+};
+
+test("the tools do not describe themselves in words this site refuses", () => {
+  for (const tool of Object.keys(TOOLS) as (keyof typeof TOOLS)[]) {
+    const said = commandSurface(tool).toLowerCase();
+    const hits = SITE.forbidden.filter((w) => said.includes(w));
+    const unexpected = hits.filter((w) => !KNOWN_CLI_LANGUAGE[tool].includes(w));
+    assert.deepEqual(
+      unexpected,
+      [],
+      `${tool} now describes itself using ${JSON.stringify(unexpected)} — an unmeasured privacy `
+      + "claim, printed by the tool and rendered on this site. Fix the wording upstream or "
+      + "measure it; do not add it to the list to make this pass",
+    );
+    // And the list cannot rot into fiction.
+    const stale = KNOWN_CLI_LANGUAGE[tool].filter((w) => !hits.includes(w));
+    assert.deepEqual(stale, [], `${tool} no longer says ${JSON.stringify(stale)} — drop it`);
+  }
+});
+
+/**
+ * Every figure in hand-written copy traces to a measured constant.
+ *
+ * **Four numbers were hand-written into the pitch and every one was correct.** That is precisely
+ * why it needed fixing: correct today and asserted, so a change to a default would leave the
+ * copy saying something false with nothing to notice — the forbidden-word check reads words, and
+ * these are numbers. It is the same defect the whole project is built against, arriving in the
+ * one place that check cannot see.
+ *
+ * `content.ts` now interpolates from `MEASURED`. This is the guard that keeps it that way: any
+ * numeral in hand-written prose has to be one the statement's own constants produce, or be one
+ * of the few that are not measurements at all.
+ */
+test("no hand-written sentence asserts a number the code did not produce", () => {
+  const measured = new Set([
+    String(MEASURED.jitterBlocks),
+    String(MEASURED.coverRate),
+    String(MEASURED.coverRate + 1),
+    String(MEASURED.buckets.length),
+    String(MEASURED.noteFelts),
+    `${Math.round(MEASURED.isolatedMessageIdentified * 100)}`,
+    `${Math.round(MEASURED.clusteredMessageIdentified * 100)}`,
+    String(MEASURED.senderIdentifiedOnChain),
+  ]);
+  /**
+   * Numerals that are not measurements: version and mode strings, a year, the ordinals that
+   * number the sections. Listed rather than pattern-matched, because "which numbers are allowed
+   * to be typed by a person" is exactly the judgement that should be written down.
+   */
+  const notMeasurements = new Set(["0600", "24", "0", "20", "1", "2", "3", "4", "5", "6", "7"]);
+
+  const prose = [
+    ...SITE.what, ...SITE.notYet, ...SITE.doesNotClaim, ...SITE.beforeYouUse,
+    ...SITE.pitch.problem.body, ...SITE.pitch.mechanism.body,
+    ...SITE.pitch.worseAt.body, ...SITE.pitch.why.body,
+    SITE.pitch.lede, SITE.install.lede, SITE.install.supplyChain, SITE.about.lede,
+    ...SITE.about.body, ...SITE.install.warnings,
+    ...SITE.why.map((w) => w.body),
+  ];
+
+  for (const line of prose) {
+    for (const [, numeral] of line.matchAll(/\b(\d+)\b/g)) {
+      assert.ok(
+        measured.has(numeral) || notMeasurements.has(numeral),
+        `"${numeral}" is asserted in hand-written copy and is not a value MEASURED produces:\n`
+        + `    ${line.slice(0, 110)}…\n`
+        + "  Interpolate it from the constant, or add it to notMeasurements with a reason.",
+      );
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------------------------
