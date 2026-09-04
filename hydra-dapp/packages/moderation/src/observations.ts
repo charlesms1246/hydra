@@ -37,8 +37,8 @@ export const MODERATION_OBSERVABLE: readonly ModerationObservation[] = [
   },
   {
     id: "decision.recorded",
-    what: "the blob id, outcome, category and date of every moderation decision",
-    why: "an appeal has to be able to name the decision it contests and a transparency report has to be generated from something, so the decision is a record. It is the minimum that makes both possible. NO REPORTER IDENTITY IS IN IT, deliberately: a store that names reporters is discoverable and is the most dangerous file this service would keep — the same argument as not retaining removed content to allow a reversal, one layer over",
+    what: "an opaque identifier, the blob id, outcome, category and date of every moderation decision",
+    why: "an appeal has to be able to name the decision it contests and a transparency report has to be generated from something, so the decision is a record. It is the minimum that makes both possible. THE IDENTIFIER IS RANDOM AND NEVER A COUNTER: an appeal has to name the decision it contests, and a sequential id would announce how many decisions exist — which is exactly the total the transparency report refuses to publish and that a banded cell is banded to protect. A field nobody thinks of as a figure can disclose one. NO REPORTER IDENTITY IS IN IT, deliberately: a store that names reporters is discoverable and is the most dangerous file this service would keep — the same argument as not retaining removed content to allow a reversal, one layer over",
   },
   {
     id: "appeal.filed",

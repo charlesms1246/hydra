@@ -18,6 +18,8 @@
  * adversary's effort, and no identity is needed to achieve it.
  */
 
+import { randomBytes } from "node:crypto";
+
 /** One report as filed. No reporter identity is stored — see `Decision` and `decisions/0035` §7. */
 export type Report = { readonly body: string; readonly at: number };
 
@@ -28,6 +30,22 @@ export type Report = { readonly body: string; readonly at: number };
  * is discoverable and is the most dangerous file this service would keep.
  */
 export type Decision = {
+  /**
+   * OPAQUE AND RANDOM, NEVER A COUNTER.
+   *
+   * An appeal names the decision it contests, and until this existed it named nothing — `appeals.ts`
+   * took a `decisionId` that no decision carried, and its own tests invented `"decision-1"` and
+   * `"decision-9"` to stand in. A mechanism whose input has no producer, which is the class that
+   * has turned up three times today from the other end.
+   *
+   * The reason it is random is sharper than tidiness. **A sequential id announces how many
+   * decisions exist** — the total that `transparency.ts` refuses to publish, that three commits
+   * went into making underivable from any combination of cells, and that a banded cell is banded
+   * precisely to protect. Hand an appellant `decision-4193` and the floor is gone, disclosed by a
+   * field nobody thought of as a figure. Nothing else in this record counts either: `at` is a
+   * timestamp and the period counters are aggregates that never leave.
+   */
+  readonly id: string;
   readonly blobId: string;
   readonly outcome: "removed" | "kept";
   readonly category: string;
@@ -156,8 +174,9 @@ export class Reports {
   }
 
   /** Close a review. The object becomes reportable again, which is what stops immunisation. */
-  decide(blobId: string, outcome: Decision["outcome"], category: string, at: number): Decision {
-    const d = { blobId, outcome, category, at };
+  decide(blobId: string, outcome: Decision["outcome"], category: string, at: number,
+    id = randomBytes(16).toString("hex")): Decision {
+    const d = { id, blobId, outcome, category, at };
     this.#decided.push(d);
     this.#open.delete(blobId);
     return d;

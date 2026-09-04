@@ -126,6 +126,6 @@ test("nothing about a reporter is stored", () => {
     assert.ok(!record.includes(field), `a decision record carries "${field}"`);
   }
   assert.deepEqual(Object.keys(q.history("pub:a")[0]).sort(),
-    ["at", "blobId", "category", "outcome"]);
+    ["at", "blobId", "category", "id", "outcome"]);
   assert.equal(BODIES_KEPT, 32);
 });

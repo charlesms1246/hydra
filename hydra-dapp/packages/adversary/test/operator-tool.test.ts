@@ -90,7 +90,7 @@ test("THE STORED QUEUE HOLDS NO BODY FOR A DECIDED OBJECT", async () => {
     assert.ok(onDisk.includes("still needed"), "an OPEN review lost its body, which is the point");
     // And the decision record kept the minimum and nothing else.
     const decided = JSON.parse(onDisk).decided as Record<string, unknown>[];
-    assert.deepEqual(Object.keys(decided[0]).sort(), ["at", "blobId", "category", "outcome"]);
+    assert.deepEqual(Object.keys(decided[0]).sort(), ["at", "blobId", "category", "id", "outcome"]);
   });
 });
 

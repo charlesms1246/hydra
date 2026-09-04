@@ -19,6 +19,7 @@
  */
 
 import type { Decision } from "./reports.ts";
+import type { Appeal } from "./appeals.ts";
 
 /**
  * Cells below this are banded rather than counted.
@@ -92,6 +93,7 @@ export function report(
   decisions: readonly Decision[],
   reportsReceivedThisPeriod: number,
   period: Period,
+  appeals: readonly Appeal[] = [],
 ): {
   readonly floor: number;
   readonly period: Period;
@@ -136,6 +138,38 @@ export function report(
   // the same events, at ANY granularity, can intersect a suppressed cell's range down to a point.
   // The report publishes one event set. Volume is not published in any form.
   void reportsReceivedThisPeriod;
+  // APPEAL OUTCOMES, ON THE SAME FLOOR AND IN THE SAME PARTITION STYLE.
+  //
+  // They belong here because an appeal is a decision about a decision, and a service that publishes
+  // what it removed while staying silent on how often it was told it got it wrong is publishing the
+  // flattering half. The floor applies identically: a single upheld appeal against a public
+  // timeline names the object and plausibly the person.
+  //
+  // ONLY RESOLVED ONES ARE COUNTED, and the reason is a differencing shape this report had not
+  // met before: it works ACROSS PERIODS rather than within one.
+  //
+  // A pending appeal is not an outcome, so publishing it as a third value would be inaccurate
+  // anyway. What makes it unsafe is that **a pending appeal must eventually resolve**, which ties
+  // one period's figure to the next one's by construction. Publish `pending: 12` in September and
+  // `reversed: 8` in October with `stood` banded, and 12 − 8 = 4 pins the banded cell — across two
+  // reports, neither of which is unsafe on its own.
+  //
+  // Measured, not assumed: within a SINGLE period publishing pending does not bridge, which is why
+  // the first version of this comment claimed the wrong reason and the exhaustive test did not
+  // agree with it. The guard for the real shape is in `transparency.test.ts`.
+  //
+  // An unresolved appeal therefore appears in a later period, when it is an outcome.
+  //
+  // "upheld" means THE APPELLANT WON. Written out in the label because "upheld" alone is read both
+  // ways, and a transparency report whose central word is ambiguous discloses nothing reliably.
+  const appealsInPeriod = appeals.filter((a) =>
+    a.outcome !== undefined && a.at >= period.from && a.at < period.to);
+  for (const a of appealsInPeriod) {
+    const key = a.outcome === "upheld"
+      ? "appeals / decision reversed" : "appeals / decision stood";
+    cells.set(key, (cells.get(key) ?? 0) + 1);
+  }
+
   const figures = [...cells].sort(([a], [b]) => a.localeCompare(b))
     .map(([label, n]) => ({ label, shown: band(n) }));
 

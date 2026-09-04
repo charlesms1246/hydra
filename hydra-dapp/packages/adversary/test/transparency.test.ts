@@ -11,6 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { Reports } from "../../moderation/src/reports.ts";
+import { Appeals, type Appeal } from "../../moderation/src/appeals.ts";
 import { report, band, FLOOR } from "../../moderation/src/transparency.ts";
 import { MODERATION_OBSERVABLE_IDS } from "../../moderation/src/observations.ts";
 
@@ -106,7 +107,7 @@ test("the report is generated from the record, and the record kept enough", () =
   // a count of reports carries nothing about who filed them or which item they concerned.
   const q = withDecisions(6);
   for (const d of q.decisions()) {
-    assert.deepEqual(Object.keys(d).sort(), ["at", "blobId", "category", "outcome"],
+    assert.deepEqual(Object.keys(d).sort(), ["at", "blobId", "category", "id", "outcome"],
       "the decision record grew a field to serve the report");
   }
   assert.equal(q.receivedIn(0), 6);
@@ -277,4 +278,140 @@ test("the report is period-scoped, not cumulative, so two of them cannot be diff
   assert.equal(q.receivedIn(jan), 9, "the counter is not scoped to the period");
   assert.equal(q.receivedIn(feb), 6, "the counter is cumulative across periods");
   assert.notEqual(q.receivedIn(feb), 15);
+});
+
+test("A DECISION ID IS NOT A COUNTER, or the floor is gone via a field nobody calls a figure", () => {
+  // Three commits went into making the total number of decisions underivable from any combination
+  // of published cells. An appeal has to NAME the decision it contests, so the id is disclosed to
+  // an appellant and travels in the artifact — and a sequential id hands over that same total in
+  // one field. The report would still be perfectly banded and the number would still be public.
+  const q = new Reports();
+  const ids: string[] = [];
+  for (let i = 0; i < 40; i++) {
+    q.file(`pub:${i}`, "b", i);
+    ids.push(q.decide(`pub:${i}`, "kept", "spam", i).id);
+  }
+  assert.equal(new Set(ids).size, ids.length, "decision ids collided");
+  // Not a counter in any base, and not merely "not equal to i": consecutive ids must not differ by
+  // a constant, which is what a prefixed or offset counter looks like.
+  const gaps = new Set<number>();
+  for (let i = 1; i < ids.length; i++) {
+    const a = Number.parseInt(ids[i - 1], 16);
+    const b = Number.parseInt(ids[i], 16);
+    if (Number.isFinite(a) && Number.isFinite(b)) gaps.add(b - a);
+  }
+  assert.ok(gaps.size > 1, "decision ids advance by a fixed step, so they are a counter");
+  // Long enough that the space cannot be walked to enumerate decisions, which would recover the
+  // total by a different route.
+  for (const id of ids) assert.ok(id.length >= 32, `a decision id is only ${id.length} chars`);
+  // And nothing else in the record counts. `at` is a timestamp, which is disclosed on purpose.
+  const d = q.decisions()[0];
+  assert.deepEqual(Object.keys(d).sort(), ["at", "blobId", "category", "id", "outcome"]);
+});
+
+test("APPEAL CELLS DO NOT BRIDGE TO A SUPPRESSED DECISION CELL", () => {
+  // Appeal outcomes are published on the same floor and in the same partition style, and that is
+  // the exact move that failed for report volume — a second event set printed beside the first,
+  // whose residual could stand in for a suppressed cell. So it is settled by the instrument rather
+  // than by the argument that appeals are "not a partition of decisions".
+  //
+  // The structural reason it holds: appeal cells count RESOLVED APPEALS, which are not a cover of
+  // the decisions and do not sum to any decision figure. The separate reason pending appeals are
+  // excluded is CROSS-PERIOD and has its own test below.
+  const q = new Reports();
+  const shape: [string, "removed" | "kept"][] = [
+    ...Array.from({ length: 7 }, () => ["impersonation", "removed"] as [string, "removed"]),
+    ...Array.from({ length: 2 }, () => ["impersonation", "kept"] as [string, "kept"]),
+    ...Array.from({ length: 6 }, () => ["harassment", "removed"] as [string, "removed"]),
+  ];
+  const ids: string[] = [];
+  shape.forEach(([category, outcome], i) => {
+    q.file(`pub:${i}`, "b", i);
+    ids.push(q.decide(`pub:${i}`, outcome, category, i).id);
+  });
+
+  const appeals = new Appeals();
+  const built: Appeal[] = [];
+  // Nine resolved appeals: 6 reversed, 3 stood — the second lands under the floor and is banded.
+  for (let i = 0; i < 9; i++) {
+    const account = `0x${i}`;
+    void appeals.accept(ids[i], account, ["sig"], i, async () => true);
+    built.push({ decisionId: ids[i], account, at: i, outcome: i < 6 ? "upheld" : "denied" });
+  }
+  // Plus four PENDING, which must not appear anywhere: if they did, the outcome cells would sum to
+  // appeals-filed and that total is a bridge by construction.
+  for (let i = 9; i < 13; i++) built.push({ decisionId: ids[i], account: `0x${i}`, at: i });
+
+  const out = report(q.decisions(), q.receivedIn(0), ALL, built);
+  const known = out.figures.filter((f) => f.shown !== `fewer than ${FLOOR}`).map((f) => Number(f.shown));
+  assert.ok(known.every(Number.isFinite), "a published figure is neither a number nor a band");
+  // Both suppressed cells: the decision cell at 2 and the appeal cell at 3.
+  const suppressed = [2, 3];
+
+  const reachable = new Set<number>();
+  for (let mask = 1; mask < 1 << known.length; mask++) {
+    for (let signs = 0; signs < 1 << known.length; signs++) {
+      let total = 0;
+      for (let i = 0; i < known.length; i++) {
+        if (!(mask & (1 << i))) continue;
+        total += (signs & (1 << i)) ? -known[i] : known[i];
+      }
+      reachable.add(total);
+    }
+  }
+  const derivable = suppressed.filter((v) => reachable.has(v));
+  assert.deepEqual(derivable, [],
+    `publishing appeal outcomes made the suppressed cell(s) ${derivable.join(", ")} reachable`);
+
+  // The banded cells really were banded, or this proves nothing.
+  assert.equal(out.figures.filter((f) => f.shown === `fewer than ${FLOOR}`).length, 2);
+  // Nothing named "pending" or "filed" is published.
+  assert.ok(!out.figures.some((f) => /pending|filed/i.test(f.label)),
+    "an appeal total was published, which is a bridge by construction");
+  // And "upheld" is spelled out, because the bare word is read both ways and a transparency
+  // report whose central term is ambiguous discloses nothing reliably.
+  assert.ok(out.figures.some((f) => f.label === "appeals / decision reversed"));
+});
+
+test("A PENDING COUNT WOULD DIFFERENCE ACROSS PERIODS, which is why none is published", () => {
+  // A shape this report had not met: every earlier differencing case was inside one report, and
+  // this one spans two, neither of which is unsafe on its own.
+  //
+  // A pending appeal MUST EVENTUALLY RESOLVE. That ties one period's figure to the next period's
+  // by construction — publish `pending: 12` in September, then `reversed: 8` in October with
+  // `stood` banded, and 12 − 8 = 4 pins the banded cell. The floor held in both reports.
+  const pending = 12;
+  const reversedNextPeriod = 8;
+  const stoodNextPeriod = 4;           // banded, being below the floor
+  assert.ok(stoodNextPeriod < FLOOR, "the fixture no longer suppresses the cell it is about");
+  assert.equal(pending - reversedNextPeriod, stoodNextPeriod,
+    "the cross-period residual no longer pins the cell — recheck before publishing pending");
+
+  // MEASURED, NOT ASSUMED, and this is the part that corrected me: within a SINGLE period,
+  // publishing pending does NOT bridge. The first version of the comment in transparency.ts gave
+  // that as the reason and the exhaustive test disagreed, which is the test doing its job on the
+  // prose rather than the code.
+  const known = [7, 6, 6];
+  const reachable = new Set<number>();
+  for (let mask = 1; mask < 1 << known.length; mask++) {
+    for (let signs = 0; signs < 1 << known.length; signs++) {
+      let total = 0;
+      for (let i = 0; i < known.length; i++) {
+        if (!(mask & (1 << i))) continue;
+        total += (signs & (1 << i)) ? -known[i] : known[i];
+      }
+      reachable.add(total);
+    }
+  }
+  assert.ok(![2, 3].some((v) => reachable.has(v)),
+    "the single-period case now bridges too, so the comment in transparency.ts is understated");
+
+  // And the report publishes no such figure, under any label.
+  const q = new Reports();
+  q.file("pub:a", "b", 0);
+  const d = q.decide("pub:a", "removed", "spam", 0);
+  const out = report(q.decisions(), 0, ALL,
+    [{ decisionId: d.id, account: "0x1", at: 0 }]);
+  assert.ok(!out.figures.some((f) => /pending|outstanding|filed/i.test(f.label)),
+    "a pending-appeal figure is published, and it differences against the next period");
 });
