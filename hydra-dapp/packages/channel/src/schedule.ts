@@ -144,3 +144,13 @@ export function scheduleUpload(
   const draw = random ? Math.floor(random() * window) : randomInt(window);
   return eventAtMs + Math.min(draw, window - 1);
 }
+
+/**
+ * How far ahead of its message's chain event a decoy starts going up.
+ *
+ * EQUAL TO THE JITTER WINDOW, and the equality is the defence: a decoy scheduled a window early is
+ * indistinguishable from the real upload by distance from the event. Lives here rather than in
+ * `cover.ts` because it is a fact about the SCHEDULE, and because `cover.ts` reaches key derivation
+ * while this file imports nothing but a random source — see `constants.ts`.
+ */
+export const coverLeadMs = (config: ScheduleConfig): number => jitterWindowMs(config);

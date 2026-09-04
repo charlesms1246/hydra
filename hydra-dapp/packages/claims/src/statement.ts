@@ -26,9 +26,11 @@
 
 import { OBSERVABLE, DERIVABLE, NOT_OBSERVABLE, whyOf } from "../../vault-server/src/observations.ts";
 import { NODE_OBSERVABLE, NODE_NOT_OBSERVABLE, nodeWhyOf } from "../../cli/src/node-view.ts";
-import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
-import { COVER_RATE, coverLeadMs } from "../../channel/src/cover.ts";
-import { NOTE_FELTS } from "../../channel/src/note.ts";
+// FROM THE CONSTANTS AND THE SCHEDULE, never from `cover.ts` or `note.ts`. Both of those import
+// `identity/src/domains.ts`, so quoting a cover rate used to drag the derivation for both key
+// classes I6 names into the marketing site's import graph. See `channel/src/constants.ts`.
+import { MIN_JITTER_BLOCKS, coverLeadMs } from "../../channel/src/schedule.ts";
+import { COVER_RATE, NOTE_FELTS } from "../../channel/src/constants.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 
 /** One thing the product tells the user, and the artifact that makes it true. */

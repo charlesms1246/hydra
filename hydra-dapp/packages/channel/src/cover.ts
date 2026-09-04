@@ -41,12 +41,15 @@ import { createCipheriv, randomInt } from "node:crypto";
 import { encryptedIdFor } from "../../vault-client/src/blobs.ts";
 import { VAULT_DOMAIN, subKey, expose } from "../../identity/src/domains.ts";
 import type { Secret } from "../../identity/src/domains.ts";
-import { assertSafeSchedule, jitterWindowMs } from "./schedule.ts";
+import { assertSafeSchedule, jitterWindowMs, coverLeadMs } from "./schedule.ts";
+// Imported and re-exported rather than declared here: the value lives in a file that imports
+// nothing, so a caller quoting it does not drag key derivation behind it. See `constants.ts`.
+import { COVER_RATE } from "./constants.ts";
 import { P } from "./commitment.ts";
 import type { ScheduleConfig } from "./schedule.ts";
 
 /** Decoys per jitter window. See the table above for why it is not larger. */
-export const COVER_RATE = 4;
+export { COVER_RATE };
 
 /**
  * How long before its event a decoy may be sent: **exactly the jitter window**, and this is not
@@ -73,7 +76,7 @@ export const COVER_RATE = 4;
  * enforced the equality, and anyone widening it for margin would have halved the protection
  * silently. It is derived now, and there is no knob.
  */
-export const coverLeadMs = (config: ScheduleConfig): number => jitterWindowMs(config);
+export { coverLeadMs };
 
 export type CoverConfig = ScheduleConfig & {
   /** Decoys per jitter window. Defaults to {@link COVER_RATE}. */

@@ -20,9 +20,10 @@ import { P } from "./commitment.ts";
 import { ID_BYTES } from "./pointer.ts";
 import type { Pointer } from "./pointer.ts";
 import { VAULT_DOMAIN } from "../../identity/src/domains.ts";
+import { NOTE_FELTS } from "./constants.ts";
 
 /** Two. The whole on-chain footprint of a message. */
-export const NOTE_FELTS = 2;
+export { NOTE_FELTS };
 
 /**
  * A 31-byte pointer as a felt.
