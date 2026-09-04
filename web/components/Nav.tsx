@@ -1,20 +1,30 @@
 /**
- * The nav — a fixed pill, the reference's own chrome.
+ * The nav — Gestalt's `PillNav`, ported.
  *
- * Plain anchors. The reference's version opens a dropdown panel, which needs script and buys
- * nothing across five destinations; the dots in the middle are the one piece of it worth keeping,
- * because they are what makes the bar read as an instrument rather than as a menu.
+ * **An earlier version of this file put the page links inline in the bar**, on the reasoning that
+ * a dropdown "buys nothing across five destinations". That was a judgement substituted for the
+ * instruction, and it threw away the two things that make the reference's bar work:
  *
- * **The route list lives here and nowhere else.** `test/site.test.ts` deliberately does not read
- * it — the tests enumerate the *built* pages instead. So a page that exists but is missing from
- * this bar is still checked, and a link here to a page that does not exist is a broken link
- * rather than an invisible one. Two independent views of the same set, which is the point: a
- * hand-kept list that the checker also trusts is a list nobody ever finds wrong.
+ * 1. **The bar is a fixed width and never resizes.** Page names live in the panel, so the chrome
+ *    is the same shape on every route. Inline links made the bar's width a function of how many
+ *    pages exist, which is how a nav starts crowding at five and breaks at seven.
+ * 2. **The dots are a position indicator, not decoration.** One per page, the current one
+ *    accented. That is how the bar says where you are without a label — which is precisely what
+ *    lets it stay a fixed width.
+ *
+ * **Ported without the script.** The reference is a client component: `useState` for open/closed,
+ * an effect for Escape and outside-click, and a `grid-rows-[0fr]→[1fr]` transition. `<details>`
+ * gives the disclosure, the keyboard behaviour and the semantics for free, so this stays a server
+ * component and the menu works with no JavaScript at all. What is lost is outside-click-to-close;
+ * `Escape` still works because `<details>` is native.
  */
+
+import { asciiBlock } from "../scripts/ascii-block.ts";
 
 export type Page = "home" | "pitch" | "demo" | "install" | "about";
 
 const LINKS: { id: Page; href: string; label: string }[] = [
+  { id: "home", href: "/", label: "HOME" },
   { id: "pitch", href: "/pitch/", label: "PITCH" },
   { id: "demo", href: "/demo/", label: "DEMO" },
   { id: "install", href: "/install/", label: "INSTALL" },
@@ -23,22 +33,55 @@ const LINKS: { id: Page; href: string; label: string }[] = [
 
 export function Nav({ current }: { current: Page }) {
   return (
-    <nav className="nav" aria-label="Primary">
-      <a className="nav-mark" href="/" aria-label="Hydra, home">
-        {/* Plain <img>, not next/image: the export has no optimiser, and an SVG has nothing to
-            optimise. Decorative — the accessible name is on the link. */}
-        <img src="/hydra.svg" alt="" width="18" height="18" />
-      </a>
-      <span className="nav-dots" aria-hidden>
-        <i /><i /><i /><i /><i />
-      </span>
-      <span className="nav-links">
-        {LINKS.map((l) => (
-          <a key={l.id} href={l.href} aria-current={current === l.id ? "page" : undefined}>
-            {l.label}
-          </a>
-        ))}
-      </span>
-    </nav>
+    <div className="nav-shell">
+      <details className="nav">
+        <summary className="nav-bar">
+          {/* The mark is a link on the reference. Inside a <summary> it cannot be — a nested
+              interactive element is not reachable by keyboard — so home is the first row of the
+              panel instead, which is also where the reference lists it. */}
+          <span className="nav-mark" aria-hidden>
+            <img src="/hydra.svg" alt="" width="16" height="16" />
+          </span>
+
+          {/* One dot per page, the current one accented. A position indicator rather than a
+              label, so the bar never has to resize to fit a page name. */}
+          <span className="nav-dots" aria-hidden>
+            {LINKS.map((l) => (
+              <i key={l.id} className={l.id === current ? "on" : undefined} />
+            ))}
+          </span>
+
+          <span className="nav-toggle">
+            <span className="nav-closed">MENU</span>
+            <span className="nav-open">CLOSE</span>
+          </span>
+        </summary>
+
+        <div className="nav-panel">
+          <nav aria-label="Main">
+            {LINKS.map((l, i) => (
+              <a
+                key={l.id}
+                href={l.href}
+                className={l.id === current ? "on" : undefined}
+                aria-current={l.id === current ? "page" : undefined}
+              >
+                <span className="nav-index" aria-hidden>
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span className="nav-label">{l.label}</span>
+              </a>
+            ))}
+          </nav>
+
+          {/* The reference's falling glyph field. Generated at build time and scrolled with a
+              CSS transform rather than re-rolled per frame in JavaScript — the effect is the
+              reading window walking down a fixed pattern either way. */}
+          <pre className="nav-ascii" aria-hidden>
+            <span>{asciiBlock()}</span>
+          </pre>
+        </div>
+      </details>
+    </div>
   );
 }

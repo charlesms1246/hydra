@@ -654,84 +654,188 @@ body.has-canvas .field {
 
 
 /* --------------------------------------------------------------------------------------------
- * The nav — a fixed pill, borrowed from the reference's chrome.
+ * The nav — Gestalt's pill, ported.
+ *
+ * A FIXED WIDTH, which is the point. Page names live in the panel, so the bar is the same shape
+ * on every route and adding a sixth page does not make it wider. The dots say where you are.
  * ------------------------------------------------------------------------------------------ */
 
-.nav {
+.nav-shell {
   position: fixed;
+  inset-inline: 0;
   top: clamp(0.75rem, 1.5vw, 1.5rem);
-  left: 50%;
-  transform: translateX(-50%);
   z-index: 50;
   display: flex;
-  align-items: center;
-  gap: clamp(0.875rem, 3vw, 2.5rem);
-  padding: 0.6rem 1.25rem;
-  background: var(--g-8);
-  border: 1px solid var(--g-12);
-  border-radius: 2px;
-  /* 1rem of air each side, not 3. The pill is fixed and centred, so a generous reserve here is
-     3rem of unusable width on a phone for no benefit — nothing sits beside it. */
-  max-width: calc(100vw - 2rem);
+  justify-content: center;
+  padding-inline: 1rem;
+  pointer-events: none;
 }
 
-.nav a {
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.12em;
-  color: var(--white);
-  text-decoration: none;
-  white-space: nowrap;
+.nav {
+  pointer-events: auto;
+  width: 22rem;
+  max-width: 100%;
+  max-height: calc(100dvh - 3rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--g-8) 92%, transparent);
+  border: 1px solid var(--g-20);
+  border-radius: 3px;
+  backdrop-filter: blur(16px);
 }
 
-.nav a:hover,
-.nav a:focus-visible {
-  color: var(--accent);
-}
-
-.nav a[aria-current="page"] {
-  color: var(--accent);
-}
-
-.nav-mark {
-  font-size: 0.8125rem !important;
-  letter-spacing: 0.05em !important;
-}
-
-/*
- * The links.
- *
- * `display: flex` is load-bearing, not cosmetic: without it the anchors are inline with nothing
- * between them and the bar renders `PITCHDEMOINSTALLABOUT`. The gap on `.nav` spaces the three
- * top-level groups — mark, dots, links — and does nothing for the links inside this one.
- */
-.nav-links {
+.nav-bar {
   display: flex;
   align-items: center;
-  gap: clamp(0.875rem, 2.2vw, 2rem);
-  min-width: 0;
+  justify-content: space-between;
+  height: 2.75rem;
+  padding-inline: 1rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
 }
 
-/* The dots. Decoration, and the one piece of the reference's nav worth keeping — they are what
-   makes the bar read as an instrument rather than as a menu. */
+/* The default disclosure triangle, in both engines. */
+.nav-bar::-webkit-details-marker { display: none; }
+.nav-bar::marker { content: ""; }
+
+.nav-mark img {
+  display: block;
+  filter: invert(1);
+  opacity: 0.9;
+}
+
+/* One dot per page, the current one accented. */
 .nav-dots {
   display: flex;
-  gap: 3px;
+  align-items: center;
+  gap: 4px;
 }
 
 .nav-dots i {
   width: 4px;
   height: 4px;
+  border-radius: 1px;
   background: var(--g-32);
 }
 
-.nav-dots i:nth-child(2) {
+.nav-dots i.on {
   background: var(--accent);
 }
 
-@media (max-width: 30rem) {
-  .nav-dots {
-    display: none;
+.nav-toggle {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  color: var(--white);
+}
+
+.nav-bar:hover .nav-toggle,
+.nav:focus-within .nav-toggle {
+  color: var(--accent);
+}
+
+/* MENU / CLOSE, swapped by the open state rather than by script. */
+.nav-open { display: none; }
+.nav[open] .nav-closed { display: none; }
+.nav[open] .nav-open { display: inline; }
+
+.nav-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--g-20);
+}
+
+.nav-panel nav {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.nav-panel a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 3rem;
+  flex-shrink: 0;
+  padding-inline: 1rem;
+  border-bottom: 1px solid var(--g-12);
+  text-decoration: none;
+}
+
+.nav-panel a:hover,
+.nav-panel a:focus-visible {
+  background: var(--g-12);
+}
+
+.nav-panel a.on {
+  background: var(--g-12);
+}
+
+/* Mono index at the left edge, label optically centred — the reference's exact arrangement. */
+.nav-index {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.18em;
+  color: var(--g-48);
+}
+
+.nav-label {
+  position: absolute;
+  inset-inline: 0;
+  text-align: center;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 0.875rem;
+  letter-spacing: 0.05em;
+  color: var(--g-80);
+}
+
+.nav-panel a:hover .nav-label,
+.nav-panel a.on .nav-label {
+  color: var(--white);
+}
+
+/*
+ * The falling glyph field.
+ *
+ * The block is emitted at twice the visible height and translated by exactly half, so the loop
+ * has no seam — the second half is the first half's continuation, and the reset lands on an
+ * identical row.
+ */
+.nav-ascii {
+  height: clamp(3.5rem, 15dvh, 9rem);
+  overflow: hidden;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.35;
+  letter-spacing: 0.18em;
+  color: var(--g-32);
+  white-space: pre;
+}
+
+/*
+ * The inner span is what moves. A `<pre>` cannot be translated against its own clip, so the text
+ * is wrapped and the wrapper is animated — half the block's height, which is exactly one full
+ * pattern, so the reset lands on an identical row and the loop has no seam.
+ */
+.nav-ascii > span {
+  display: block;
+  animation: nav-fall 14s linear infinite;
+}
+
+@keyframes nav-fall {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-ascii > span {
+    animation: none;
   }
 }
 
