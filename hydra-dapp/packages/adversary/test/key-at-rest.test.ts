@@ -144,3 +144,21 @@ test("unlocking announces what it removes rather than reporting success", async 
     await writeFile(join(home, "note"), "");
   });
 });
+
+test("THE EXPOSURE WINDOW IS STATED, and stated as what it actually is", async () => {
+  // `decisions/0040` §1 chose an agent with an idle timeout so the window would be A NUMBER. That
+  // is not built, and the interim is an environment variable — which is a LONGER and vaguer window
+  // than the design calls for, not a shorter one. Claiming a number we do not have would be worse
+  // than admitting the condition we do.
+  const { KEY_LOCKED } = await import("../../claims/src/warnings.ts");
+  const text = KEY_LOCKED.full.join(" ");
+  assert.match(text, /HOW LONG THE KEY IS EXPOSED/);
+  assert.match(text, /HYDRA_PASSPHRASE/, "the mechanism actually in use is not named");
+  assert.match(text, /visible to anything else running as you/,
+    "the environment variable's own exposure is not disclosed");
+  assert.match(text, /not built yet/,
+    "the client implies it has the agent that decisions/0040 chose, which it does not");
+  // And it does not claim the three-case table without the middle row, which is the one people
+  // read past: encrypted at rest says nothing about a machine that is running.
+  assert.match(text, /device seized while running\s+— NO/);
+});

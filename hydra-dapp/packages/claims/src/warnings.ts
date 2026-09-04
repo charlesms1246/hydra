@@ -197,6 +197,13 @@ export const KEY_LOCKED: Warning = {
     "There is no recovery. The passphrase is the only way in — a path that did not need it would",
     "be a second way in, and one held anywhere else would be escrow. A phrase you wrote down is a",
     "second copy of the secret, not a backup.",
+    "",
+    "HOW LONG THE KEY IS EXPOSED, and this is not yet the number it should be: the passphrase is",
+    "read from HYDRA_PASSPHRASE, so it lives as long as that variable does — for a shell session,",
+    "typically, and visible to anything else running as you. `decisions/0040` chose an agent with",
+    "a stated idle timeout instead, and it is not built yet. Until it is, the honest answer to",
+    "\"how long is the key exposed\" is \"as long as you leave that variable set\", which is a",
+    "condition you control rather than a number we can quote.",
   ],
 };
 
