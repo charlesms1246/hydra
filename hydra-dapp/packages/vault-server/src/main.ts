@@ -7,7 +7,7 @@
  * disclosure table described something nobody could run.
  *
  *     node packages/vault-server/src/main.ts --generate-invites 50   # mint codes and stop
- *     node packages/vault-server/src/main.ts --port 8080 --dir ./vault --invites a,b,c
+ *     node packages/vault-server/src/main.ts --port 8080 --dir ./vault --invites-file codes.txt
  *
  * Add `--removal-token-file ./removal.token` to be able to take a public post down. Without it
  * every takedown is refused — see `ERRORS.md` E-UNREACHABLE for the time that was not on purpose.
@@ -68,7 +68,28 @@ if (generate > 0) {
   process.exit(0);
 }
 
-const invites = flag("invites").split(",").filter(Boolean);
+/**
+ * The invite codes this vault will honour.
+ *
+ * `--invites-file` IS THE ONE TO USE, and `--invites` is kept only because it is what every
+ * existing note and script says. A secret on a command line is in the process table and in a shell
+ * history — the reason `authority.ts` and `compelled.ts` both take a path — and an invite is the
+ * credential a source's anonymity rests on: leaking one to `ps` links the code to whoever ran the
+ * vault at that moment, which is exactly the join `invite.issuance` is on the table for.
+ *
+ * One code per line, so it pairs with `--generate-invites`, which already writes to stdout.
+ */
+const invitesFile = flag("invites-file");
+if (invitesFile && flag("invites")) {
+  throw new Error("--invites and --invites-file together — pick one, and prefer the file");
+}
+if (flag("invites")) {
+  console.error("WARNING: --invites puts every code in the process table and in your shell");
+  console.error("history. Use --invites-file; `--generate-invites N > codes.txt` writes one.");
+}
+const invites = invitesFile
+  ? readFileSync(invitesFile, "utf8").split("\n").map((l) => l.trim()).filter(Boolean)
+  : flag("invites").split(",").filter(Boolean);
 const vault = new Vault({
   invites,
   buckets: BUCKETS,

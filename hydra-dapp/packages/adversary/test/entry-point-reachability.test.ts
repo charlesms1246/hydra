@@ -203,3 +203,64 @@ test("and the startup banner says it too, beside the other capability states", a
   assert.match(banner, /whether they are an identity/,
     "the invite count is printed as inventory, with nothing saying what issuing them decides");
 });
+
+test("VAULT FILES ARE 0600 AND ITS STORE 0700 — it holds other people's ciphertext", async () => {
+  // Every other persistence path in this repo sets the mode deliberately — the client's state
+  // file, the operator's queue, the intake spool — and the vault was the one that did not, while
+  // holding the objects. A vault on a shared host was serving its store to every account on the
+  // box. Checked on a REWRITE as well as a create: `writeFileSync`'s mode applies only when the
+  // file does not already exist, and a rewritten sidecar is the common case here.
+  const { Vault, ENCRYPTED_ENDPOINT: ENC } = await import("../../vault-server/src/server.ts");
+  const { BUCKETS } = await import("../../vault-client/src/buckets.ts");
+  const { mkdtemp, stat, chmod } = await import("node:fs/promises");
+  const dir = await mkdtemp(join(tmpdir(), "hydra-modes-"));
+  const store = join(dir, "store");
+  const vault = new Vault({ invites: ["a", "b"], buckets: BUCKETS, dir: store });
+  const id = "enc:00112233445566778899aabbccddeeff";
+  vault.handle({ op: "upload", endpoint: ENC, id, body: new Uint8Array(BUCKETS[0]), invite: "a" });
+
+  assert.equal((await stat(store)).mode & 0o777, 0o700, "the store directory is listable by others");
+  for (const f of [`${id}.blob`, `${id}.json`]) {
+    assert.equal((await stat(join(store, f))).mode & 0o777, 0o600, `${f} is readable by others`);
+  }
+
+  // Loosen them and rewrite: the mode must be reasserted, not left to creation.
+  await chmod(join(store, `${id}.json`), 0o644);
+  vault.handle({ op: "upload", endpoint: ENC, id, body: new Uint8Array(BUCKETS[0]), invite: "b" });
+  assert.equal((await stat(join(store, `${id}.json`))).mode & 0o777, 0o600,
+    "a rewritten sidecar kept its old permissions — the mode argument alone does nothing here");
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("INVITE CODES COME FROM A FILE, because argv is the process table", async () => {
+  // `authority.ts` and `compelled.ts` both take a path for exactly this reason, and an invite is
+  // the credential a source's anonymity rests on: a code leaked to `ps` links it to whoever ran
+  // the vault at that moment, which is the join `invite.issuance` is on the disclosure table for.
+  const dir = await mkdtemp(join(tmpdir(), "hydra-invites-"));
+  const file = join(dir, "codes.txt");
+  await writeFile(file, "code-one\n\n  code-two  \n");
+  const started = (args: string[]) => new Promise<{ url: string; stop: () => void }>((ok, fail) => {
+    const child = execFile("node", ["--experimental-strip-types", MAIN, "--port", "0", ...args]);
+    let out = "";
+    child.stdout!.on("data", (d: Buffer) => {
+      out += d.toString();
+      const m = out.match(/vault on (http:\/\/\S+)/);
+      if (m) ok({ url: m[1], stop: () => child.kill() });
+    });
+    child.on("close", () => fail(new Error(`did not serve:\n${out}`)));
+  });
+
+  const { url, stop } = await started(["--invites-file", file]);
+  try {
+    // Both codes are honoured, and surrounding whitespace does not make one unusable.
+    const post = await import("../../vault-client/src/blobs.ts");
+    const blob = post.publish(new TextEncoder().encode("x"),
+      { confirmedPublicAt: "2026-09-04T00:00:00Z", reason: "invites-file" });
+    const res = await fetch(`${url}/v1/pub/${blob.id}`, {
+      method: "PUT",
+      headers: { "x-hydra-invite": "code-two" },
+      body: post.wireBytes(blob) as unknown as Uint8Array,
+    });
+    assert.equal(res.status, 201, "a code with surrounding whitespace was not honoured");
+  } finally { stop(); await rm(dir, { recursive: true, force: true }); }
+});

@@ -17,7 +17,7 @@
  * observable.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { OBSERVABLE_IDS } from "./observations.ts";
 import { deleteHashFor, deleteHashMatches } from "./delete-hash.ts";
@@ -201,7 +201,9 @@ export class Vault {
     this.#dir = options.dir ?? null;
     this.#observeReads = options.observeReads ?? false;
     if (this.#dir) {
-      mkdirSync(this.#dir, { recursive: true });
+      // 0700 like the client's state directory: a store nobody else can list is the other half
+      // of files nobody else can read.
+      mkdirSync(this.#dir, { recursive: true, mode: 0o700 });
       this.#load();
     }
   }
@@ -229,11 +231,29 @@ export class Vault {
     }
   }
 
+  /**
+   * Write an object to disk, readable by nobody but the operator.
+   *
+   * **0600, AND IT WAS 0644 MINUS UMASK.** Every other persistence path in this repo sets it
+   * deliberately — the client's state file, the operator's queue, the intake spool — and the vault
+   * was the one that did not, while holding other people's ciphertext. A vault on a shared host
+   * was serving its store to every account on the box.
+   *
+   * `chmodSync` as well as the mode argument, following `cli/src/state.ts`: `writeFileSync`'s mode
+   * applies only when the file does not already exist, and a rewritten sidecar is the common case
+   * here, so the argument alone silently does nothing after the first write.
+   */
   #persist(o: Stored): void {
     if (!this.#dir) return;
     const { bytes, ...meta } = o;
-    writeFileSync(join(this.#dir, `${o.id}.blob`), bytes);
-    writeFileSync(join(this.#dir, `${o.id}.json`), JSON.stringify(meta));
+    for (const [name, body] of [
+      [`${o.id}.blob`, bytes] as const,
+      [`${o.id}.json`, JSON.stringify(meta)] as const,
+    ]) {
+      const at = join(this.#dir, name);
+      writeFileSync(at, body as never, { mode: 0o600 });
+      chmodSync(at, 0o600);
+    }
   }
 
   #unlink(id: string): void {
