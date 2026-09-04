@@ -1,6 +1,7 @@
 import { SITE } from "../content.ts";
 import { PageFrame } from "../components/PageFrame.tsx";
 import { Nav } from "../components/Nav.tsx";
+import { Code } from "../components/Code.tsx";
 import { Section } from "../components/Section.tsx";
 import { Footer } from "../components/Footer.tsx";
 import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
@@ -65,7 +66,7 @@ export default function Home() {
         <Section n="03" id="before" title="BEFORE YOU USE IT">
           <ul className="warnings">
             {SITE.beforeYouUse.map((line) => (
-              <li key={line}>{line}</li>
+              <li key={line}><Code>{line}</Code></li>
             ))}
           </ul>
           {/*

@@ -78,7 +78,7 @@ export default function Install() {
         <Section n="02" id="warnings" title="BEFORE YOU RUN IT">
           <ul className="warnings">
             {SITE.install.warnings.map((w) => (
-              <li key={w}>{w}</li>
+              <li key={w}><Code>{w}</Code></li>
             ))}
           </ul>
           <p className="cta">

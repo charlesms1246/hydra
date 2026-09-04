@@ -4,6 +4,7 @@ import { statement } from "../../../../hydra-dapp/packages/claims/src/statement.
 import { SITE } from "../../../content.ts";
 import { PageFrame } from "../../../components/PageFrame.tsx";
 import { Nav } from "../../../components/Nav.tsx";
+import { Code } from "../../../components/Code.tsx";
 import { Section } from "../../../components/Section.tsx";
 import { ClaimList } from "../../../components/ClaimList.tsx";
 import { Auditor } from "../../../components/Auditor.tsx";
@@ -66,7 +67,7 @@ export default function Disclosures() {
         <Section n="02" id="not-ready" title="WHAT IT IS NOT READY FOR">
           <ul className="warnings">
             {SITE.notYet.map((line) => (
-              <li key={line}>{line}</li>
+              <li key={line}><Code>{line}</Code></li>
             ))}
           </ul>
         </Section>
@@ -74,7 +75,7 @@ export default function Disclosures() {
         <Section n="03" id="not-claimed" title="WHAT THIS DOES NOT CLAIM">
           <ul className="warnings">
             {SITE.doesNotClaim.map((line) => (
-              <li key={line}>{line}</li>
+              <li key={line}><Code>{line}</Code></li>
             ))}
           </ul>
         </Section>

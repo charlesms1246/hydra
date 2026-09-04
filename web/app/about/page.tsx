@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { SITE } from "../../content.ts";
 import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
+import { Code } from "../../components/Code.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
 import { AsciiPanel } from "../../components/viz/AsciiPanel.tsx";
@@ -58,7 +59,7 @@ export default function About() {
         <Section n="02" id="not-claimed" title="WHAT THIS DOES NOT CLAIM">
           <ul className="warnings">
             {SITE.doesNotClaim.map((line) => (
-              <li key={line}>{line}</li>
+              <li key={line}><Code>{line}</Code></li>
             ))}
           </ul>
         </Section>

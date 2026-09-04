@@ -108,8 +108,10 @@ export const SITE = {
   notYet: [
     "This is a client for a devnet and a testnet. It is not ready for anyone whose safety "
     + "depends on it.",
-    "Your root key is a plaintext file with mode 0600 and no passphrase, no keychain and no "
-    + "hardware token. Anyone who reads that file reads every past and future conversation.",
+    "Your root key and every message you have sent or read live in one state file. By default it "
+    + "is written in the clear with mode 0600, so anyone who reads it reads everything. "
+    + "`hydra lock` encrypts the whole file with a passphrase — and forgetting that passphrase "
+    + "destroys every conversation irreversibly. There is no keychain and no hardware token.",
     "That same file holds every message you have sent or read, as text. Anyone with the key "
     + "could fetch and open them anyway, so this does not widen who can read them — but the "
     + "words are on the disk without any work, and deleting them there is the only way not to "
@@ -162,9 +164,9 @@ export const SITE = {
   beforeYouUse: [
     "This is a client for a devnet and a testnet. It is not ready for anyone whose safety "
     + "depends on it.",
-    "Your root key is a plaintext file with no passphrase, and the pool's auditor holds a "
-    + "viewing key you did not choose. What that means in detail is on the disclosure page, "
-    + "which is generated rather than written.",
+    "Your state file is written in the clear unless you run `hydra lock`, and the pool's auditor "
+    + "holds a viewing key you did not choose. What that means in detail is on the disclosure "
+    + "page, which is generated rather than written.",
   ],
 
   /**
@@ -299,9 +301,11 @@ export const SITE = {
     warnings: [
       "This runs against a devnet and a testnet. It is not ready for anyone whose safety depends "
       + "on it, and nothing about the install changes that.",
-      "Your root key is written as a plaintext file with mode 0600 — no passphrase, no keychain, "
-      + "no hardware token. Anyone who reads that file reads every past and future conversation, "
-      + "and the same file holds every message you have sent or read, as text.",
+      "One state file holds your root key and every message you have sent or read, as text. "
+      + "`init` writes it in the clear with mode 0600. Run `hydra lock` after it — that "
+      + "encrypts the whole file with a passphrase, which is the case a seized or imaged device "
+      + "is about. Forgetting the passphrase destroys every conversation irreversibly, and there "
+      + "is no keychain and no hardware token.",
       "Run one client per identity. Two copies of the same key file mint identical cover traffic, "
       + "which is how a storage server tells cover from messages.",
     ],
