@@ -29,7 +29,7 @@
 import { readFileSync } from "node:fs";
 
 import { removalAuthorityFromFile } from "../../vault-server/src/authority.ts";
-import { load, save, ingest, clearSpool, summarise, transparencyReport, appealDigest,
+import { load, save, ingest, clearSpool, summarise, transparencyReport, appealDigest, Reports,
   type Period } from "./queue.ts";
 import { verifierAgainst } from "./verify.ts";
 import { serveIntake } from "./intake.ts";
@@ -235,6 +235,18 @@ switch (command) {
     // must be a decision made there, not a value that leaked through here.
     out(...transparencyReport(q.decisions(), q.receivedIn(period.from), period,
       q.appeals.filed()).lines);
+    // GENERATING RECORDS THE PERIOD AS PUBLISHED, which starts the expiry clock for kept
+    // decisions in it. Nothing here can observe the act of actually publishing, so this says what
+    // it is doing rather than pretending to know — an operator who generates and does not publish
+    // has started a clock on a promise only they know they did not keep.
+    q.markPublished(Reports.periodKey(period.from));
+    const dropped = q.expire(now());
+    save(queuePath, q);
+    out("",
+      `This period is now recorded as published, which starts the clock on KEPT decisions in it:`,
+      "they are dropped once one further period has closed. Removals are retained — they disclose",
+      "nothing this report does not already name. See DECISIONS-NEEDED.md D8.",
+      ...(dropped ? ["", `${dropped} kept decision(s) aged out and were dropped just now.`] : []));
     break;
   }
 

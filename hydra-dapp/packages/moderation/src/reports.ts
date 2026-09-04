@@ -121,6 +121,15 @@ export class Reports {
   readonly appeals = new Appeals();
 
   /**
+   * Period keys whose transparency report has been generated.
+   *
+   * THE PRECONDITION FOR EXPIRY, and the hard constraint of `DECISIONS-NEEDED.md` D8: a decision
+   * must never expire before the period containing it has been published, or the report becomes
+   * ungeneratable and every past report becomes unreproducible.
+   */
+  readonly #published = new Set<string>();
+
+  /**
    * File a report against a public blob.
    *
    * Attaches to the object's open review, or opens one. An adversary can hold a review open
@@ -168,6 +177,63 @@ export class Reports {
   /** How many reports arrived in one period. An aggregate, per period — see `file`. */
   receivedIn(at: number): number {
     return this.#received.get(Reports.periodKey(at)) ?? 0;
+  }
+
+  /**
+   * Record that a period's report has been generated. Starts the expiry clock, and nothing else.
+   *
+   * Generating is not the same act as publishing, and nothing here can observe the second one. The
+   * operator tool says so where it happens rather than pretending otherwise: running `report`
+   * records the period as published, which is the point at which kept decisions in it begin to age
+   * out. An operator who generates a report and does not publish it has started a clock on a
+   * promise they did not keep, and only they can know that.
+   */
+  markPublished(period: string): void {
+    this.#published.add(period);
+  }
+
+  /** Period keys already reported on. */
+  published(): string[] {
+    return [...this.#published];
+  }
+
+  /**
+   * Drop kept decisions whose time is up. Returns how many went.
+   *
+   * **KEPT ONLY. REMOVALS ARE RETAINED**, and the asymmetry is the whole of D8's answer. A removal
+   * discloses nothing the transparency report does not already publish permanently — `removedIds`
+   * names those ids by deliberate choice — so retaining it costs nothing new. A KEPT decision is a
+   * permanent record that somebody was reported and cleared: the accused-but-innocent file, the
+   * most harmful thing here to retain and the least useful to anyone but a process demanding it.
+   *
+   * IT DOES NOT NARROW ANYONE'S RECOURSE, which is what made the earlier objection dissolve.
+   * Expiring decisions looked like it required inventing an appeal deadline — an appeal names the
+   * decision it contests. That holds for removals, and removals are not what expires. **Nobody can
+   * appeal a keep**: the appellant is the author, an author whose content stayed up has nothing to
+   * contest, and a reporter cannot appeal at all, because the mechanism is a signature from the
+   * publishing account and a reporter does not hold one. So the artifact keeps its no-expiry
+   * property untouched — it only ever runs against the class that stays.
+   *
+   * THE CLOCK: published, plus one further period closed. Monthly buckets, so 30–60 days. It ties
+   * to a mechanism that already exists rather than inventing a constant, it guarantees the decision
+   * outlives the report generated from it, and it leaves one period of slack to correct a mistake.
+   *
+   * The accepted cost, taken explicitly: an adversary re-reporting an expired object gets a
+   * first-look review again. Not engineered away.
+   */
+  expire(now: number): number {
+    const before = this.#decided.length;
+    const kept = this.#decided.filter((d) => {
+      if (d.outcome !== "kept") return true;
+      const period = Reports.periodKey(d.at);
+      if (!this.#published.has(period)) return true;
+      const [y, m] = period.split("-").map(Number);
+      // The end of the period AFTER the one this decision falls in.
+      return now < Date.UTC(y, m + 1, 1);
+    });
+    this.#decided.length = 0;
+    this.#decided.push(...kept);
+    return before - this.#decided.length;
   }
 
   /** Every decision made, for the transparency report to be generated from. */
@@ -218,12 +284,13 @@ export class Reports {
       decided: [...this.#decided],
       received: [...this.#received],
       appeals: this.appeals.filed(),
+      published: [...this.#published],
     };
   }
 
   /** The inverse of {@link snapshot}. Unknown versions are refused rather than guessed at. */
   static restore(s: Snapshot): Reports {
-    if (s.version !== SNAPSHOT_VERSION && s.version !== 1) {
+    if (![SNAPSHOT_VERSION, 1, 2].includes(s.version)) {
       throw new Error(`this queue was written by version ${s.version}, and this is `
         + `${SNAPSHOT_VERSION}. Refusing to guess at the difference — a queue read wrong is a `
         + "review that does not happen.");
@@ -233,6 +300,7 @@ export class Reports {
     q.#decided.push(...s.decided);
     for (const [k, n] of s.received) q.#received.set(k, n);
     q.appeals.restore(s.appeals ?? []);
+    for (const p of s.published ?? []) q.#published.add(p);
     return q;
   }
 }
@@ -240,12 +308,12 @@ export class Reports {
 /**
  * Bumped whenever the shape below changes. See {@link Reports.restore}.
  *
- * 2 added `appeals`. Version 1 files are MIGRATED rather than refused — an operator whose queue
+ * 3 added `published`; 2 added `appeals`. Older files are MIGRATED rather than refused — an operator whose queue
  * predates appeals has a queue with no appeals in it, which is exactly what the empty default
  * means. Refusing would be the version field doing harm: it exists to stop a shape being GUESSED
  * at, not to destroy a file whose difference is known exactly.
  */
-export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_VERSION = 3;
 
 /** The queue as plain JSON. Every field here is a retention decision — see {@link Reports.snapshot}. */
 export type Snapshot = {
@@ -255,6 +323,8 @@ export type Snapshot = {
   readonly received: readonly (readonly [string, number])[];
   /** Absent in version 1. See {@link SNAPSHOT_VERSION}. */
   readonly appeals?: readonly Appeal[];
+  /** Absent before version 3. Period keys already reported on — see {@link Reports.expire}. */
+  readonly published?: readonly string[];
 };
 
 /**

@@ -29,7 +29,7 @@ import { appealDigest, type Appeal } from "../../moderation/src/appeals.ts";
 import { report as transparencyReport, type Period } from "../../moderation/src/transparency.ts";
 
 export type { Decision, Review, Period, Appeal };
-export { summarise, transparencyReport, appealDigest };
+export { summarise, transparencyReport, appealDigest, Reports };
 
 /**
  * Fold a spool of filed reports into the queue.
