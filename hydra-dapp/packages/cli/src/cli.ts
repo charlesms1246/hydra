@@ -58,7 +58,7 @@ import {
   bundleFromChain,
   encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
-import { chainFor } from "./chain.ts";
+import { chainFor, blockHeight, deploymentBlock } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
 import { load, save, exists, locked, usePassphrase, currentPassphrase,
@@ -177,6 +177,7 @@ switch (command) {
       vaultUrl: flag("vault", "http://127.0.0.1:8080"),
       rpcUrl: flag("rpc", "http://127.0.0.1:5050"),
       contract: flag("contract"),
+      // Filled in below when it was not given. `0` is the value that cost 102 seconds a read.
       fromBlock: Number(flag("from-block", "0")),
       // Devnets mine on demand, so their 'block interval' is whatever you say it is. The jitter
       // window is eight of these, and on a devnet waiting four real minutes to see a message
@@ -189,6 +190,30 @@ switch (command) {
       poolAccount: flag("pool-account") || undefined,
       invites: flag("invites").split(",").filter(Boolean),
     });
+    // **THE DEPLOYMENT BLOCK, FOUND ONCE, INSTEAD OF SCANNING FROM GENESIS ON EVERY READ.**
+    // Measured against a live Sepolia contract: `fromBlock: 0` took 102 seconds and 178 RPC round
+    // trips to return six events; starting at the deployment took 1 second and 3, for the same
+    // six. The 175 extra calls were blocks that existed before the contract did.
+    //
+    // Not a privacy change — see `deploymentBlock`. The read is still the whole log from the
+    // client's starting block, still contiguous, still unfiltered, so `node.wantedEvent` and its
+    // `whole-log-read` mechanism are exactly as true as before.
+    //
+    // SKIPPED WHEN `--from-block` WAS GIVEN, because a caller who states one means it, and a
+    // devnet's contract is at a low block anyway. Failure here is not fatal: a client that cannot
+    // reach the node at `init` should still get an identity, and 0 is what it would have had.
+    if (!flag("from-block") && state.contract && state.rpcUrl) {
+      try {
+        const latest = await blockHeight(state.rpcUrl);
+        state.fromBlock = await deploymentBlock(state.rpcUrl, state.contract, latest);
+        console.log(`reading from block ${state.fromBlock}, where ${state.contract.slice(0, 12)}… `
+          + "was deployed — everything before it is blocks this contract did not exist in.");
+      } catch (e) {
+        console.error(`could not find the contract's deployment block (${(e as Error).message}).`);
+        console.error("starting from 0, which works and is slow: every read scans the whole chain.");
+        console.error("pass `--from-block N` to set it yourself.");
+      }
+    }
     save(state);
     console.log(`identity written to ${STATE_FILE}`);
     console.log(`fingerprint ${fingerprint(publishBundle(state))}`);

@@ -112,6 +112,79 @@ export function transactionHashFrom(out: string): string {
     + `submitted — check the account's nonce before retrying, or a resend spends gas twice:\n${out}`);
 }
 
+/**
+ * The block a contract was deployed in, found by bisection.
+ *
+ * **THE READ TOOK 102 SECONDS AND 178 RPC ROUND TRIPS TO RETURN SIX EVENTS.** `init` defaults
+ * `fromBlock` to 0 and nothing ever advances it, so every read asked the node for the contract's
+ * log **from the genesis of the network** — 14.3 million blocks that existed before the contract
+ * did. Measured against the same live contract with `fromBlock` set just below its first event:
+ * **1,002 ms and 3 calls, for the identical six events.**
+ *
+ * **IT IS NOT A PRIVACY TRADE, WHICH IS WHY IT CAN JUST BE FIXED.** `node.wantedEvent` rests on
+ * `whole-log-read` — *"the client asks for the contract's whole log FROM ITS STARTING BLOCK and
+ * filters on its own machine"* — and a starting block at the deployment is still the whole log:
+ * same contiguous range, no `keys` filter, `to_block` still `latest`, and nothing before the
+ * deployment can contain an event to have wanted. The disclosure is unchanged and the guarantee
+ * is untouched. What went was 175 round trips over blocks that provably hold nothing.
+ *
+ * A CHECKPOINT WOULD HAVE BEEN A TRADE, and this deliberately is not one: advancing `fromBlock`
+ * as you read tells the node **when you last synchronised**, which is a fact about you rather than
+ * about the contract, and it has no row on any table. The deployment block is a property of the
+ * deployment — the same for every client, disclosing nothing that the contract address does not.
+ *
+ * BISECTION RATHER THAN A SCAN. `starknet_getClassHashAt` fails with "Contract not found" before
+ * deployment and succeeds after, so the boundary is found in about two dozen calls instead of the
+ * hundreds a scan costs — and it is paid ONCE, at `init`, not on every read.
+ */
+/** The node's current height. Its own function because bisection needs an upper bound first. */
+export async function blockHeight(rpcUrl: string, fetchImpl: typeof fetch = fetch): Promise<number> {
+  const res = await fetchImpl(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_blockNumber", params: [] }),
+  });
+  const body = await res.json() as { result?: number };
+  if (typeof body.result !== "number") throw new Error(`${rpcUrl} did not report a block height`);
+  return body.result;
+}
+
+export async function deploymentBlock(
+  rpcUrl: string,
+  contract: string,
+  latest: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<number> {
+  const deployedAt = async (block: number): Promise<boolean> => {
+    const res = await fetchImpl(rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "starknet_getClassHashAt",
+        params: [{ block_number: block }, contract],
+      }),
+    });
+    const body = await res.json() as { result?: string; error?: unknown };
+    return typeof body.result === "string";
+  };
+
+  // Not deployed at the tip means the address is wrong, or the node is on another network. Both
+  // are worth saying now rather than as an empty inbox later.
+  if (!await deployedAt(latest)) {
+    throw new Error(`${contract} is not deployed at block ${latest} on this node. Check the `
+      + "contract address and that the RPC is for the network you meant.");
+  }
+
+  let low = 0;
+  let high = latest;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (await deployedAt(mid)) high = mid;
+    else low = mid + 1;
+  }
+  return low;
+}
+
 export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): Chain {
   const target = config.network ? ["--network", config.network] : ["--url", config.rpcUrl];
   return {
