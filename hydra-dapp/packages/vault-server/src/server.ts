@@ -18,6 +18,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { OBSERVABLE_IDS } from "./observations.ts";
 import { deleteHashFor, deleteHashMatches } from "./delete-hash.ts";
@@ -206,6 +207,7 @@ export class Vault {
       mkdirSync(this.#dir, { recursive: true, mode: 0o700 });
       this.#load();
       this.#loadCompelled();
+      this.#loadSpent();
     }
   }
 
@@ -296,6 +298,56 @@ export class Vault {
     }
   }
 
+  /**
+   * Redeemed invites, so a spent code stays spent across a restart.
+   *
+   * **HASHED, NOT STORED.** The codes are already in the operator's invites file on the same disk,
+   * so writing them again discloses nothing new — but it duplicates a secret for no reason, and
+   * `delete-hash.ts` already establishes the shape: keep what lets you RECOGNISE a value without
+   * keeping the value. Membership is all this needs.
+   *
+   * A distinct file from the objects, and not `.json`, for the same reason as the tombstones: the
+   * object loader reads every `.json` in the directory as a sidecar.
+   */
+  static readonly SPENT_FILE = "spent-invites";
+
+  readonly #spent = new Set<string>();
+
+  #digestOf(invite: string): string {
+    return createHash("sha256").update(`hydra-invite\u0000${invite}`).digest("hex");
+  }
+
+  #spend(invite: string): void {
+    this.#spent.add(this.#digestOf(invite));
+    if (!this.#dir) return;
+    const at = join(this.#dir, Vault.SPENT_FILE);
+    writeFileSync(at, `${[...this.#spent].join("\n")}\n`, { mode: 0o600 });
+    chmodSync(at, 0o600);
+  }
+
+  /**
+   * Subtract what has already been redeemed from what the operator configured.
+   *
+   * Runs AFTER `#invites` is built, because the file is the operator's statement of what exists
+   * and this is the record of what is gone. Failing to read it must not silently re-open every
+   * code, so it says so.
+   */
+  #loadSpent(): void {
+    if (!this.#dir) return;
+    const at = join(this.#dir, Vault.SPENT_FILE);
+    if (!existsSync(at)) return;
+    try {
+      for (const line of readFileSync(at, "utf8").split("\n").filter(Boolean)) this.#spent.add(line);
+    } catch {
+      console.error(`the redeemed-invite record at ${at} could not be read. Every invite in the `
+        + "invites file is now spendable again, including codes that have already been used.");
+      return;
+    }
+    for (const invite of [...this.#invites]) {
+      if (this.#spent.has(this.#digestOf(invite))) this.#invites.delete(invite);
+    }
+  }
+
   #unlink(id: string): void {
     if (!this.#dir) return;
     for (const ext of [".blob", ".json"]) {
@@ -365,6 +417,14 @@ export class Vault {
         return { ok: false, error: "invite required" };
       }
       this.#invitesRedeemed++;
+      // **A SPENT INVITE CAME BACK ON RESTART.** `#invites` is rebuilt from `--invites-file` at
+      // startup and redemption only deleted from the in-memory set, so a deploy, a crash or a
+      // reboot silently re-opened every code ever issued. Measured: reuse in-process is refused
+      // 400; the same code after a restart is accepted 201.
+      //
+      // Single use is the whole of what an invite is. `observations.ts` calls it an identity
+      // acquired before anything else happens — that only holds if it is spent once.
+      this.#spend(r.invite);
     }
     const expiresAt = r.pin ? null : this.#now() + DEFAULT_TTL_MS;
     const stored: Stored = {
