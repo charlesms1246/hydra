@@ -73,15 +73,18 @@ export const RULES = {
       "ContractDiscoveryProvider without a rateLimit does not throttle at all. Measured: 715 " +
       "concurrent RPC calls for a 1,920-note history. A public RPC provider will rate-limit, " +
       "throttle or ban this.",
-    fix: "Pass { rateLimit: { concurrency: 32 } } — measured at ~2.8s for 1,920 notes.",
+    fix: "Pass { rateLimit: { concurrency: 32 } } — caps in-flight calls at 32, ≥111 round trips.",
   },
   HYD005: {
     severity: WARN,
     title: "Discovery concurrency low enough to be a latency trap",
     finding: "findings/07-client-discovery-cost.md",
     detail:
-      "Measured at 1,920 notes: concurrency 8 takes ~18.6s and concurrency 4 takes ~40.5s, versus " +
-      "~2.8s at 32 and ~1.1s at 64. Note that rateLimit: {} defaults concurrency to 8.",
+      "A 1,920-note history costs 3,529 RPC calls — deterministic, identical on every run. A " +
+      "concurrency cap of c forces at least ceil(3529/c) sequential round trips: 883 at 4, 442 " +
+      "at 8, 221 at 16, 111 at 32, 56 at 64. So rateLimit: {}, which defaults concurrency to 8, " +
+      "costs at least four times what 32 does. These are lower bounds derived from the call " +
+      "count, not measured latency: wall clock has not been measured against a real endpoint.",
     fix: "Raise concurrency to 32-64 unless the RPC provider requires otherwise.",
   },
   HYD006: {

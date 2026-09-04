@@ -20,7 +20,7 @@ Exit 0 clean or info-only, 1 at warn or above, 2 bad invocation.
 | `HYD003` | warn | Any `IndexerDiscoveryProvider` use — the operator receives the viewing key | `findings/02` |
 | `HYD008` | warn | `IndexerDiscoveryProvider` built without OHTTP where the option **was** available | `findings/02` |
 | `HYD004` | warn | `ContractDiscoveryProvider` with no `rateLimit` — unbounded, measured 715 concurrent calls | `findings/07` |
-| `HYD005` | warn | `concurrency <= 8` — measured 18.6s vs 2.8s at 32 | `findings/07` |
+| `HYD005` | warn | `concurrency <= 8` — at least 442 sequential round trips against 111 at 32 | `findings/07` |
 | `HYD006` | error | Mainnet and Sepolia pool addresses in one file — different auditors, different classes | `findings/06` |
 | `HYD007` | info | The auditor can decrypt this user's history. **Always emitted** when pool usage is detected | `findings/01` |
 | `HYD000` | unknown | Config not statically determinable. **Not** a pass | — |
