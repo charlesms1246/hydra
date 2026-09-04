@@ -195,16 +195,21 @@ export const COMMANDS = {
     // the upstream checkout, so an agent — the audience --json exists for — had to
     // parse every row to learn the environment was unusable. WARN does not fail:
     // a warning is a handled condition, same rule as doctor.mjs report().
+    // `status` is column-padded at source (doctor.mjs OK = "ok  ") so the human
+    // table lines up. That is a display concern and --json is read by agents, who
+    // have no way to know they must trim before comparing. Strip it here, at the
+    // one place the machine-readable result is built, and let render() pad. Every
+    // other consumer calls check() directly and is untouched.
     run: async () => {
-      const rows = check();
-      return { ok: rows.every((r) => r.status.trim() !== "MISS"), rows };
+      const rows = check().map((r) => ({ ...r, status: r.status.trim() }));
+      return { ok: rows.every((r) => r.status !== "MISS"), rows };
     },
     // Shows the fix, not just the fault. An earlier version printed only the
     // rows, which on a machine missing everything told a newcomer what was wrong
     // and nothing about what to do — the moment the tool is most needed.
     render: (d) => {
       const L = d.rows.map((r) =>
-        `  [${r.status}] ${r.name.padEnd(24)} want ${String(r.want).padEnd(14)} got ${r.got}`);
+        `  [${r.status.padEnd(4)}] ${r.name.padEnd(24)} want ${String(r.want).padEnd(14)} got ${r.got}`);
       // MISS and WARN are different asks. A WARN is already handled — filing it under
       // "to fix" tells the reader to go and fix something that is working.
       const section = (title, rows) => {
@@ -215,8 +220,8 @@ export const COMMANDS = {
           for (const line of String(r.hint ?? "no automatic fix").split("\n")) L.push(`      ${line.trim()}`);
         }
       };
-      section("to fix:", d.rows.filter((r) => r.status.trim() === "MISS"));
-      section("worth knowing:", d.rows.filter((r) => r.status.trim() === "WARN"));
+      section("to fix:", d.rows.filter((r) => r.status === "MISS"));
+      section("worth knowing:", d.rows.filter((r) => r.status === "WARN"));
       return L.join("\n");
     },
   },
