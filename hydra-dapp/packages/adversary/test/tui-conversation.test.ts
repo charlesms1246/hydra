@@ -21,6 +21,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { DENIABLE } from "../../claims/src/warnings.ts";
 import { decode } from "../../tui/src/keys.ts";
 import { start, update, PAGES, selected } from "../../tui/src/app.ts";
 import type { Model, Event } from "../../tui/src/app.ts";
@@ -134,6 +135,11 @@ test("the costs are on the page that performs the act, not in a help screen", as
     assert.match(prose({ ...m, page: "connect" }), /reachable/);
     assert.match(prose({ ...m, page: "connect" }), /90%/);
     // The identity page says where the root key is and what protects it, which is `0600`.
+    // PINS A CLAIM THAT IS ABOUT TO BECOME FALSE. The user has decided to encrypt the seed at
+    // rest, and when that lands "in the clear" is wrong — and this line would require the TUI to
+    // keep saying it. Left in place deliberately, because removing it now would drop the check
+    // that the identity page discloses what protects the key at all; it is recorded here so the
+    // key-at-rest work changes the CLAIM and this assertion together, from one source.
     assert.match(prose({ ...m, page: "identity" }), /in the clear/);
     // Publishing a signing key is its own page because it is its own act: it is the only thing
     // in the product that deliberately puts a permanent, public link between the messaging
@@ -333,7 +339,11 @@ test("which of the two things Enter will do is on the screen before it is presse
 
     assert.equal(m.signing, false, "the client starts out signing without being asked");
     assert.match(prose(m), /deniable/);
-    assert.match(prose(m), /either of you could have written this/);
+    // ASSERTED VIA THE CLAIM SOURCE, not as a literal. A test that pins a claim's WORDING is on
+    // the claim's side: when the wording is wrong, the test defends it. This file already did that
+    // once — it required the compose line to say "anyone holding your bundle can prove it" after
+    // the CLI had been corrected out of exactly that.
+    assert.match(prose(m), new RegExp(DENIABLE.short.split(" — ")[0]));
     assert.doesNotMatch(prose(m), /SIGNED/);
 
     m = await feed(m, h.deps, "s");
