@@ -26,6 +26,7 @@ function usage() {
     hydra-dev up              start devnet + pool + local discovery service
     hydra-dev down            stop a running stack
     hydra-dev init dapp       scaffold the STRK20 starter kit against this stack
+    hydra-dev lint <path>     flag STRK20 configurations that disclose more than intended
 
   Status — every one of these takes --json for agents
 ${Object.entries(COMMANDS).map(([n, c]) => `    ${pad("hydra-dev " + n)}  ${c.help}`).join("\n")}
@@ -73,6 +74,24 @@ if (cmd === undefined || cmd === "tui") {
 } else if (cmd === "init") {
   const { initDapp } = await import("./init.mjs");
   process.exit((await initDapp(args)) ? 0 : 1);
+} else if (cmd === "lint") {
+  // The linter resolves `typescript` from its own directory, so an uninstalled
+  // linter is a missing package rather than a broken import path.
+  const { missingDeps } = await import("./bootstrap.mjs");
+  if (missingDeps().includes("linter")) {
+    console.error("\n  linter dependencies not installed");
+    console.error("  run:  hydra-dev bootstrap linter\n");
+    process.exit(2);
+  }
+  if (args.length === 0) {
+    console.error("  usage: hydra-dev lint <file-or-dir>... [--json]");
+    process.exit(2);
+  }
+  // Hand the linter's own entry point the argv it expects. Reusing it rather
+  // than re-implementing keeps one copy of the severity ordering, the exit
+  // codes and the "no findings is not a privacy claim" disclaimer.
+  process.argv = [process.argv[0], process.argv[1], ...args];
+  await import("../../linter/src/cli.mjs");
 } else if (COMMANDS[cmd]) {
   // `--status` is accepted and ignored: these commands only report status, but
   // agents reach for the flag, and rejecting it would be pedantry.

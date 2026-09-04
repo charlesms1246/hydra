@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * hydra-lint — reports what a STRK20 configuration discloses.
+ * hydra-dev lint — reports what a STRK20 configuration discloses.
  *
  * Exit codes: 0 clean or info-only, 1 findings at warn or above, 2 bad invocation.
  */
@@ -29,7 +29,7 @@ function walk(p, out = []) {
 const args = process.argv.slice(2).filter((a) => a !== "--json");
 const asJson = process.argv.includes("--json");
 if (args.length === 0) {
-  console.error("usage: hydra-lint <file-or-dir>... [--json]");
+  console.error("usage: hydra-dev lint <file-or-dir>... [--json]");
   process.exit(2);
 }
 
@@ -51,7 +51,7 @@ if (asJson) {
 const ORDER = { [ERROR]: 0, [WARN]: 1, [UNKNOWN]: 2, [INFO]: 3 };
 const MARK = { [ERROR]: "ERROR ", [WARN]: "WARN  ", [UNKNOWN]: "UNKNOWN", [INFO]: "INFO  " };
 
-console.log(`\nhydra-lint — scanned ${files.length} file(s)\n`);
+console.log(`\nhydra-dev lint — scanned ${files.length} file(s)\n`);
 
 if (findings.length === 0) {
   console.log("  No findings.");
