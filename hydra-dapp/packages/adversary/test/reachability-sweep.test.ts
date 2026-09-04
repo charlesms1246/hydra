@@ -110,13 +110,20 @@ const REACHED_ONLY_BY_TESTS: Record<string, string> = {
 
   // SURFACED WHEN THE SCAN STOPPED COUNTING COMMENTS AS CALLS. All three were masked by prose
   // naming them, and the reasons below are what the code says rather than what was intended.
-  respond: "the derived-prekey path; `respondWith` is the only caller-facing responder and "
-    + "declares its own return type from this one, so it is reachable in type position only",
-  openChannel: "a named wrapper over `channelSecret` for a caller holding a vault root; the "
-    + "client derives channel secrets from the X3DH agreement and never holds a channel id",
-  explain: "translates upstream SDK errors for the pool's register/transfer/deposit flows, and "
-    + "NOTHING IN THIS PACKAGE PERFORMS THOSE — it has no consumer here, which is recorded "
-    + "rather than dressed up; see the note to review",
+  // DISPLACED, NOT DEAD, and the question asked of each was "what took its place" rather than
+  // "is anything calling it" — because the dangerous case is a replacement doing the job WITHOUT
+  // whatever the unused one was carrying. Checked for all three; nothing was dropped.
+  respond: "the DERIVED-prekey responder; `respondWith` took the job and takes a `PrekeyStore` "
+    + "instead, because a key derived from the root is a key nobody can delete — a different "
+    + "thing rather than a second implementation, and the shipped one is the safer",
+  openChannel: "derives a channel from one party's root and a name, which X3DH replaced with an "
+    + "AGREED secret neither side picks alone. Its I1 guard did not vanish with it: `initiate` "
+    + "and `respondWith` both take `Secret<typeof VAULT_DOMAIN>`, so a pool or sandbox root is "
+    + "still refused at the type level on the path that ships. `channelSecret` has no other "
+    + "caller anywhere in src",
+  explain: "translates upstream SDK errors for register/transfer/deposit; no code in this package "
+    + "performs those, and it names `proof-expired` while nothing rebuilds a stale proof — a stub "
+    + "for a flow never built rather than a remnant of one removed",
 
   // The anchor WRITE path, deliberately unwired: `hydra record` prints the felts and refuses to
   // write, because which account pays is exactly the link the record creates. The READ path used

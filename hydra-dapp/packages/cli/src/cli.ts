@@ -22,9 +22,15 @@
  *     hydra collect                               accept whatever is waiting for you
  *     hydra rotate                                destroy the old prekey; mint fresh ones
  *     hydra send NAME "text"                      deniable: either of you could have written it
- *     hydra publish NAME "text"                   signed: only you could have, and it is provable
+ *     hydra publish NAME "text"                   signed: only you could have written it
  *     hydra flush                                 uploads what is due
  *     hydra read NAME
+ *
+ *   the public class — anonymous posts, readable by anyone who has the id:
+ *     hydra post REASON "text"                    > a pub: id   (there is no feed and no index)
+ *     hydra fetch ID…                             read public posts back
+ *     hydra audit ID ROOT                         check a removal against a published commitment
+ *     hydra lookup 0xADDRESS                      > their bundle, off chain, without asking them
  *     hydra forget NAME [--before EVENT]          delete messages; the key is already gone
  *     hydra disclose [--cite]                     what everyone involved can see
  *     hydra status
@@ -59,8 +65,14 @@ const flag = (name: string, fallback = ""): string => {
 const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.startsWith("--"));
 
 const usage = () => {
-  console.error(readFileSync(new URL(import.meta.url), "utf8")
-    .split("\n").slice(3, 30).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
+  // DERIVED FROM THE COMMENT'S OWN END, not a hardcoded line range. It used to be `slice(3, 30)`,
+  // so adding commands pushed the last ones past the cut and the help silently stopped listing
+  // them — which is how `post`, `fetch`, `audit` and `lookup` came to be missing from the only
+  // place a user finds out what exists. A magic number that has to be updated in step with the
+  // text above it is a number nobody updates.
+  const lines = readFileSync(new URL(import.meta.url), "utf8").split("\n");
+  const end = lines.findIndex((l) => l.trim() === "*/");
+  console.error(lines.slice(3, end).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
   process.exit(2);
 };
 
