@@ -26,6 +26,7 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { Vault, ENCRYPTED_ENDPOINT, PUBLIC_ENDPOINT } from "./server.ts";
 import { RateLimiter, DEFAULT_RATE_LIMIT } from "./ratelimit.ts";
 import { authorises, type RemovalAuthority } from "./authority.ts";
+import { TREE_LEAVES } from "./root.ts";
 import type { RateLimitConfig } from "./ratelimit.ts";
 import type { Endpoint } from "./server.ts";
 
@@ -139,6 +140,23 @@ export function serve(
       };
       try {
         const path = (req.url ?? "").split("?")[0];
+        // THE COMMITMENT AND ITS PROOFS, before the id routing, because "root" and "proof" are
+        // not blob ids — every id begins `pub:` or `enc:`. Both are public by design: the root
+        // discloses no id and is the same size whatever the corpus holds, and a proof requires an
+        // id you already have, which is the same precondition as fetching the object. See
+        // `decisions/0039`.
+        if (req.method === "GET" && path === `${PUBLIC_ENDPOINT}/root`) {
+          return send(200, { root: vault.publicRoot(), leaves: TREE_LEAVES });
+        }
+        if (req.method === "POST" && path === `${PUBLIC_ENDPOINT}/proof`) {
+          const asked = JSON.parse(String(await readBody(req))) as { id?: unknown };
+          if (typeof asked.id !== "string") return send(400, { error: "a proof needs an id" });
+          const proof = vault.publicProof(asked.id);
+          // A missing proof is 200 with `null`, not 404: an object that was removed and one that
+          // never existed must answer alike here for the same reason the read path makes them
+          // alike, and an auditor asks about ids that are SUPPOSED to be gone.
+          return send(200, { proof });
+        }
         const endpoint = endpointOf(path);
         if (!endpoint) return send(404, { error: "no such endpoint" });
         const id = path.slice(endpoint.length + 1);

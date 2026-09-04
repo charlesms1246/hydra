@@ -21,6 +21,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { OBSERVABLE_IDS } from "./observations.ts";
 import { deleteHashFor, deleteHashMatches } from "./delete-hash.ts";
+import { rootOf, proofFor, type Proof } from "./root.ts";
 
 /**
  * The smallest encrypted read this vault will serve.
@@ -395,6 +396,33 @@ export class Vault {
    * pass by lying to itself, so the keys here are derived from the stored shape rather than
    * hand-listed.
    */
+  /**
+   * The commitment over every public object held right now — `decisions/0039`.
+   *
+   * THE VAULT COMPUTES IT, so nobody has to enumerate the corpus. An operator tool that had to list
+   * the ids in order to commit to them would need an enumeration endpoint, and that would turn a
+   * store you must know an id to read into an index — which `hydra post` promises there is not.
+   */
+  publicRoot(): string {
+    return rootOf(this.#publicIds());
+  }
+
+  /**
+   * A membership proof for one object, or `null`.
+   *
+   * REQUIRES THE ID, which is the same precondition as fetching the object and is what keeps this
+   * from being an index. It answers for objects that are GONE too — that is the entire point: a
+   * proof against the previous period's root, with absence from this one, is what makes a removal
+   * checkable rather than asserted.
+   */
+  publicProof(id: string): Proof | null {
+    return proofFor(this.#publicIds(), id);
+  }
+
+  #publicIds(): string[] {
+    return [...this.#objects.keys()].filter((id) => id.startsWith("pub:"));
+  }
+
   observe(): { rows: Record<string, unknown>[]; reads: ReadRecord[]; invitesRedeemed: number;
                transport: TransportRecord[];
                totals: Record<string, { objects: number; bytes: number }> } {

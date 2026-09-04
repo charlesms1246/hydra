@@ -34,6 +34,7 @@
  */
 
 import { describePost, describeFetch } from "../../client/src/public.ts";
+import { verifyProof } from "../../vault-server/src/root.ts";
 import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
@@ -331,6 +332,43 @@ switch (command) {
     console.log("");
     console.log("that id is how anyone fetches it, and it is the only way — there is no feed and");
     console.log("no index. give it to whoever should read this and to nobody else.");
+    break;
+  }
+
+  case "audit": {
+    // THE CONSUMER OF THE COMMITMENT, and it belongs in a CLIENT rather than in the operator's
+    // tool: the whole claim of `decisions/0039` is that anybody can check a removal without the
+    // operator's cooperation. A verifier only the operator runs is a verifier nobody has.
+    const state = load();
+    const [blobId, root] = positional;
+    if (!blobId || !root) {
+      console.error("hydra audit <blobId> <root>   — the root from a published report");
+      usage();
+    }
+    const res = await fetch(`${state.vaultUrl}/v1/pub/proof`, {
+      method: "POST", body: JSON.stringify({ id: blobId }),
+    });
+    const { proof } = await res.json() as { proof: { index: number; path: string[] } | null };
+    if (!proof) {
+      console.log(`this vault holds no proof for ${blobId} — it is not in the tree it is`);
+      console.log("committing to right now.");
+      console.log("");
+      console.log("if it WAS in an earlier published root, it was removed, and that root plus a");
+      console.log("proof you kept is what shows it. if it was never in one, nothing here says it");
+      console.log("ever existed — which is the limit of what this can tell you.");
+      process.exitCode = 1;
+      break;
+    }
+    const ok = verifyProof(root, blobId, proof);
+    console.log(ok
+      ? `${blobId} is committed to under root ${root.slice(0, 16)}…`
+      : `THE PROOF DOES NOT VERIFY against that root. Either the root is not this vault's, or\n`
+        + "the vault produced a proof that does not check out — which is the operator failing\n"
+        + "the audit, not you failing to run it.");
+    if (!ok) process.exitCode = 1;
+    console.log("");
+    console.log("this says nothing about WHO published it or whether it should have been removed.");
+    console.log("it says the vault's own published commitment either does or does not contain it.");
     break;
   }
 

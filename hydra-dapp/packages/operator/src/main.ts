@@ -230,11 +230,28 @@ switch (command) {
   case "report": {
     const q = load(queuePath);
     const period = monthOf(rest[0] ?? "");
+    // THE COMMITMENT, PUBLISHED WITH THE REPORT — `decisions/0039`. Without it `removedIds` is the
+    // operator's own list of objects nobody can fetch, with nothing attesting they were ever
+    // there, and a silent drop is indistinguishable from never having received anything.
+    const vault = flag("vault");
+    const root = vault
+      ? await fetch(`${vault}/v1/pub/root`).then((r) => r.json() as Promise<{ root: string }>)
+        .then((r) => r.root).catch(() => "")
+      : "";
     // The second argument is the report volume, which `report` does not publish in any form —
     // see `transparency.ts`. Passed because the signature takes it; if it is ever published it
     // must be a decision made there, not a value that leaked through here.
     out(...transparencyReport(q.decisions(), q.receivedIn(period.from), period,
       q.appeals.filed()).lines);
+    out("", root
+      ? `Public corpus commitment for this period:\n  ${root}\n\n`
+        + "Every public object this vault held is in the tree behind that root, padded to a fixed\n"
+        + "size so it discloses no count. Ask the vault for a proof of any id you hold: an id in\n"
+        + "last period's root and absent from this one was removed, and you can check that without\n"
+        + "our cooperation. That is what makes the list above auditable rather than self-reported."
+      : "NO CORPUS COMMITMENT WAS PUBLISHED with this report — run with `--vault URL`. Without it\n"
+        + "the removals listed above are self-reported: you can check that an id is absent, not\n"
+        + "that it was ever here, and a silent drop looks like nothing at all.");
     // GENERATING RECORDS THE PERIOD AS PUBLISHED, which starts the expiry clock for kept
     // decisions in it. Nothing here can observe the act of actually publishing, so this says what
     // it is doing rather than pretending to know — an operator who generates and does not publish
