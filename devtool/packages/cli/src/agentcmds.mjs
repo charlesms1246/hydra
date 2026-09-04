@@ -190,7 +190,15 @@ export const COMMANDS = {
 
   doctor: {
     help: "toolchain and build artifacts",
-    run: async () => ({ rows: check() }),
+    // `ok` is the same verdict `up` gates on and the MCP environment tool reports
+    // (mcp/src/tools.mjs:153). Without it this command exited 0 on a machine missing
+    // the upstream checkout, so an agent — the audience --json exists for — had to
+    // parse every row to learn the environment was unusable. WARN does not fail:
+    // a warning is a handled condition, same rule as doctor.mjs report().
+    run: async () => {
+      const rows = check();
+      return { ok: rows.every((r) => r.status.trim() !== "MISS"), rows };
+    },
     // Shows the fix, not just the fault. An earlier version printed only the
     // rows, which on a machine missing everything told a newcomer what was wrong
     // and nothing about what to do — the moment the tool is most needed.
