@@ -6,13 +6,14 @@
   "engines": {
     "node": ">=24"
   },
-  "description": "The marketing site. Statically exported, self-hosted fonts, no third-party requests — see README.md.",
+  "description": "The marketing site. Statically exported, self-hosted fonts, no third-party requests \u2014 see README.md.",
   "scripts": {
     "preflight": "node scripts/preflight.ts",
     "dev": "npm run preflight && next dev --webpack",
     "build": "npm run preflight && next build --webpack",
     "test": "npm run build && node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:public": "HYDRA_PUBLIC=1 npm run preflight && HYDRA_PUBLIC=1 next build --webpack"
   },
   "dependencies": {
     "next": "16.2.12",

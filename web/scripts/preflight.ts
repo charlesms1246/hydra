@@ -13,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { boundaryCrossings, entryPoints } from "./module-graph.ts";
+import { isPublicBuild, RESTRICTED } from "./build-mode.ts";
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(WEB, "..");
@@ -20,25 +21,47 @@ const ROOT = resolve(WEB, "..");
 const problems: string[] = [];
 
 /**
- * The wordmark face.
+ * The two restricted assets, checked in opposite directions depending on the build.
  *
- * NON Natural Grotesk is licensed to the author for personal use. That covers building this
- * site and does not cover redistributing the file, so the binary is gitignored and is not in the
- * repository — see `web/README.md`. `font-display: block` means a missing file renders the
- * wordmark as nothing rather than as Geist, so without this check the failure mode is an empty
- * hero that looks like a layout bug.
+ * **The full build fails when they are MISSING. The public build fails when they are PRESENT.**
+ * Each mode refuses the mistake available to it — a wordmark silently set in the fallback face,
+ * or a licensed font and a third party's trademark served from a public URL because they happened
+ * to be sitting in `public/` when somebody ran the build.
  *
- * Failing loudly here is the whole point: a fallback would be a design nobody chose, shipped
- * without anybody deciding to.
+ * `font-display: block` means a missing wordmark face renders as nothing rather than as Geist, so
+ * without this check the full build's failure mode is an empty hero that looks like a layout bug.
+ * And `next build` copies all of `public/` into `out/`, so without the other half the publish
+ * failure mode is silent and legal rather than visible and technical — which is worse.
  */
-const WORDMARK = join(WEB, "public/fonts/NON-Natural-Grotesk-Regular.woff2");
-if (!existsSync(WORDMARK)) {
-  problems.push(
-    `the wordmark face is missing:\n    ${WORDMARK}\n`
-    + "  It is not in the repository on purpose — it is licensed for personal use, which does\n"
-    + "  not cover redistribution. Copy your licensed file to that path. If you do not have one,\n"
-    + "  see web/README.md for what to change instead of shipping a fallback nobody chose.",
-  );
+if (isPublicBuild()) {
+  const leaked = RESTRICTED.filter((r) => existsSync(join(WEB, r)));
+  if (leaked.length) {
+    problems.push(
+      "HYDRA_PUBLIC=1, but restricted assets are present and would be copied into out/:\n"
+      + leaked.map((r) => `    ${r}`).join("\n")
+      + "\n  The wordmark face is licensed for personal use and the mark is a third party's\n"
+      + "  trademark. Publishing out/ redistributes them exactly as committing them would.\n"
+      + "  Move them aside for this build; the public build substitutes both.",
+    );
+  }
+} else {
+  const WORDMARK = join(WEB, "public/fonts/NON-Natural-Grotesk-Regular.woff2");
+  if (!existsSync(WORDMARK)) {
+    problems.push(
+      `the wordmark face is missing:\n    ${WORDMARK}\n`
+      + "  It is not in the repository on purpose — it is licensed for personal use, which does\n"
+      + "  not cover redistribution. Copy your licensed file to that path, or build with\n"
+      + "  HYDRA_PUBLIC=1, which substitutes it and is the only build that may be hosted.",
+    );
+  }
+  for (const asset of ["public/hydra.svg", "app/icon.svg"]) {
+    if (!existsSync(join(WEB, asset))) {
+      problems.push(
+        `the mark is missing: ${join(WEB, asset)}\n`
+        + "  Not in the repository on purpose — see web/README.md. Or build with HYDRA_PUBLIC=1.",
+      );
+    }
+  }
 }
 
 /** The open faces, which ARE in the repository because their licence permits it. */
@@ -49,23 +72,6 @@ for (const face of [
 ]) {
   const path = join(WEB, "public/fonts", face);
   if (!existsSync(path)) problems.push(`missing font: ${path}`);
-}
-
-/**
- * The mark, and the favicon generated from it.
- *
- * Gitignored for the same reason as the wordmark face and a stronger one: it is a third party's
- * trademark rather than a licence anybody here holds. Same failure mode too — a missing favicon
- * is invisible and a missing nav mark is an empty box, so it is checked rather than noticed.
- */
-for (const asset of ["public/hydra.svg", "app/icon.svg"]) {
-  if (!existsSync(join(WEB, asset))) {
-    problems.push(
-      `the mark is missing: ${join(WEB, asset)}\n`
-      + "  It is not in the repository on purpose — see web/README.md. `app/icon.svg` is the\n"
-      + "  same file recoloured to the accent; copy `public/hydra.svg` and re-tint it.",
-    );
-  }
 }
 
 /** The art the hero draws behind itself. Copied from the TUI — see `app/page.tsx`. */

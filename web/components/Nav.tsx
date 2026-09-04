@@ -20,6 +20,7 @@
  */
 
 import { asciiBlock } from "../scripts/ascii-block.ts";
+import { isPublicBuild } from "../scripts/build-mode.ts";
 
 export type Page = "home" | "pitch" | "demo" | "install" | "about";
 
@@ -39,8 +40,13 @@ export function Nav({ current }: { current: Page }) {
           {/* The mark is a link on the reference. Inside a <summary> it cannot be — a nested
               interactive element is not reachable by keyboard — so home is the first row of the
               panel instead, which is also where the reference lists it. */}
+          {/* The mark is a third party's trademark and cannot be served from a public host, so
+              a published build falls back to the reference's own glyph — which is what Gestalt
+              uses in this exact position anyway. See `scripts/build-mode.ts`. */}
           <span className="nav-mark" aria-hidden>
-            <img src="/hydra.svg" alt="" width="16" height="16" />
+            {isPublicBuild()
+              ? <span className="nav-glyph">&gt;|&lt;</span>
+              : <img src="/hydra.svg" alt="" width="16" height="16" />}
           </span>
 
           {/* One dot per page, the current one accented. A position indicator rather than a

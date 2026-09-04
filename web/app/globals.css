@@ -1156,3 +1156,27 @@ body.has-canvas .field {
     opacity: 0.12;
   }
 }
+
+/* --------------------------------------------------------------------------------------------
+ * The published build.
+ *
+ * `HYDRA_PUBLIC=1` substitutes the two assets that may not be served from a public host: the
+ * wordmark face, licensed for personal use, and the mark, a third party's trademark. Neither
+ * substitution is a fallback in the CSS sense — the `@font-face` for the restricted face is still
+ * declared, and simply never referenced, so the browser never requests a file that is not there.
+ *
+ * See `scripts/build-mode.ts` for why the gitignore does not cover this.
+ * ------------------------------------------------------------------------------------------ */
+
+html[data-build="public"] .wordmark {
+  font-family: var(--sans);
+  font-weight: 200;
+  letter-spacing: -0.03em;
+}
+
+.nav-glyph {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.05em;
+  color: var(--white);
+}

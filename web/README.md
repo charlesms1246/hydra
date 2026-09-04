@@ -85,6 +85,33 @@ you test has to be the thing a reader gets. Note also that neither `hydra-dapp/p
 `devtool` declares any dependencies — an `npm install` in either is a no-op, and the real one
 belongs in `channel`, a package the reader never stands in.
 
+## Publishing: `npm run build:public`, never `npm run build`
+
+**The gitignore protects this repository and does nothing for the deployed artifact.** `next
+build` copies everything in `public/` into `out/`, so **publishing `out/` redistributes the
+personal-use wordmark face and the trademarked mark exactly as committing them would.** The guard
+everybody had was pointed one step to the left of the exposure.
+
+So there are two builds:
+
+| | `npm run build` | `npm run build:public` |
+|---|---|---|
+| for | local work, recording, development | anything served from a URL |
+| wordmark | NON Natural Grotesk | Geist Light |
+| mark | `public/hydra.svg` | `>|<`, the reference's own glyph |
+| preflight fails when | the assets are **missing** | the assets are **present** |
+
+That asymmetry is the point: each mode refuses the mistake available to it. The full build's
+failure would be a wordmark silently set in a face nobody chose; the public build's would be a
+licensing exposure that is invisible, because the page looks correct either way.
+
+`test/site.test.ts` asserts a `HYDRA_PUBLIC=1` build carries neither asset, and that the
+substitution actually happened rather than the build having quietly broken.
+
+**To publish:** move the two restricted files out of the tree, run `npm run build:public`, serve
+`out/`. It is a plain directory tree — `trailingSlash: true` means any static host serves it,
+GitHub Pages included.
+
 ## The mark
 
 `public/hydra.svg`, and `app/icon.svg` which is the same file recoloured to the accent. Used in

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { SITE } from "../content.ts";
 import { Backdrop } from "../components/Backdrop.tsx";
+import { isPublicBuild } from "../scripts/build-mode.ts";
 
 /**
  * The document shell.
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-build={isPublicBuild() ? "public" : "full"}>
       <body>
         <Backdrop />
         {children}

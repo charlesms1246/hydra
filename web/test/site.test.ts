@@ -494,6 +494,48 @@ test("nothing sent to a browser reaches identity or vault-client", () => {
 });
 
 /**
+ * A published build carries neither restricted asset.
+ *
+ * **The gitignore protects the repository and does nothing for the deployed artifact.** Both
+ * files are absent from git because one is licensed for personal use and the other is a third
+ * party's trademark — and `next build` copies all of `public/` into `out/`, so publishing that
+ * directory redistributes them exactly as committing them would. The guard everybody had was
+ * pointed one step to the left of the exposure.
+ *
+ * This runs against whichever build is on disk. In the default build the assets are expected and
+ * this asserts only that the substitution machinery is wired; under `HYDRA_PUBLIC=1` it is the
+ * check that the output is safe to host.
+ */
+test("a published build serves neither the licensed face nor the trademarked mark", () => {
+  const served = walk(OUT).map((f) => f.replace(`${OUT}/`, ""));
+  const restricted = served.filter(
+    (f) => /NON-Natural-Grotesk/.test(f) || /(^|\/)hydra\.svg$/.test(f) || /(^|\/)icon\.svg$/.test(f),
+  );
+
+  if (process.env.HYDRA_PUBLIC === "1") {
+    assert.deepEqual(
+      restricted,
+      [],
+      "a public build put a restricted asset in out/ — publishing this directory would "
+      + "redistribute a personal-use font or a third party's trademark",
+    );
+    // And the substitution has to have actually happened, or this passes because the build broke.
+    assert.match(
+      pages.find((p) => p.route === "/")!.html,
+      /data-build="public"/,
+      "HYDRA_PUBLIC=1 but the markup does not carry the public build flag",
+    );
+  } else {
+    // The full build is allowed to carry them; what it may not do is lose the machinery that
+    // takes them out again.
+    assert.ok(
+      readFileSync(join(WEB, "scripts/build-mode.ts"), "utf8").includes("HYDRA_PUBLIC"),
+      "the public-build escape hatch is gone; out/ can no longer be published safely",
+    );
+  }
+});
+
+/**
  * The typecheck stays on.
  *
  * `ignoreBuildErrors` was switched on once, during the Next.js migration, to work around an
