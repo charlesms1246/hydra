@@ -58,3 +58,30 @@ export const NOTE_FELTS = 2;
  * object and an encrypted one disclose length at the same granularity.
  */
 export const BUCKETS: readonly number[] = [1024, 4096, 16384, 65536, 262144];
+
+/**
+ * How often a client asks its vault for what has arrived — `decisions/0042` §2c.
+ *
+ * **CONSTANT, AND THAT IS A DISCLOSURE PROPERTY RATHER THAN AN IMPLEMENTATION DETAIL.** The two
+ * variants have opposite consequences and the difference was measured, not argued
+ * (`causal-reference-cost.test.ts`):
+ *
+ *   - **event-triggered** — read when something arrives — gives an operator **100%** precision
+ *     guessing that a message arrived before a given read, because the read *is* the arrival;
+ *   - **constant-rate** gives **63.6%** against a **63.6%** prior: nothing beyond what they knew.
+ *
+ * So polling sounds worse and is better, provided it is fixed. **A future optimisation toward
+ * "poll more when busy" would silently take that row from the prior back to certainty**, which is
+ * why `constant-rate-polling.test.ts` pins it rather than a comment asking nicely.
+ *
+ * WHAT IT DOES DISCLOSE, priced rather than waved through: **presence** — a client on a metronome
+ * says it is running, continuously, where today one that sends and reads nothing is invisible
+ * between messages — and **collection time**, since the miss→hit transition bounds when a reader
+ * collected a message to within one interval. That is a read receipt the vault infers without
+ * either party sending one, and **the interval IS the granularity**, which makes it a stated
+ * number a user can see rather than a property nobody can quote.
+ *
+ * Sixty seconds: short enough that a conversation feels like one, long enough that the
+ * collection-time bound is coarse. It is a trade with a number on it, and the number is published.
+ */
+export const POLL_INTERVAL_MS = 60_000;

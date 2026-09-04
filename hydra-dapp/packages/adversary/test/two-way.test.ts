@@ -517,3 +517,26 @@ test("a signed message someone else wrote is not ours to withdraw, and forget sa
     assert.equal(r.removed, 0);
   } finally { server.close(); }
 });
+
+test("THE CROWD IS MOOT FOR A CHAIN-FREE CHANNEL, not measured as zero", () => {
+  // `decisions/0042` removes the chain leg from private messaging, and the failure this guards
+  // against is reporting the result as a crowd of zero — which reads as "linkable, no cover" when
+  // the truth is "the observation this measures does not happen".
+  //
+  // `linkabilityOf` already draws the distinction that carries it: `known: false` is *cannot
+  // answer*, and it was deliberately kept reachable. A chain-free channel is in that state, not in
+  // the measured-zero one.
+  const { alice } = { alice: { channels: { bob: {} } } as never };
+  const answer = linkabilityOf(alice, "bob");
+  assert.equal(answer.known, false,
+    "a channel with no crowd measurement reported a measured result — a chain-free channel must "
+    + "read as `cannot answer`, because `crowd: 0` means measured and empty and would be read as "
+    + "no cover at all");
+  assert.equal(answer.crowd, 0);
+
+  // And the copy for that state says so rather than quoting a number.
+  const said = describe(answer).join(" ");
+  assert.ok(!/\b0 other accounts\b/.test(said),
+    "the not-measured state is being described with a count, which is the confusion this exists "
+    + "to prevent");
+});

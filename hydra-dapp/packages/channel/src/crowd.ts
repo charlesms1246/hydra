@@ -26,6 +26,26 @@
  * And the crowd is not a constant: five mainnet ranges hours apart measured 12.6, 5.5, 3.6, 2.0
  * and 2.3 at the design window. No published figure could stand in for that, which is the whole
  * argument for reading it at the moment of sending.
+ *
+ * **WHAT `decisions/0042` DOES TO THIS FILE: it makes it MOOT FOR PRIVATE MESSAGING, and leaves it
+ * meaningful for publishing. It does not make it wrong.**
+ *
+ * Everything here measures **chain** linkability: how many other accounts published inside the
+ * jitter window that covers your uploads, and therefore how well an operator joining the chain to
+ * the vault can pick you out. `0042` removes the chain leg from private messaging entirely — so for
+ * a private conversation there are no events, no publishing accounts, and **no crowd to be in**,
+ * because the observation this defends against no longer happens.
+ *
+ * That is a stronger outcome than a large crowd and it must not be reported as a small one. A
+ * client with nothing on chain is not "linkable to a crowd of zero"; it is not on the chain. The
+ * distinction is exactly `linkabilityOf`'s existing **known / not-measured** split — `crowd: 0`
+ * means measured and empty, and *cannot answer* is a different state that was deliberately kept
+ * reachable. Private messaging after `0042` is in neither: the question does not apply.
+ *
+ * **It stays live for `hydra post` and `hydra record`**, which keep their chain legs because they
+ * concern content that is public by intent. So this file is not deleted, is not deprecated, and its
+ * measurements — 1.000 at six events per account, 0.058 at a hundred and twenty — remain the honest
+ * answer for the surfaces that still touch a chain.
  */
 
 /** One account and the times it published, in the same units as the uploads. */
