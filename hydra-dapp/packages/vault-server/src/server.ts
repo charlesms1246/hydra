@@ -138,6 +138,12 @@ export type ReadRecord = {
   readonly at: number;
   readonly ids: readonly string[];
   readonly hits: readonly boolean[];
+  /**
+   * Which class was asked for, and it changes what the request DISCLOSES rather than what it
+   * returns. An encrypted read is a channel's whole derived set, so the grouping leaks and not
+   * which object; a public read names one object somebody wanted. See `read.publicObject`.
+   */
+  readonly endpoint: string;
 };
 
 export type VaultOptions = {
@@ -337,7 +343,9 @@ export class Vault {
     }
     // Unauthenticated: the id is the capability. Nothing is checked but existence, because
     // there is nobody to check it against — there are no accounts.
-    if (this.#observeReads) this.#reads.push({ at: this.#now(), ids: [...r.ids], hits });
+    if (this.#observeReads) {
+      this.#reads.push({ at: this.#now(), ids: [...r.ids], hits, endpoint: r.endpoint });
+    }
     return { ok: true, op: "fetch", found };
   }
 
@@ -438,6 +446,13 @@ export class Vault {
       seen.add("read.ids");
       seen.add("read.hit");
       seen.add("read.channelSet");
+    }
+    // A PUBLIC READ IS A DIFFERENT DISCLOSURE, and the exemption above says why without having
+    // said what it costs: the public endpoint is exempt from the minimum batch because the id is
+    // the capability, so a reader may ask for exactly one object and does. `read.channelSet`
+    // covers a grouping; this covers naming a single thing somebody wanted.
+    if (o.reads.some((r) => r.endpoint === PUBLIC_ENDPOINT && r.ids.length > 0)) {
+      seen.add("read.publicObject");
     }
     if (o.invitesRedeemed) seen.add("invite.redeemed");
     if (o.transport.length) {

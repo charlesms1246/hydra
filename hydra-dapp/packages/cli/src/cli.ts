@@ -33,11 +33,12 @@
  * see `commands.ts`. Running `flush` on a timer is the intended use, and `status` says so.
  */
 
+import { describePost, describeFetch } from "../../client/src/public.ts";
 import { readFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
   fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
-  myRecord, anchorPeer, anchorOf, recordFelts, drain, linkabilityOf,
+  myRecord, anchorPeer, anchorOf, recordFelts, drain, linkabilityOf, post, fetchPosts,
   encodeWire as encode, decodeWire as decode,
 } from "./commands.ts";
 import { chainFor } from "./chain.ts";
@@ -260,6 +261,49 @@ switch (command) {
     console.log("YOU published a message, and its nonce shows which one. the timing defence hides");
     console.log("which upload holds the text; it does not hide that you sent it. see");
     console.log("claude-docs/decisions/0011-cli-client.md.");
+    break;
+  }
+
+  case "post": {
+    // NOT `publish`. That word is taken by signed channel messages — a claim about attribution
+    // inside an encrypted conversation — and the collision is part of why nobody noticed the
+    // public class had no client path at all.
+    const state = load();
+    const [reason, ...words] = positional;
+    if (!reason || !words.length) {
+      console.error("hydra post <reason> <text…>   — the reason is recorded as your intent");
+      usage();
+    }
+    for (const line of describePost()) console.log(line);
+    console.log("");
+    const { id, invitesLeft } = await post(state, words.join(" "), reason);
+    save(state);
+    console.log(`posted ${id}`);
+    console.log(`${invitesLeft} invite(s) left`);
+    console.log("");
+    console.log("that id is how anyone fetches it, and it is the only way — there is no feed and");
+    console.log("no index. give it to whoever should read this and to nobody else.");
+    break;
+  }
+
+  case "fetch": {
+    const state = load();
+    if (!positional.length) usage();
+    for (const line of describeFetch(positional)) console.log(line);
+    console.log("");
+    const { text, missing, substituted } = await fetchPosts(state, positional);
+    for (const [id, body] of text) console.log(`${id}\n${body}\n`);
+    for (const id of missing) {
+      console.log(`${id} — not here. it may have been removed, expired, or never posted; the`);
+      console.log("  vault answers those identically on purpose.");
+    }
+    for (const id of substituted) {
+      console.error(`${id} — THE VAULT RETURNED BYTES THAT DO NOT HASH TO THIS ID. That is a`);
+      console.error("  substitution, not corruption: a public object needs no key, so serving one");
+      console.error("  object's bytes under another's id costs the operator nothing and would read");
+      console.error("  as genuine. Nothing was shown. Fetch it from somewhere else and compare.");
+      process.exitCode = 1;
+    }
     break;
   }
 

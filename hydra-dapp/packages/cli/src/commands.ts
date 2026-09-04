@@ -33,6 +33,7 @@ import { deleteToken } from "../../channel/src/deletion.ts";
 import { deleteHashFor } from "../../vault-server/src/delete-hash.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
 import { prune, accuracyAgainst } from "../../channel/src/crowd.ts";
+import { postPublic, fetchPublic } from "../../client/src/public.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
 import { openForChannel, plaintextOf, openHeader, bodyOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
 import { MAX_BODY } from "../../vault-server/src/http.ts";
@@ -589,6 +590,46 @@ async function narrowCrowd(
  * THERE IS NO WAY TO GET THE RAW CROWD FROM HERE. `prune` has already run, and the count is a
  * lower bound on how many accounts could have produced this channel's uploads.
  */
+/**
+ * Put a public object on the vault, and read one back.
+ *
+ * THE PUBLIC CLASS HAD NO CLIENT PATH IN EITHER DIRECTION until these existed — see
+ * `client/src/public.ts`. An invite is spent because the vault charges one for any upload; a
+ * public post is not exempt from the cost the timing defence is denominated in, even though it
+ * gets none of the defence.
+ */
+export async function post(
+  state: State,
+  text: string,
+  reason: string,
+  now: number = Date.now(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ id: string; invitesLeft: number }> {
+  const invite = state.invites.shift();
+  if (!invite) throw new Error("no invites left — a public post costs one, like any upload");
+  const blob = await postPublic(state.vaultUrl, new TextEncoder().encode(text), {
+    // Recorded because `publish` requires it: an intent with no reason and no confirmation time is
+    // how a public post gets made by a client that never asked anybody.
+    confirmedPublicAt: new Date(now).toISOString(),
+    reason,
+  }, invite, fetchImpl);
+  return { id: blob.id, invitesLeft: state.invites.length };
+}
+
+/** Read public objects back. Substituted bytes are reported, never returned as content. */
+export async function fetchPosts(
+  state: State,
+  ids: readonly string[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ text: Map<string, string>; missing: string[]; substituted: string[] }> {
+  const { found, missing, substituted } = await fetchPublic(state.vaultUrl, ids, fetchImpl);
+  return {
+    text: new Map([...found].map(([id, b]) => [id, new TextDecoder().decode(b)])),
+    missing,
+    substituted,
+  };
+}
+
 export function linkabilityOf(state: State, name: string): {
   known: boolean; crowd: number; identified: number;
 } {

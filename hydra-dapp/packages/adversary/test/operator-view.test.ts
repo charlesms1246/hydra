@@ -124,6 +124,13 @@ test("everything the table claims is observable actually is", async () => {
   const { url, server } = await serve(vault, 0, { observeTransport: true });
   try {
     await fetch(`${url}${PUBLIC_ENDPOINT}/pub:nothing`, { method: "POST", body: "[]" });
+    // A REAL PUBLIC READ, because `read.publicObject` is about naming one object somebody wanted
+    // and an empty id list names nothing. The public endpoint is exempt from the minimum batch —
+    // the id is the capability there — so this is a reader asking for exactly one thing, which is
+    // what the row claims an operator sees.
+    const post = publish(new TextEncoder().encode("a public statement"), intent);
+    await fetch(`${url}${PUBLIC_ENDPOINT}/${post.id}`, { method: "PUT", body: bytes(post) });
+    await fetch(`${url}${PUBLIC_ENDPOINT}`, { method: "POST", body: JSON.stringify([post.id]) });
   } finally {
     server.close();
   }

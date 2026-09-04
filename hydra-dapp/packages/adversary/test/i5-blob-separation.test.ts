@@ -117,7 +117,11 @@ test("no export converts one blob class into the other", () => {
   assert.equal(out, "", `a function converts encrypted to public:\n${out}`);
   // And exactly one place constructs a PublicBlob, so there is one thing to review.
   const constructors = readFileSync(join(src, "blobs.ts"), "utf8")
-    .split("\n").filter((l) => /^export function \w+[^;]*\): PublicBlob/.test(l));
+    // `\): PublicBlob \{` rather than `\): PublicBlob` — the loose form prefix-matched
+    // `PublicBlobId` and counted `publicIdFor` as a constructor, which is a guard failing in the
+    // noisy direction. It still caught the real thing the same run: a second export returning a
+    // PublicBlob, which is exactly the one-place-to-review this test exists to hold.
+    .split("\n").filter((l) => /^export function \w+[^;]*\): PublicBlob \{/.test(l));
   assert.equal(constructors.length, 1, `${constructors.length} exports construct a PublicBlob`);
   assert.match(constructors[0], /^export function publish\b/);
 });

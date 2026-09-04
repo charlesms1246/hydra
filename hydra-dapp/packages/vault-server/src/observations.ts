@@ -166,6 +166,11 @@ export const OBSERVABLE: readonly Observation[] = [
     why: "unlink is not erasure. A TTL that has passed removes the object from service, not from the device, and any snapshot or backup of the host keeps it for as long as the backup exists",
   },
   {
+    id: "read.publicObject",
+    what: "that somebody at a given address wanted one specific public object, at that moment",
+    why: "THIS ROW EXISTS BECAUSE `read.hit` DOES NOT COVER IT, and the difference is the whole reason a public read is worse than a channel read. `read.hit` says decoy padding is free because a miss is indistinguishable from an object that expired or was never sent — true, and it does not rescue this. A channel read asks for a DERIVED set: the reader wants its whole channel at once, so what leaks is the grouping (`read.channelSet`) rather than which object was wanted. A public id is wanted on its own, so a batch of one real id and seven invented ones tells the operator which was wanted by which one hit. Padding is only possible against other REAL public ids the reader already holds, and there is no discovery surface to supply them, so this build does not pad and does not claim to. The mitigation that does work is not ours: a public object is content-addressed, so a copy fetched from anywhere verifies identically, and a reader who does not want to tell this operator what they read should not ask this operator. `client/src/public.ts` says exactly that to the person before they fetch",
+  },
+  {
     id: "read.channelSet",
     what: "which blobs form one conversation — the ids in a single read batch that exist are exactly one channel's objects",
     why: "a reader has to name what it wants, and what it wants is its channel's whole set. The uploads disclose no grouping; the READER supplies it, grouped, in one request. Padding widens the question and not the answer, because a padding id does not exist and is dropped for free. This was published as something the operator could NOT see until adversary/test/i3-batch-membership.test.ts recovered both channels of a two-channel session exactly",
