@@ -25,10 +25,11 @@ import { dirname } from "node:path";
 
 import { Reports, summarise, type Snapshot, type Decision, type Review }
   from "../../moderation/src/reports.ts";
+import { appealDigest, type Appeal } from "../../moderation/src/appeals.ts";
 import { report as transparencyReport, type Period } from "../../moderation/src/transparency.ts";
 
-export type { Decision, Review, Period };
-export { summarise, transparencyReport };
+export type { Decision, Review, Period, Appeal };
+export { summarise, transparencyReport, appealDigest };
 
 /**
  * Fold a spool of filed reports into the queue.

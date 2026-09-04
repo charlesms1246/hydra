@@ -128,7 +128,11 @@ test("THE APPEAL IS DETACHED, so proving authorship need not disclose a network 
   // collect is not relayable.
   assert.equal(appealDigest("decision-1"), appealDigest("decision-1"));
   const constructedOffline = appealDigest("decision-1");
-  assert.equal(constructedOffline.length, 64);
+  // 62 hex characters, not 64: a Starknet account signs a FELT, so the digest is truncated to 31
+  // bytes rather than left for a caller to reduce — see `appealDigest`.
+  assert.equal(constructedOffline.length, 62);
+  assert.ok(BigInt(`0x${constructedOffline}`) < (1n << 251n) + 17n * (1n << 192n) + 1n,
+    "an appeal digest is not a felt, so no account could sign it");
   // The whole module exposes no way to obtain a challenge, because there is none to obtain.
   assert.equal(typeof (Appeals as unknown as { issue?: unknown }).issue, "undefined");
 

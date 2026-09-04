@@ -20,6 +20,8 @@
 
 import { randomBytes } from "node:crypto";
 
+import { Appeals, type Appeal } from "./appeals.ts";
+
 /** One report as filed. No reporter identity is stored — see `Decision` and `decisions/0035` §7. */
 export type Report = { readonly body: string; readonly at: number };
 
@@ -107,6 +109,16 @@ export class Reports {
    * record stays at its minimum and the report can still be honest about volume.
    */
   readonly #received = new Map<string, number>();
+
+  /**
+   * Appeals against decisions in this queue.
+   *
+   * HELD HERE BECAUSE THEY MUST BE PERSISTED WITH THE DECISIONS THEY CONTEST, in one file written
+   * by one writer. Two files can disagree — an appeal naming a decision id that a rolled-back queue
+   * no longer has is an appeal nobody can resolve — and this queue is already saved by atomic
+   * rename, which makes one file's contents consistent by construction.
+   */
+  readonly appeals = new Appeals();
 
   /**
    * File a report against a public blob.
@@ -205,12 +217,13 @@ export class Reports {
       open: [...this.#open.values()],
       decided: [...this.#decided],
       received: [...this.#received],
+      appeals: this.appeals.filed(),
     };
   }
 
   /** The inverse of {@link snapshot}. Unknown versions are refused rather than guessed at. */
   static restore(s: Snapshot): Reports {
-    if (s.version !== SNAPSHOT_VERSION) {
+    if (s.version !== SNAPSHOT_VERSION && s.version !== 1) {
       throw new Error(`this queue was written by version ${s.version}, and this is `
         + `${SNAPSHOT_VERSION}. Refusing to guess at the difference — a queue read wrong is a `
         + "review that does not happen.");
@@ -219,12 +232,20 @@ export class Reports {
     for (const r of s.open) q.#open.set(r.blobId, r);
     q.#decided.push(...s.decided);
     for (const [k, n] of s.received) q.#received.set(k, n);
+    q.appeals.restore(s.appeals ?? []);
     return q;
   }
 }
 
-/** Bumped whenever the shape below changes. See {@link Reports.restore}. */
-export const SNAPSHOT_VERSION = 1;
+/**
+ * Bumped whenever the shape below changes. See {@link Reports.restore}.
+ *
+ * 2 added `appeals`. Version 1 files are MIGRATED rather than refused — an operator whose queue
+ * predates appeals has a queue with no appeals in it, which is exactly what the empty default
+ * means. Refusing would be the version field doing harm: it exists to stop a shape being GUESSED
+ * at, not to destroy a file whose difference is known exactly.
+ */
+export const SNAPSHOT_VERSION = 2;
 
 /** The queue as plain JSON. Every field here is a retention decision — see {@link Reports.snapshot}. */
 export type Snapshot = {
@@ -232,6 +253,8 @@ export type Snapshot = {
   readonly open: readonly Review[];
   readonly decided: readonly Decision[];
   readonly received: readonly (readonly [string, number])[];
+  /** Absent in version 1. See {@link SNAPSHOT_VERSION}. */
+  readonly appeals?: readonly Appeal[];
 };
 
 /**
@@ -264,8 +287,14 @@ export function summarise(review: Review, history: readonly Decision[]): string[
     // text in front of a reviewer, and the one function whose doc says "what a reviewer is shown"
     // omitted it. The defence protected information that nothing displayed. Same class as the
     // pipeline having no operator surface, one level down.
-    ...review.reports.map((r) => `  ${new Date(r.at).toISOString().slice(0, 10)}  ${legible(r.body)}`),
+    ...review.reports.map((r) =>
+      `  ${new Date(r.at).toISOString().slice(0, 10)}  ${legible(r.body)}`),
     "",
+    // THE OBJECT ID, REPEATED AFTER THE BODIES. Escapes are neutralised, so this is not about a
+    // body redrawing the screen — it is that a long body scrolls the id off the top, and the
+    // moment of decision is exactly where a misattribution becomes a decision about the wrong
+    // object. Cheap, and it costs a reviewer nothing to have it twice.
+    `Deciding about: ${review.blobId}`,
     ...(history.length
       ? [`Previously decided ${history.length} time${history.length === 1 ? "" : "s"}: `
         + `${history.map((d) => `${d.outcome} (${d.category})`).join(", ")}.`]
@@ -286,7 +315,25 @@ export function summarise(review: Review, history: readonly Decision[]): string[
  * that contained them — a reviewer seeing `<7f>` learns something a silently cleaned string hides.
  * Newlines go too: a body that spans lines can fake the surrounding output's structure.
  */
-const legible = (body: string): string =>
-  // eslint-disable-next-line no-control-regex
-  body.replace(/[\u0000-\u001f\u007f-\u009f]/g,
-    (c) => `<${c.charCodeAt(0).toString(16).padStart(2, "0")}>`);
+const legible = (body: string): string => {
+  const escaped = body
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g,
+      (c) => `<${c.charCodeAt(0).toString(16).padStart(2, "0")}>`);
+  // TRUNCATED, AND SAID SO. A body at the intake limit is four thousand characters, and thirty-two
+  // of them push everything a reviewer needs off the screen — including the object id, which is
+  // where a misattribution turns into a decision about the wrong post. The marker is explicit
+  // because a silently cut body reads as a complete one, and a reviewer deciding on a fragment
+  // should know it is a fragment.
+  return escaped.length > BODY_SHOWN
+    ? `${escaped.slice(0, BODY_SHOWN)} [...${escaped.length - BODY_SHOWN} more characters]`
+    : escaped;
+};
+
+/**
+ * How much of one report body is put on screen at once.
+ *
+ * Not a retention limit — the whole body is kept and `MAX_BODY` bounds it at intake. This is a
+ * legibility limit, and the thing it protects is the rest of the review being visible at all.
+ */
+export const BODY_SHOWN = 600;

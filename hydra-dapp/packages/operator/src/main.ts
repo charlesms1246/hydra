@@ -26,9 +26,12 @@
  * happen — and a transparency report is generated from those records.
  */
 
+import { readFileSync } from "node:fs";
+
 import { removalAuthorityFromFile } from "../../vault-server/src/authority.ts";
-import { load, save, ingest, clearSpool, summarise, transparencyReport, type Period }
-  from "./queue.ts";
+import { load, save, ingest, clearSpool, summarise, transparencyReport, appealDigest,
+  type Period } from "./queue.ts";
+import { verifierAgainst } from "./verify.ts";
 import { serveIntake } from "./intake.ts";
 
 const args = process.argv.slice(2);
@@ -85,10 +88,13 @@ switch (command) {
     }
     if (!category) throw new Error("a decision needs a category — it is what the report publishes");
     const q = load(queuePath);
-    q.decide(blobId, outcome, category, now());
+    const d = q.decide(blobId, outcome, category, now());
     save(queuePath, q);
-    // Says what it did NOT do. `decide` records; the object is still up.
+    // THE ID IS PRINTED BECAUSE AN APPEAL NAMES IT. Without it nobody can contest this decision —
+    // the appellant signs a statement over this string, and it is opaque and random precisely so
+    // that handing it over does not disclose how many decisions exist.
     out(`Recorded: ${blobId} ${outcome} (${category}).`,
+      `Decision id: ${d.id}`,
       outcome === "removed"
         ? "The object is still on the vault. Run `remove` to take it down."
         : "Nothing to take down.");
@@ -145,13 +151,90 @@ switch (command) {
     break;
   }
 
+  case "appeals": {
+    const q = load(queuePath);
+    const waiting = q.appeals.outstanding();
+    if (waiting.length === 0) { out("No appeals waiting."); break; }
+    for (const a of waiting) {
+      out(`${a.decisionId}  from ${a.account}  filed `
+        + `${new Date(a.at).toISOString().slice(0, 10)}`);
+    }
+    break;
+  }
+
+  case "appeal": {
+    // A DETACHED ARTIFACT, READ FROM A FILE. `decisions/0037`: an appeal must not have to arrive
+    // over a connection the operator terminates, because that converts a chain identity into a
+    // network observation at the worst moment. Taking it from a file is what makes "relay it by
+    // any route you like" true rather than aspirational — including handing over a USB stick.
+    const [decisionId, account] = rest;
+    const artifact = flag("signature-file");
+    const rpc = flag("rpc");
+    if (!decisionId || !account) throw new Error("appeal <decisionId> <account> --signature-file F");
+    if (!artifact) throw new Error("--signature-file holds the signature, one felt per line");
+    if (!rpc) throw new Error("--rpc is a Starknet endpoint to verify the signature against");
+    const signature = readFileSync(artifact, "utf8").split("\n").map((l) => l.trim())
+      .filter(Boolean);
+    const q = load(queuePath);
+    if (!q.decisions().some((d) => d.id === decisionId)) {
+      // Said before verifying, because it is not a signature problem and an appellant told "your
+      // signature did not verify" would go looking for the wrong thing.
+      out(`No decision ${decisionId} in this queue.`);
+      process.exitCode = 1;
+      break;
+    }
+    const result = await q.appeals.accept(decisionId, account, signature, now(),
+      verifierAgainst(rpc));
+    if (result.accepted) {
+      save(queuePath, q);
+      out(`Appeal recorded: ${account} against ${decisionId}.`);
+    } else {
+      // NOTHING IS SAVED ON A REFUSAL. An unverified submission is not evidence that anybody
+      // appealed anything, and anyone can submit one naming any account.
+      out(`Not recorded: ${result.reason}.`,
+        "A network failure and a bad signature both refuse here; if the endpoint was unreachable",
+        "this says nothing about the artifact.");
+      process.exitCode = 1;
+    }
+    break;
+  }
+
+  case "appeal-resolve": {
+    const [decisionId, account, outcome] = rest;
+    if (outcome !== "upheld" && outcome !== "denied") {
+      throw new Error(`an appeal outcome is "upheld" or "denied", not "${outcome}"`);
+    }
+    const q = load(queuePath);
+    q.appeals.resolve(decisionId, account, outcome);
+    save(queuePath, q);
+    out(`Appeal ${outcome}: ${account} against ${decisionId}.`,
+      outcome === "upheld"
+        ? "The original decision is reversed. If it was a removal, the object is NOT restored by\n"
+          + "this command — removal is not reversible, see decisions/0035."
+        : "The original decision stands.");
+    break;
+  }
+
+  case "digest": {
+    // What an appellant signs, printed so they can be told it without a round trip. THIS IS THE
+    // WHOLE POINT OF DROPPING THE NONCE: the digest is a pure function of the decision id, so an
+    // appellant can compute it themselves and never contact the operator before appealing.
+    if (!rest[0]) throw new Error("digest <decisionId>");
+    out(appealDigest(rest[0]),
+      "",
+      "Sign this with the account that published the object. Anyone may deliver the result —",
+      "the operator verifies the artifact, not the connection it arrived over.");
+    break;
+  }
+
   case "report": {
     const q = load(queuePath);
     const period = monthOf(rest[0] ?? "");
     // The second argument is the report volume, which `report` does not publish in any form —
     // see `transparency.ts`. Passed because the signature takes it; if it is ever published it
     // must be a decision made there, not a value that leaked through here.
-    out(...transparencyReport(q.decisions(), q.receivedIn(period.from), period).lines);
+    out(...transparencyReport(q.decisions(), q.receivedIn(period.from), period,
+      q.appeals.filed()).lines);
     break;
   }
 
@@ -165,6 +248,10 @@ switch (command) {
       "  report <YYYY-MM>               the transparency report for a month",
       "  intake --port N                the public report endpoint (its own process)",
       "  ingest                         fold filed reports into the queue",
+      "  digest <decisionId>            what an appellant signs (they need not ask us)",
+      "  appeals                        appeals waiting on a decision",
+      "  appeal <decisionId> <account> --signature-file F --rpc URL",
+      "  appeal-resolve <decisionId> <account> upheld|denied",
       "",
       `  --queue PATH                   where the queue lives (${queuePath})`,
       `  --spool PATH                   where intake appends reports (${spoolPath})`);

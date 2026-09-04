@@ -193,3 +193,26 @@ test("THE BODIES A REVIEWER NEEDS ARE ACTUALLY SHOWN, which they were not", asyn
       "a repeated body was shown more than once, so a loop can still fill the reviewer's screen");
   });
 });
+
+test("A LONG BODY CANNOT SCROLL THE OBJECT ID OFF THE SCREEN", async () => {
+  // Not about escapes — those are neutralised. A body at the intake limit is four thousand
+  // characters, and a handful of them push everything a reviewer needs out of view, including the
+  // id of the object they are about to decide on. The moment of decision is exactly where a
+  // misattribution becomes a decision about the wrong post.
+  await withDir(async (dir) => {
+    const q = new Reports();
+    for (let i = 0; i < 5; i++) q.file("pub:longwinded", `${"x".repeat(4000)}${i}`, i);
+    save(join(dir, "q.json"), q);
+
+    const shown = await operator(dir, "show", "pub:longwinded");
+    const lines = shown.stdout.split("\n");
+    // Truncated, and explicitly so: a silently cut body reads as a complete one, and a reviewer
+    // deciding on a fragment should know it is a fragment.
+    assert.match(shown.stdout, /\[\.\.\.\d+ more characters\]/);
+    assert.ok(lines.every((l) => l.length < 1000), "a single body line is still screen-sized");
+    // The id appears again after the bodies, so it is on screen at the point of decision.
+    const last = lines.slice(-6).join("\n");
+    assert.match(last, /Deciding about: pub:longwinded/,
+      "the object id is not repeated where the decision is actually made");
+  });
+});

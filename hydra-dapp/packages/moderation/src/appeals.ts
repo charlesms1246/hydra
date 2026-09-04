@@ -72,9 +72,21 @@ export function appealStatement(decisionId: string): Buffer {
   ]);
 }
 
-/** The digest an account signs. Separate so a caller cannot accidentally sign the raw bytes twice. */
+/**
+ * The digest an account signs. Separate so a caller cannot accidentally sign the raw bytes twice.
+ *
+ * TRUNCATED TO 31 BYTES, BECAUSE A STARKNET ACCOUNT SIGNS A FELT. `is_valid_signature` takes a
+ * field element below P = 2^251 + 17·2^192 + 1, and a full sha256 is 256 bits — so some digests
+ * would not fit and the caller would have to reduce them. Leaving that to the caller is how the
+ * statement and its verifier come to disagree, which is the same failure as naming the account
+ * inside the statement: two copies of one value, and nothing forcing them to match.
+ *
+ * 248 bits is unambiguously below P for every input, needs no modular reduction, and no constant
+ * to be kept in step with the chain's. What it costs is 8 bits of collision resistance against an
+ * attacker who must also produce a signature from an account they do not control.
+ */
 export const appealDigest = (decisionId: string): string =>
-  createHash("sha256").update(appealStatement(decisionId)).digest("hex");
+  createHash("sha256").update(appealStatement(decisionId)).digest("hex").slice(0, 62);
 
 /** Appeals the operator has accepted, and what became of them. */
 export class Appeals {
