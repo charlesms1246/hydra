@@ -16,22 +16,29 @@
  *
  * IT READS A BUSY CONTRACT RATHER THAN OURS, and deliberately: the client does not care which
  * contract it is pointed at, and what is under test is paging, the `fromBlock` offset and range
- * filtering — none of which a quiet devnet contract can exercise. The Starknet ID identity contract
- * is real, busy, and already verified against by `decisions/0031`.
+ * filtering — none of which a quiet contract can exercise. The first version pointed at the
+ * Starknet ID identity contract, which turned out to emit **nothing in two thousand Sepolia
+ * blocks**, so the paging case reported itself unexercised and two others failed outright. The
+ * default is now the ETH token, whose `Transfer` events are continuous, and it is overridable.
  */
 
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 
 import { starknet } from "../../cli/src/chain.ts";
-import { identityContract } from "../../cli/src/anchor.ts";
 
 const RPC = process.env.HYDRA_RPC;
 const NETWORK = process.env.HYDRA_NETWORK ?? "sepolia";
 
-const clientFrom = (fromBlock: number) => starknet({
-  rpcUrl: RPC!, contract: identityContract(NETWORK), fromBlock,
-  accountsFile: "", account: "", network: NETWORK,
+/**
+ * A contract that actually emits. The ETH token, whose address is the same across Starknet
+ * networks; overridable because "busy" is a property of the network on the day.
+ */
+const BUSY = process.env.HYDRA_BUSY_CONTRACT
+  ?? "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+
+const clientFrom = (fromBlock: number, contract = BUSY) => starknet({
+  rpcUrl: RPC!, contract, fromBlock, accountsFile: "", account: "", network: NETWORK,
 });
 
 let latest = 0;
@@ -51,8 +58,8 @@ test("EVENTS CARRY REAL BLOCK NUMBERS AND TRANSACTION HASHES", async () => {
   // The fake numbered blocks `0, 1, 2…` and omitted transaction hashes unless a crowd was
   // configured — which is what let `blockNumber * blockMs` pass for a wall clock and cost four
   // bugs. What a real node returns is the thing the fake was pretending to be.
-  const events = await clientFrom(latest - 200).events();
-  assert.ok(events.length > 0, "no events in the last 200 blocks — pick a busier contract");
+  const events = await clientFrom(latest - 20).events();
+  assert.ok(events.length > 0, "no events in the last 20 blocks — pick a busier contract");
   for (const e of events.slice(0, 20)) {
     assert.equal(e.data.length >= 1, true);
     assert.ok((e.blockNumber ?? 0) > 1_000, `block number ${e.blockNumber} is not a real height`);
@@ -60,15 +67,15 @@ test("EVENTS CARRY REAL BLOCK NUMBERS AND TRANSACTION HASHES", async () => {
   }
   // Every one is at or after the offset asked for — the `from_block` filter is the client's, and
   // nothing hermetic has ever checked that it is sent correctly.
-  const floor = latest - 200;
+  const floor = latest - 20;
   assert.ok(events.every((e) => (e.blockNumber ?? floor) >= floor),
     "an event older than fromBlock came back, so the offset is not reaching the node");
 });
 
 test("FROM_BLOCK IS RESPECTED: a later offset returns strictly less", async () => {
   // The offset is the client's own parameter and the fake ignored it entirely.
-  const wide = await clientFrom(latest - 400).events();
-  const narrow = await clientFrom(latest - 50).events();
+  const wide = await clientFrom(latest - 40).events();
+  const narrow = await clientFrom(latest - 5).events();
   assert.ok(narrow.length <= wide.length,
     `a narrower window returned more events (${narrow.length} against ${wide.length})`);
   assert.ok(wide.length > 0, "no events at all — this test is measuring nothing");
@@ -81,11 +88,11 @@ test("PAGING PAST A CONTINUATION TOKEN", async () => {
   // IT REPORTS RATHER THAN ASSERTS WHEN THE CHAIN IS TOO QUIET. An unpaged run reported as a paging
   // test is the mirroring problem in a new costume — the check would be green and would have
   // proved nothing.
-  const events = await clientFrom(latest - 2_000).events();
+  const events = await clientFrom(latest - 40).events();
   if (events.length <= 100) {
-    console.error(`only ${events.length} events in 2000 blocks, so no continuation token was `
+    console.error(`only ${events.length} events in 40 blocks, so no continuation token was `
       + "issued and PAGING WAS NOT EXERCISED by this run. Not asserted — an unpaged run reported "
-      + "as a paging test proves nothing.");
+      + "as a paging test proves nothing. Widen the window or set HYDRA_BUSY_CONTRACT.");
     return;
   }
   assert.ok(events.length > 100,
@@ -121,7 +128,7 @@ test("an unreachable node fails rather than returning an empty chain", async () 
   // the crowd treats an empty answer as a measured zero. `linkabilityOf` distinguishes them only
   // if the client does.
   const dead = starknet({
-    rpcUrl: "http://127.0.0.1:1", contract: identityContract(NETWORK), fromBlock: 0,
+    rpcUrl: "http://127.0.0.1:1", contract: BUSY, fromBlock: 0,
     accountsFile: "", account: "", network: NETWORK,
   });
   await assert.rejects(() => dead.events(),
