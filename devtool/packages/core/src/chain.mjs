@@ -47,7 +47,19 @@ export async function txStatus(hash) {
   const rc = r.result;
   // Best-effort: a receipt with no matching transaction is not a failure worth
   // discarding the receipt over, so this fills what it can and leaves nulls.
-  const t = await rpc(st.devnetUrl, "starknet_getTransactionByHash", [hash]);
+  // NAMED params, deliberately. Measured against starknet-devnet v0.8.0-rc.3 and a
+  // live Sepolia node with a real transaction hash:
+  //
+  //   form                      devnet          Sepolia
+  //   [hash]                    -32602 FAIL     OK        <- what this used to send
+  //   [hash, []]                OK              -32602 FAIL
+  //   { transaction_hash }      OK              OK
+  //
+  // devnet wants a two-element TransactionHashAndFlagsInput, real nodes want the
+  // spec's single argument, and only the named form satisfies both. `[hash, []]`
+  // would work on the machine of whoever tested it and fail everywhere else.
+  // getTransactionReceipt is NOT affected — [hash] is correct there on both.
+  const t = await rpc(st.devnetUrl, "starknet_getTransactionByHash", { transaction_hash: hash });
   const tx = t.ok ? t.result : null;
   const res = rc.execution_resources ?? null;
   return {

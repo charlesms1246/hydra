@@ -7,7 +7,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { rpc, fetchJson } from "./probe.mjs";
+import { rpc } from "./probe.mjs";
 import { readState, writeState, HYDRA_HOME } from "./state.mjs";
 
 /** ERC20 balanceOf, as a plain RPC call. Returns a decimal string, or null. */
@@ -71,13 +71,14 @@ export async function wallets() {
 export async function faucet({ address, amount = 1e18, unit = "FRI" }) {
   const st = await readState();
   if (!st) return { ok: false, error: "no running stack — run `hydra-dev up`" };
-  const r = await fetchJson(`${st.devnetUrl}/mint`, {
-    method: "POST",
-    body: { address, amount: Number(amount), unit },
-    timeoutMs: 10000,
-  });
-  if (!r.ok) return { ok: false, error: r.error ?? `http ${r.status}`, body: r.text?.slice(0, 200) };
-  return { ok: true, ...r.json };
+  // starknet-devnet v0.8.0-rc.3 serves no REST /mint — it is the JSON-RPC method
+  // `devnet_mint`, whose result is the same { new_balance, unit, tx_hash } this
+  // already returns. The old POST /mint answered 404 against every real devnet;
+  // the only thing that ever exercised it was packages/tui/sandbox/server.mjs,
+  // which implements /mint because this code called it. See ERRORS.md E-DEV11.
+  const r = await rpc(st.devnetUrl, "devnet_mint", { address, amount: Number(amount), unit }, 10000);
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, ...r.result };
 }
 
 /**
