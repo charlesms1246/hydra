@@ -26,7 +26,7 @@
  *     hydra flush                                 uploads what is due
  *     hydra read NAME
  *
- *   the public class — anonymous posts, readable by anyone who has the id:
+ *   the public class — a post with no return channel, readable by anyone who has the id:
  *     hydra post REASON "text"                    > a pub: id   (there is no feed and no index)
  *     hydra fetch ID…                             read public posts back
  *     hydra audit ID ROOT                         check a removal against a published commitment

@@ -65,6 +65,13 @@ const FORBIDDEN = [
   // and "100%" matched a measured statement about window containment inside a disclosure row.
   // Noise is what gets a check deleted, so it matches the assertion and not the word.
   "is anonymous", "are anonymous", "fully anonymous", "completely anonymous",
+  // NOUN PHRASES, which the claim forms above do not reach. The CLI's help said "anonymous posts"
+  // and it slipped through — a false negative bought by the narrowing that fixed a false positive.
+  // It matters because it states a CONDITIONAL property flatly: publishing is anonymous only for a
+  // fresh account on the once-per-account free route, and the crowd measurement frequently answers
+  // "fully linkable" for a reused one. The property belongs in the generated statement, where it
+  // can carry that condition; the help says what the command does.
+  "anonymous post", "anonymous publishing", "anonymous message", "anonymously",
   "untraceable", "unbreakable", "military-grade",
   "we cannot see", "nobody can see", "completely private", "fully private",
   // The forms this repo actually shipped. Every one was true of a real string here.
@@ -94,6 +101,24 @@ const sources = () => FRONT_ENDS.flatMap((pkg) => {
     .map((f) => ({ path: `${pkg}/src/${f}`, text: readFileSync(join(dir, f), "utf8") }));
 });
 
+/**
+ * The CLI's help block, which is user-facing text that happens to live in a comment.
+ *
+ * **THE INVERSE OF THE PROSE RULE, AND IT COST A MISS.** Six times a comment has broken a guard
+ * about code, so guards here strip comments — and `usage()` prints this file's header comment
+ * verbatim, so for this one region the comment IS the product. Stripping it made the string a user
+ * reads most invisible to the claim checker, which is how "anonymous posts" survived a check
+ * written to catch exactly that.
+ *
+ * Bounded to the rendered region — the header up to its terminator — rather than all comments, so
+ * ordinary explanation stays exempt.
+ */
+const renderedHelp = (path: string, source: string): string => {
+  if (!path.endsWith("cli/src/cli.ts")) return "";
+  const lines = source.split("\n");
+  return lines.slice(0, lines.findIndex((l) => l.trim() === "*/")).join("\n").toLowerCase();
+};
+
 /** Text a user could see: string and template literals, comments removed. */
 const userFacing = (source: string) =>
   [...codeOf(source).matchAll(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|`([^`\\]|\\.)*`/g)]
@@ -102,7 +127,7 @@ const userFacing = (source: string) =>
 test("NO FRONT END MAKES A PRIVACY CLAIM IN ITS OWN WORDS", () => {
   const found: string[] = [];
   for (const file of sources()) {
-    const text = userFacing(file.text);
+    const text = userFacing(file.text) + renderedHelp(file.path, file.text);
     for (const phrase of FORBIDDEN) {
       if (text.includes(phrase)) found.push(`${file.path}: "${phrase}"`);
     }

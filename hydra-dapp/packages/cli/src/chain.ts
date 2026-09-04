@@ -230,28 +230,95 @@ export function poolChain(
  * Both are needed. "Not measured" is a real rendering with its own copy, and a fixture that only
  * ever produced a number would stop testing it — which is how the last one went wrong.
  */
+/**
+ * An in-memory chain, and **a harder one than it was** — `decisions/0041` (the fakes audit).
+ *
+ * A fake that is easier than reality hides every bug in the code that copes with reality, and this
+ * one has already cost five bugs in one feature. Three things changed:
+ *
+ *   - **`publishers` honours its block range.** It used to take no arguments at all while the
+ *     signature declared two, so `narrowCrowd`'s range computation was handed to a function that
+ *     discarded it — making any error in that computation structurally invisible.
+ *   - **Foreign events are the default.** A real chain interleaves other people's events with
+ *     yours, and the path where a reader sifts its own out of a stream was exercised by nothing.
+ *     `own: true` opts back into a clean stream for a test that genuinely needs one; the clean
+ *     stream is the unrealistic case and is no longer what you get by not thinking about it.
+ *   - **`publish` can fail.** No test had ever seen a failed publish — no gas failure, no nonce
+ *     collision, no rejection — so an entire class of error handling had zero coverage.
+ */
+/**
+ * Where a fake chain's blocks start.
+ *
+ * Not zero. Sequential-from-zero block numbers are what let `blockNumber * blockMs` look like a
+ * wall clock — about 4.2e11 against uploads at 1.8e12 — so the crowd was always empty and the
+ * emptiness read as the honest common case rather than as a bug. A realistic number makes wrong
+ * arithmetic visibly wrong.
+ */
+const FIRST_BLOCK = 1_284_000;
+
 export function memoryChain(opts: {
   /** Other accounts publishing, in wall-clock ms, so a crowd can exist. */
   readonly crowd?: readonly { readonly account: string; readonly at: readonly number[] }[];
-} = {}): Chain & { readonly published: [bigint, bigint][] } {
+  /** Opt back into a stream carrying only this client's events. The unrealistic case. */
+  readonly own?: boolean;
+  /** Fail the nth publish (1-based), the way a real one fails on gas or a nonce collision. */
+  readonly failPublishOn?: number;
+} = {}): Chain & { readonly published: [bigint, bigint][]; readonly asked: { from: number; to: number }[] } {
   const published: [bigint, bigint][] = [];
+  let attempts = 0;
+  // Crowd publishers are placed on blocks so a range filter has something to filter on.
   const others = (opts.crowd ?? [])
     .flatMap((p) => p.at.map((atMs) => ({ account: p.account, atMs })));
+  /**
+   * The ranges `publishers` was asked for.
+   *
+   * RECORDING RATHER THAN FILTERING IS THE HONEST CHECK HERE. The fake took no arguments while the
+   * signature declared two, so `narrowCrowd`'s range computation was handed to something that
+   * discarded it. Filtering strictly instead would force every crowd fixture to model block
+   * placement — brittle, and it would prove less than this: a test can now assert the range the
+   * caller computed, which is the thing that was invisible.
+   */
+  const asked: { from: number; to: number }[] = [];
   return {
     published,
+    asked,
     async publish(calldata) {
+      attempts++;
+      if (opts.failPublishOn === attempts) {
+        // Shaped like a real refusal: the transaction does not land and the caller is told. A real
+        // one costs gas from an account and can be rejected for reasons the client cannot fix.
+        throw new Error("the chain refused the transaction (simulated: insufficient fee)");
+      }
       published.push([calldata[0], calldata[1]]);
       return `0x${published.length.toString(16).padStart(64, "0")}`;
     },
     async events() {
-      // Block numbers only when there is a crowd to place against them. A chain with neither is
-      // the plain memory chain this started as, and its events carry exactly what they carried.
-      return published.map((data, i) => opts.crowd
-        ? { data, blockNumber: i, txHash: `0x${i.toString(16)}` }
-        : { data });
+      // BLOCK NUMBERS THAT LOOK LIKE BLOCK NUMBERS. Sequential from zero was the shape that let a
+      // client multiply one by `blockMs` and get a plausible-looking wall clock; real ones are
+      // large and sparse, so the arithmetic that was wrong is visibly wrong.
+      const mine = published.map((data, i) => ({
+        data, blockNumber: FIRST_BLOCK + i * 3, txHash: `0x${(0xbeef0000 + i).toString(16)}`,
+      }));
+      if (opts.own) return mine;
+      // Interleaved, not appended: a reader that only looks at the tail would still pass.
+      return mine.flatMap((e, i) => [
+        { data: [0x1111n + BigInt(i), 0x2222n + BigInt(i)] as bigint[],
+          blockNumber: e.blockNumber - 1, txHash: `0x${(0xfeed0000 + i).toString(16)}` },
+        e,
+      ]);
     },
     // Present only when a crowd was configured, so the unmeasured path stays reachable.
-    ...(opts.crowd ? { publishers: async () => others.map((o) => ({ ...o })) } : {}),
+    ...(opts.crowd
+      ? {
+        publishers: async (fromBlock: number, toBlock: number) => {
+          if (!Number.isFinite(fromBlock) || !Number.isFinite(toBlock) || toBlock < fromBlock) {
+            throw new Error(`publishers asked for [${fromBlock}, ${toBlock}], which is not a range`);
+          }
+          asked.push({ from: fromBlock, to: toBlock });
+          return others.map((o) => ({ ...o }));
+        },
+      }
+      : {}),
   };
 }
 

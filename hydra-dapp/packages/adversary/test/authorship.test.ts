@@ -155,7 +155,12 @@ test("a REPLAYED signature over different content is refused", async () => {
     assert.equal(read[0].attribution, "signed");
 
     // What bob has: the commitment from the chain, and the stored object.
-    const commitment = (await s.chain.events())[0].data[1];
+    // ALICE'S EVENT, NOT THE FIRST ONE. `memoryChain` now interleaves foreign events by default,
+    // because a real chain does and the path where a reader sifts its own out of a stream was
+    // exercised by nothing. Indexing into a shared stream was a fixture assumption, not a
+    // property — and it is exactly the assumption a real contract breaks on day one.
+    const commitment = (await s.chain.events())
+      .filter((e) => s.chain.published.some(([, c]) => c === e.data[1]))[0].data[1];
     const stored = s.v.handle({
       op: "fetch", endpoint: ENCRYPTED_ENDPOINT,
       ids: [read[0].id, ...Array.from({ length: 7 }, (_, i) => `enc:${i}`.padEnd(20, "0"))],

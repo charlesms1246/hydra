@@ -50,7 +50,12 @@ async function stack(n = 6000) {
   const alice = init({ vaultUrl: url, blockMs: BLOCK, invites: invites.slice(0, n / 2) });
   const bob = init({ vaultUrl: url, blockMs: BLOCK, invites: invites.slice(n / 2) });
   accept(bob, "alice", open(alice, "bob", publishBundle(bob, 0)));
-  return { alice, bob, v, server, url, chain: memoryChain() };
+  // `own: true` — a stream carrying only this client's events, which is the unrealistic case and
+  // is the right one HERE. This file measures how the work of keeping up grows with the
+  // CONVERSATION, and foreign events add a constant that swamps the signal: with them the cost
+  // reads 1224 / 1188 / 1296 at turns 10 / 20 / 40, so "the rescan window is filling" cannot be
+  // seen at all. Resilience to a shared chain is a different property and belongs in its own test.
+  return { alice, bob, v, server, url, chain: memoryChain({ own: true }) };
 }
 
 /** A `fetch` that records how many ids each read asked for. */
