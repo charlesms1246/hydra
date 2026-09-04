@@ -20,7 +20,7 @@
  * design exists to deny.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { PrekeyStore } from "../../handshake/src/prekeys.ts";
 import type { DhState } from "../../handshake/src/dh-ratchet.ts";
 import { homedir } from "node:os";
@@ -218,6 +218,14 @@ export type ReceivedMessage = {
 };
 
 export type State = {
+  /**
+   * The shape this file is in. Absent means 1 — see {@link STATE_VERSION}.
+   *
+   * Optional in the type because every file written before this existed has no version, and a
+   * required field would strand every install to prove a point.
+   */
+  version?: number;
+
   vaultUrl: string;
   rpcUrl: string;
   contract: string;
@@ -251,14 +259,58 @@ export type State = {
   pending: PendingUpload[];
 };
 
+/**
+ * The shape this client writes.
+ *
+ * **BEFORE KEY-AT-REST, NOT AFTER** — `decisions/0040` records the KDF and its parameters in the
+ * file so a future client can open an old one, and writing a KDF into a file with no version field
+ * is how you get a client that can only read files it wrote itself. `moderation` has had a version
+ * and a migration since its first snapshot; the client, which holds the root key, had neither.
+ *
+ * 1 is the shape that already existed. A file with no `version` is version 1, because every file
+ * on disk today has no version and refusing them would strand every existing install.
+ */
+export const STATE_VERSION = 1;
+
 export function load(): State {
   if (!existsSync(STATE_FILE)) throw new Error(`no state at ${STATE_FILE} — run \`hydra init\` first`);
-  return JSON.parse(readFileSync(STATE_FILE, "utf8")) as State;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(STATE_FILE, "utf8"));
+  } catch (e) {
+    // A CORRUPT FILE IS A LOUD FAILURE NAMING THE FILE. It used to be a bare `JSON.parse`, and in
+    // the TUI that runs at module scope — before the `uncaughtException` handler and before the
+    // alt-screen switch — so a truncated write killed it with no frame drawn and no explanation.
+    throw new Error(`${STATE_FILE} is not readable as JSON (${(e as Error).message}). It holds `
+      + "your root key and every conversation; do not delete it. A partial write from an "
+      + "interrupted save is the usual cause, and a backup beside it may be intact.");
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    throw new Error(`${STATE_FILE} does not contain a client state object`);
+  }
+  const version = (parsed as { version?: unknown }).version ?? STATE_VERSION;
+  if (version !== STATE_VERSION) {
+    // REFUSED RATHER THAN GUESSED AT, the same rule the moderation snapshot uses: a state read
+    // wrong is a key derived wrong, and the failure would appear as somebody else's messages
+    // failing to open rather than as a version problem.
+    throw new Error(`${STATE_FILE} was written by state version ${String(version)} and this `
+      + `client is ${STATE_VERSION}. Refusing to guess at the difference — a state file read `
+      + "wrong is a root key used wrong. Use the client that wrote it, or start fresh.");
+  }
+  return parsed as State;
 }
 
 export function save(state: State): void {
   mkdirSync(dirname(STATE_FILE), { recursive: true, mode: 0o700 });
-  writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  // WRITTEN VIA A TEMPORARY FILE AND A RENAME, for the reason the operator queue is: a process
+  // interrupted mid-write leaves a truncated file, and `load` then refuses it — correctly — so the
+  // user has no state at all. `rename` is atomic within a filesystem, so a reader sees the old
+  // file or the new one and never a half of either.
+  const tmp = `${STATE_FILE}.writing`;
+  writeFileSync(tmp, `${JSON.stringify({ version: STATE_VERSION, ...state }, null, 2)}\n`,
+    { mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, STATE_FILE);
   // Set explicitly as well as at creation: `writeFileSync`'s mode applies only when the file
   // does not already exist, so a file created some other way would keep its own permissions.
   chmodSync(STATE_FILE, 0o600);

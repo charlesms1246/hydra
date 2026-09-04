@@ -676,6 +676,12 @@ export async function bundleFromChain(
         params: { request, block_id: "latest" },
       }),
     });
+    // Checked before parsing, like `fetchPublic` and `fetchIds`. An unreachable node returns HTML
+    // or nothing, and `JSON.parse` on that reports a syntax error for a network failure.
+    if (!res.ok) {
+      throw new Error(`${state.rpcUrl} did not answer (${res.status}) — the node is unreachable `
+        + "or refusing, which says nothing about the address you asked about.");
+    }
     const body = await res.json() as { result?: string[]; error?: unknown };
     if (body.error) throw new Error(`the node refused the read: ${JSON.stringify(body.error)}`);
     if (!body.result) throw new Error("the node returned no result");

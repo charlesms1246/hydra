@@ -56,6 +56,22 @@ export const codeOf = (source: string): string => source
   .join("\n");
 
 /**
+ * A source file with comments AND quoted strings removed — only executable text.
+ *
+ * THE SEVENTH INSTANCE WAS A STRING LITERAL, not a comment. The destructive-operations guard looks
+ * for `delete x.y` statements, and matched the sentence *"do not delete it. A partial write…"* in
+ * an error message — prose that a user reads, inside code, doing exactly what the six comment cases
+ * did. `codeOf` was not enough because it strips only comments.
+ *
+ * Use this for any check whose subject is a STATEMENT — a call, an assignment, a `delete`. Use
+ * `codeOf` when a string literal could legitimately carry the thing being looked for, as when
+ * checking which symbols a module references. Single and double quotes only: a template literal can
+ * contain `${realCode}`, and removing it would hide the reference rather than the prose.
+ */
+export const statementsOf = (source: string): string =>
+  codeOf(source).replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '""');
+
+/**
  * A string with backtick-quoted spans removed.
  *
  * For assertions about PROSE rather than code — a disclosure row, a decision file, a warning — where

@@ -60,11 +60,41 @@ import { load, save, exists, STATE_FILE } from "./state.ts";
 
 const [command, ...rest] = process.argv.slice(2);
 
+/**
+ * Flags that take no value.
+ *
+ * DECLARED, BECAUSE THE PARSER CANNOT GUESS. `positional` dropped any token whose predecessor
+ * began `--`, so `hydra forget --force alice` silently discarded `alice` and printed the help —
+ * and `--force` is exactly the flag somebody reaches for when the safe path has already refused
+ * them. A parser wrong about its own grammar fails on the command a user is most determined to run.
+ */
+const BOOLEAN = new Set(["force", "cite"]);
+
+/**
+ * The value after `--name`, or the fallback.
+ *
+ * Refuses to treat the NEXT FLAG as a value: `--vault --rpc x` used to set `vault` to `"--rpc"`,
+ * and a vault URL of `--rpc` fails somewhere far from the typo. Asking for a boolean's value is a
+ * programming error rather than a user error, so it throws.
+ */
 const flag = (name: string, fallback = ""): string => {
+  if (BOOLEAN.has(name)) throw new Error(`--${name} is a boolean flag; test it with \`has\``);
   const i = rest.indexOf(`--${name}`);
-  return i >= 0 ? rest[i + 1] : fallback;
+  if (i < 0) return fallback;
+  const next = rest[i + 1];
+  return next === undefined || next.startsWith("--") ? fallback : next;
 };
-const positional = rest.filter((a, i) => !a.startsWith("--") && !rest[i - 1]?.startsWith("--"));
+
+/** Whether a boolean flag was given. Declared in {@link BOOLEAN} so parsing agrees with it. */
+const has = (name: string): boolean => rest.includes(`--${name}`);
+
+const positional = rest.filter((a, i) => {
+  if (a.startsWith("--")) return false;
+  const previous = rest[i - 1];
+  if (previous === undefined || !previous.startsWith("--")) return true;
+  // A boolean flag consumes nothing, so what follows it is a positional argument.
+  return BOOLEAN.has(previous.slice(2));
+});
 
 const usage = () => {
   // DERIVED FROM THE COMMENT'S OWN END, not a hardcoded line range. It used to be `slice(3, 30)`,
@@ -110,6 +140,13 @@ switch (command) {
     // you name one, because a bundle without one has no replay resistance.
     const state = load();
     const named = flag("one-time");
+    // A TYPO USED TO PRINT A BUNDLE AND SUPPRESS THE WARNING THAT SAYS SO. `Number("2x")` is
+    // `NaN`, which is not `undefined`, so the no-replay-resistance warning below never fired —
+    // the one case where a bundle is weakest was the one case the user was not told about.
+    if (named !== "" && !Number.isInteger(Number(named))) {
+      throw new Error(`--one-time takes a whole number; got "${named}". A bundle published with `
+        + "no one-time key has no replay resistance, and a typo is not a way to choose that.");
+    }
     const index = named === "" ? nextOneTime(state) : Number(named);
     console.log(encode(publishBundle(state, index)));
     if (index === undefined) {
@@ -347,6 +384,13 @@ switch (command) {
     const res = await fetch(`${state.vaultUrl}/v1/pub/proof`, {
       method: "POST", body: JSON.stringify({ id: blobId }),
     });
+    // CHECKED BEFORE PARSING. `fetchPublic` and `fetchIds` both do this and these two did not, so
+    // an unreachable vault produced `SyntaxError: Unexpected token '<'` where it should say the
+    // vault did not answer — a parser error for a network problem sends somebody to the wrong file.
+    if (!res.ok) {
+      throw new Error(`${state.vaultUrl} did not answer the proof request (${res.status}). `
+        + "That is the vault being unreachable or refusing, not an answer about this object.");
+    }
     const { proof } = await res.json() as { proof: { index: number; path: string[] } | null };
     if (!proof) {
       console.log(`this vault holds no proof for ${blobId} — it is not in the tree it is`);
@@ -475,7 +519,7 @@ switch (command) {
     // `--force` accepts that the vault's copies stay. Without it a failed remote delete refuses,
     // because the ids being dropped ARE the capability to remove them — see `forget`.
     const r = await forget(state, name, before === "" ? undefined : Number(before),
-      fetch, rest.includes("--force"));
+      fetch, has("force"));
     const gone = r.forgotten;
     console.log(`removed ${r.removed} of ${r.forgotten} from the vault`);
     if (r.notYours) {
@@ -499,7 +543,7 @@ switch (command) {
     //
     // `--cite` prints the source of every line, because a claim you cannot chase is a claim you
     // have to take on trust, and this project's position is that you should not have to.
-    const cite = rest.includes("--cite");
+    const cite = has("cite");
     const s = statement();
     const show = (title: string, claims: readonly { says: string; from: string }[]) => {
       console.log(`## ${title}

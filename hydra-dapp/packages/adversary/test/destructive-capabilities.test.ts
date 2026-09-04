@@ -21,6 +21,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { statementsOf } from "../src/prose.ts";
+
 import { forget, SKIPPED_KEEP } from "../../cli/src/commands.ts";
 import { newChain, keyFor, forgetOldSkipped } from "../../handshake/src/ratchet.ts";
 import { derive, rootSeed, entropyFrom, fromTestVector, VAULT_DOMAIN }
@@ -119,7 +121,11 @@ test("COMPLETENESS: no destructive operation exists that this file does not name
   const found = new Set<string>();
   for (const dir of CLIENT) {
     for (const file of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
-      const src = readFileSync(join(dir, file), "utf8").split("\n");
+      // STATEMENTS ONLY. This looks for `delete x.y` and assignments that clear state, and it
+      // matched the sentence "do not delete it. A partial write…" inside an error message —
+      // seventh time in this repo that prose has broken a guard about code, and the first where
+      // the prose was a string literal rather than a comment. See `prose.ts`.
+      const src = statementsOf(readFileSync(join(dir, file), "utf8")).split("\n");
       src.forEach((line, i) => {
         if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
         if (!/\b(delete\s+\w+[.[]|\.history\s*=|\.skipped\s*=|\.pending\s*=|acrossSteps\[)/.test(line)) return;
