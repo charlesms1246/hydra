@@ -32,7 +32,7 @@ import { coverPlan, coverBody, coverId, coverIndex, COVER_RATE, saltFrom } from 
 import { deleteToken } from "../../channel/src/deletion.ts";
 import { deleteHashFor } from "../../vault-server/src/delete-hash.ts";
 import { jitterWindowMs } from "../../channel/src/schedule.ts";
-import { prune, accuracyAgainst } from "../../channel/src/crowd.ts";
+import { prune, accuracyAgainst, covering } from "../../channel/src/crowd.ts";
 import { postPublic, fetchPublic } from "../../client/src/public.ts";
 import { feltToPointer } from "../../channel/src/note.ts";
 import { openForChannel, plaintextOf, openHeader, bodyOf, ENCRYPTED_ENDPOINT } from "../../vault-client/src/blobs.ts";
@@ -570,12 +570,16 @@ async function narrowCrowd(
       (times.get(account) ?? times.set(account, []).get(account)!).push(atMs);
     }
     const publishers = [...times].map(([account, t]) => ({ account, times: t }));
-    const covering = prune(publishers)
-      .filter((p) => uploads.every((u) => p.times.some((t) => u >= t && u < t + window)))
-      .map((p) => p.account);
+    // `covering` rather than the same predicate written again here. It used to be inline, so the
+    // arithmetic users got was a second copy of the one the tests exercised, with nothing forcing
+    // them to agree — see `channel/src/crowd.ts`.
+    const covered = covering(uploads, prune(publishers), window).map((p) => p.account);
+    // INTERSECTED ACROSS SENDS, and this is the part `crowdOf` does not model: the crowd is every
+    // account that has covered EVERY upload so far, not just this one. It only narrows, because an
+    // account that failed to cover an earlier send is excluded by that send forever.
     entry.crowd = entry.crowd === undefined
-      ? covering
-      : covering.filter((a) => entry.crowd!.includes(a));
+      ? covered
+      : covered.filter((a) => entry.crowd!.includes(a));
   } catch {
     // A chain that will not answer is not evidence about the crowd, in either direction.
   }

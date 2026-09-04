@@ -389,6 +389,46 @@ test("THE CROWD IS ZERO when nobody else was publishing, and that is the modal c
   } finally { server.close(); }
 });
 
+test("THE CROWD ONLY NARROWS, and nothing tested that until the arithmetic was unified", async () => {
+  // The behaviour `crowdOf` does not model, and the reason the shipped path could not simply be
+  // replaced by it. `crowdOf` answers "given these uploads, how many accounts cover them" for one
+  // moment. The client answers something stronger and stateful: **which accounts have covered
+  // EVERY send so far**, intersected and persisted between invocations.
+  //
+  // That difference is the whole cost of the parallel implementation. The tests exercised the
+  // pure function; users got the stateful one; and the stateful half — the half that decides the
+  // number a person is shown before deciding when to send — had no test at all.
+  const { alice, server } = await pair();
+  try {
+    // First send: two accounts cover it.
+    await sendMessage(alice, memoryChain({ crowd: [
+      publishingAt("0xaaa", T0 - 60_000, spread),
+      publishingAt("0xbbb", T0 - 90_000, spread),
+    ] }), "bob", "ephemeral", "one", T0);
+    assert.deepEqual([...alice.channels.bob.crowd!].sort(), ["0xaaa", "0xbbb"]);
+
+    // Second send, and this time the chain can only account for one of them. The crowd must
+    // become the INTERSECTION — an account that failed to cover an earlier send is excluded by
+    // that send forever, because the operator saw that send too.
+    await sendMessage(alice, memoryChain({ crowd: [
+      publishingAt("0xaaa", T0 - 60_000, spread),
+    ] }), "bob", "ephemeral", "two", T0);
+    assert.deepEqual(alice.channels.bob.crowd, ["0xaaa"],
+      "the crowd was replaced rather than intersected — a later send restored an account that an "
+      + "earlier one had already ruled out");
+    assert.equal(linkabilityOf(alice, "bob").identified, 1 / 2);
+
+    // And it cannot GROW. A third send that a new account covers does not add them, because they
+    // did not cover the first two.
+    await sendMessage(alice, memoryChain({ crowd: [
+      publishingAt("0xaaa", T0 - 60_000, spread),
+      publishingAt("0xzzz", T0 - 70_000, spread),
+    ] }), "bob", "ephemeral", "three", T0);
+    assert.deepEqual(alice.channels.bob.crowd, ["0xaaa"],
+      "a newly-seen account joined a crowd it had not covered from the start");
+  } finally { server.close(); }
+});
+
 test("and NOT MEASURED is still reachable, deliberately rather than by accident", async () => {
   // The state the whole suite was silently in. It stays reachable and stays distinct: a chain
   // with no `publishers` cannot answer, and cannot-answer is not the same claim as measured-zero.

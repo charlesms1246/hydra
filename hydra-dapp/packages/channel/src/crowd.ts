@@ -44,9 +44,31 @@ export function crowdOf(
   others: readonly Publisher[],
   windowMs: number,
 ): number {
+  return covering(uploads, others, windowMs).length;
+}
+
+/**
+ * The publishers whose own activity covers every one of these uploads.
+ *
+ * THE PREDICATE, IN ONE PLACE. `crowdOf` is its length and the client wants its members, and
+ * until this existed the client had its own copy of the same `every`/`some` test written inline.
+ * That is the stub problem with the polarity reversed: not a test written from the code, but a
+ * TESTED FUNCTION NOBODY RAN, while users got a second implementation with nothing forcing the
+ * two to agree. This feature has already produced four bugs invisible to hermetic tests; a second
+ * copy of its arithmetic is the last thing it needs.
+ *
+ * A publisher covers an upload when they published in the same jitter window — `u >= t` and
+ * `u < t + windowMs`. Half-open, because a window that included both ends would count a publisher
+ * whose only activity was the instant the window closed.
+ */
+export function covering(
+  uploads: readonly number[],
+  others: readonly Publisher[],
+  windowMs: number,
+): Publisher[] {
   if (uploads.length === 0) throw new Error("a crowd is measured against uploads, and there are none");
   return others.filter((p) =>
-    uploads.every((u) => p.times.some((t) => u >= t && u < t + windowMs))).length;
+    uploads.every((u) => p.times.some((t) => u >= t && u < t + windowMs)));
 }
 
 /**
