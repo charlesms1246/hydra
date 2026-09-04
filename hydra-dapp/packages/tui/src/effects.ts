@@ -81,9 +81,15 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
       // ONE OBJECT PER TICK, not everything due. The one-second tick is the pacing, so a client
       // that has fallen behind trickles rather than dumping — see `FLUSH_LIMIT`. Sleeping inside
       // the effect would stall every other effect behind it; the timer already does the job.
-      const r = await flush(state, deps.now(), deps.fetchImpl, FLUSH_LIMIT);
-      deps.save(state);
-      return { t: "ok", state, text: `uploaded ${r.uploaded}, ${r.waiting} still scheduled` };
+      // Saved in a `finally` for the reason the CLI is: `flush` spends an invite per successful
+      // upload and commits its own progress, and that only reaches disk if this runs. Without it
+      // a partial flush leaves spent codes looking unspent and uploaded objects still queued.
+      try {
+        const r = await flush(state, deps.now(), deps.fetchImpl, FLUSH_LIMIT);
+        return { t: "ok", state, text: `uploaded ${r.uploaded}, ${r.waiting} still scheduled` };
+      } finally {
+        deps.save(state);
+      }
     }
     case "collect": {
       const r = await collect(state, deps.fetchImpl);

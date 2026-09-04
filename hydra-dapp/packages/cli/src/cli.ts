@@ -403,9 +403,16 @@ switch (command) {
         `${due} objects are due. They go up one at a time, spread out on purpose: all of them at `
         + "once is a batch the vault operator can group as one client's message and its cover.");
     }
-    const { uploaded, waiting } = await drain(state);
-    save(state);
-    console.log(`uploaded ${uploaded}, ${waiting} still waiting`);
+    // SAVED EVEN WHEN THE DRAIN THROWS. `flush` spends an invite per successful upload and now
+    // commits its own progress in a `finally`, but that progress only reaches the disk if this
+    // saves too — otherwise a vault that refuses the fourth object leaves three burnt codes on
+    // disk looking unspent, and the next flush presents them again.
+    try {
+      const { uploaded, waiting } = await drain(state);
+      console.log(`uploaded ${uploaded}, ${waiting} still waiting`);
+    } finally {
+      save(state);
+    }
     break;
   }
 

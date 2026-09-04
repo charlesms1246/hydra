@@ -748,28 +748,40 @@ export async function flush(
       + "them too, at the cover rate per message. Get more before flushing.");
   }
   const uploaded: string[] = [];
-  for (const p of due) {
-    const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}/${p.id}`, {
-      method: "PUT",
-      headers: {
-        "x-hydra-invite": state.invites[0],
-        ...(p.deleteHash ? { "x-hydra-delete-hash": p.deleteHash } : {}),
-      },
-      body: new Uint8Array(Buffer.from(p.bodyB64, "base64")),
-    });
-    if (res.status === 429) {
-      throw new Error(
-        "the vault is rate limiting this client. cover multiplies a client's request rate by "
-        + "the cover rate plus one, so a vault tuned for bare messages refuses the clients "
-        + "doing the timing defence correctly. nothing was lost — run `hydra flush` again.");
-    }
-    if (!res.ok) throw new Error(`the vault refused ${p.id.slice(0, 12)}…: ${await res.text()}`);
-    state.invites.shift();
-    uploaded.push(p.id);
+  // PROGRESS IS COMMITTED EVEN WHEN A LATER UPLOAD THROWS, and it was not. An invite is spent per
+  // successful `PUT`, and the line that clears `pending` sat AFTER the loop — so a vault that
+  // refused the fourth object left three objects already accepted still queued and three invites
+  // already burnt, and the caller's `save` never ran either. The next flush then re-presented dead
+  // codes and re-uploaded objects the vault had.
+  //
+  // That is state corruption on the path a source uses under pressure, against the one resource
+  // this client cannot obtain more of. The `finally` makes the file agree with what happened; the
+  // error still propagates, because a caller that is not told is a caller that tries again blind.
+  try {
+    for (const p of due) {
+      const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}/${p.id}`, {
+        method: "PUT",
+        headers: {
+          "x-hydra-invite": state.invites[0],
+          ...(p.deleteHash ? { "x-hydra-delete-hash": p.deleteHash } : {}),
+        },
+        body: new Uint8Array(Buffer.from(p.bodyB64, "base64")),
+      });
+      if (res.status === 429) {
+        throw new Error(
+          "the vault is rate limiting this client. cover multiplies a client's request rate by "
+          + "the cover rate plus one, so a vault tuned for bare messages refuses the clients "
+          + "doing the timing defence correctly. nothing was lost — run `hydra flush` again.");
+      }
+      if (!res.ok) throw new Error(`the vault refused ${p.id.slice(0, 12)}…: ${await res.text()}`);
+        state.invites.shift();
+        uploaded.push(p.id);
+      }
+  } finally {
+    const done = new Set(uploaded);
+    state.pending = state.pending.filter((p) => !done.has(p.id));
   }
-  const done = new Set(uploaded);
-  state.pending = state.pending.filter((p) => !done.has(p.id));
-  return { uploaded: due.length, waiting: state.pending.length };
+  return { uploaded: uploaded.length, waiting: state.pending.length };
 }
 
 /**
