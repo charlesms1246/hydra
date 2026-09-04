@@ -3,6 +3,7 @@ import { PageFrame } from "../components/PageFrame.tsx";
 import { Nav } from "../components/Nav.tsx";
 import { Section } from "../components/Section.tsx";
 import { Footer } from "../components/Footer.tsx";
+import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
 
 /**
  * The landing page. Marketing, and only marketing.
@@ -59,8 +60,21 @@ export default function Home() {
               <li key={line}>{line}</li>
             ))}
           </ul>
+          {/*
+            The shape of the disclosure, without any of its text.
+
+            The landing page may not quote a generated claim — that is the rule that makes the
+            split between this page and `/about/disclosure/` honest rather than a demotion. A count
+            is not a claim, so this shows the *shape*: forty things a party can see against eleven
+            they cannot. It is the strongest argument on the page and it makes none of the
+            sentences the page is forbidden from making.
+          */}
+          <div className="fig-map">
+            <DisclosureMap />
+          </div>
+
           <p className="cta">
-            <a href="/disclosures/">Read what every party can see &rarr;</a>
+            <a href="/about/disclosure/">Read what every party can see &rarr;</a>
           </p>
         </Section>
       </main>

@@ -8,6 +8,7 @@ import { Section } from "../../../components/Section.tsx";
 import { ClaimList } from "../../../components/ClaimList.tsx";
 import { Auditor } from "../../../components/Auditor.tsx";
 import { Footer } from "../../../components/Footer.tsx";
+import { DisclosureMap } from "../../../components/viz/DisclosureMap.tsx";
 
 /**
  * Everything the landing page does not say.
@@ -47,6 +48,10 @@ export default function Disclosures() {
             file that makes it true.
           </p>
         </header>
+
+        <div className="fig-map">
+          <DisclosureMap />
+        </div>
 
         <Section n="01" id="auditor" title="THE AUDITOR">
           <Auditor />

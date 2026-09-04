@@ -5,6 +5,8 @@ import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Auditor } from "../../components/Auditor.tsx";
+import { MessagePath } from "../../components/viz/MessagePath.tsx";
+import { AnonymitySet } from "../../components/viz/AnonymitySet.tsx";
 import { Footer } from "../../components/Footer.tsx";
 
 /**
@@ -64,6 +66,7 @@ export default function Pitch() {
               {p.mechanism.body[1]}
             </p>
           </div>
+          <MessagePath />
         </Section>
 
         {/*
@@ -92,6 +95,7 @@ export default function Pitch() {
               {p.why.body[1]}
             </p>
           </div>
+          <AnonymitySet />
           <p className="cta">
             <a href="/about/disclosure/">Read what every party can see &rarr;</a>
           </p>

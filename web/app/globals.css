@@ -1180,3 +1180,70 @@ html[data-build="public"] .wordmark {
   letter-spacing: 0.05em;
   color: var(--white);
 }
+
+/* --------------------------------------------------------------------------------------------
+ * Figures.
+ *
+ * Inline SVG, generated from the same constants the prose quotes — see `components/viz/Figure.tsx`
+ * for why a drawing on this site cannot have an independent source. No library, no script, no
+ * request; the only kind of illustration that can exist under these constraints, and by luck the
+ * only kind that can be generated.
+ * ------------------------------------------------------------------------------------------ */
+
+/*
+ * Capped well below the prose measure.
+ *
+ * These are drawn at a viewBox of a few hundred units, so a container the width of the text column
+ * scales every label to twenty-odd pixels and the figure reads as a poster. A figure on this site
+ * is a diagram in the margin of an argument, not an illustration the argument hangs off — at this
+ * width its labels sit at about the size of the monospace metadata elsewhere on the page, which is
+ * where they belong.
+ */
+.fig {
+  margin: clamp(2.5rem, 6vh, 4rem) 0 0;
+  max-width: 44rem;
+}
+
+.fig svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Mono, and small — a figure's labels are the metadata column, not a second body text. */
+.fig-tick {
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+}
+
+.fig figcaption {
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.4;
+  color: var(--g-64);
+  margin-top: 1.25rem;
+  max-width: 52ch;
+  border-left: 1px solid var(--g-20);
+  padding-left: 1rem;
+}
+
+/*
+ * The map is capped narrow on purpose.
+ *
+ * Its viewBox is ~237 units across, so a container the width of the page scales each cell to
+ * forty-odd pixels and the thing reads as a chart of large blocks. It is not a chart — it is a
+ * count, and a count wants to be dense enough that the eye takes the ratio in one go rather than
+ * counting. At this width a cell is about eighteen pixels and forty against eleven lands
+ * immediately.
+ */
+.fig-map {
+  max-width: 30rem;
+}
+
+@media (max-width: 48rem) {
+  .fig-tick {
+    font-size: 8px;
+  }
+}
