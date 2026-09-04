@@ -129,6 +129,11 @@ test("POST, REPORT, REVIEW, REMOVE, APPEAL, PUBLISH — against an object a user
       //    operator's command did not print until this test asked for it.
       assert.match(report, new RegExp(post.id),
         "the report does not name the removed object, though the disclosure table says it does");
+      // AND IT DOES NOT CLAIM THE LIST PROVES ANYTHING. Absence is checkable; existence is not,
+      // because a public post makes no on-chain commitment. A transparency report that overstates
+      // its own auditability is worse than one that admits it has none — see decisions/0039.
+      assert.match(report, /SELF-REPORTED/);
+      assert.match(report, /cannot check that the object ever existed/);
     } finally {
       chain.close();
       intake.server.close();

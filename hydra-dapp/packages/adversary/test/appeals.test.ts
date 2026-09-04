@@ -172,6 +172,22 @@ test("the moderation table names every surface moderation actually has", () => {
   // And the connection row says the two things that make it honest: what is visible, and that
   // relaying is a real but PARTIAL mitigation — a reporter who submits from their own connection
   // still tells the operator they were the one who looked.
+  // `report.published` must not claim a verifiability it does not have. Its justification once
+  // read "the on-chain commitment still stands, so a removal anybody can verify against it" — a
+  // mechanism that does not exist for a class that never touches the chain. The replacement then
+  // asserted a WEAKER property in the same confident register: absence is not existence.
+  const published = MODERATION_OBSERVABLE.find((o) => o.id === "report.published")!;
+  assert.match(published.why, /SELF-REPORTED/);
+  assert.match(published.why, /PROVES ABSENCE, NOT THAT THE OBJECT EVER EXISTED/);
+  // Checked against the row with BACKTICKED SPANS REMOVED, because the row quotes the wording it
+  // is correcting and a guard that greps the raw text fires on the correction itself. Fourth time
+  // an accurate explanation has broken a guard here — `grep()` in the mechanism checks strips
+  // comments for the same reason. What must be absent is the CLAIM, not the string.
+  const asserted = published.why.replace(/`[^`]*`/g, "");
+  assert.ok(!/commitment still stands/.test(asserted),
+    "the row claims an on-chain commitment that a public post does not create");
+  assert.match(published.why, /decisions\/0039/, "the row does not point at the open decision");
+
   const conn = MODERATION_OBSERVABLE.find((o) => o.id === "report.connection")!;
   assert.match(conn.what, /network address/);
   assert.match(conn.why, /relayed/);

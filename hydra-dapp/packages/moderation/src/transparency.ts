@@ -207,9 +207,14 @@ export function report(
           ...removed.map((d) => `  ${d.blobId}`),
           "",
           "These are named rather than counted. The object was public, so its id was already",
-          "public — it is how anyone fetched it. Naming it is what lets somebody check that a",
-          "removal we claim actually happened, and it is a permanent index of removed content,",
-          "which is the cost. Encrypted objects never appear here."]
+          "public — it is how anyone fetched it — and naming it costs a permanent index of",
+          "removed content.",
+          "",
+          "WHAT THIS LIST DOES NOT DO IS PROVE ANYTHING. You can ask for one of these ids and",
+          "find it absent; you cannot check that the object ever existed, because nothing",
+          "attests that it did. A public post makes no on-chain commitment. So this list is",
+          "SELF-REPORTED: an operator who quietly dropped a post and never listed it here would",
+          "look exactly like one who never received it. See decisions/0039."]
         : []),
       "",
       "Deletions of encrypted objects are not listed. Those are people deleting their own",
