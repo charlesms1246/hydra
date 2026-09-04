@@ -26,6 +26,19 @@
  * The direction of failure is not symmetric, which is lesson 5: a matcher that sees too much
  * produces noise somebody investigates, and a matcher that sees too little produces a green suite.
  * When you make one smarter, check what it stopped seeing.
+ *
+ * **AND THE SECOND HALF OF THE SAME DISCIPLINE: a list must be checked for whether it ever sees
+ * anything.** A matcher is checked for what it stopped seeing; a vocabulary, an allowlist or a
+ * fixture set is checked for whether it still has something to catch. Three instruments here carry
+ * that check explicitly — the typecheck gate fails if the must-not-compile fixtures stop erroring,
+ * the forbidden-claim list asserts it contains phrases that really shipped, and this sweep fails if
+ * its scan finds implausibly few candidates. Each of those would otherwise pass forever by
+ * measuring nothing, which is the same disease as counting an aggregate instead of checking members.
+ *
+ * It is not sufficient on its own: the forbidden list had `cannot be traced` and not
+ * `cannot be linked`, so it was demonstrably catching things and still missed a claim that had
+ * already shipped. A calibrated list proves the instrument works; it does not prove the vocabulary
+ * is complete.
  */
 
 /**
