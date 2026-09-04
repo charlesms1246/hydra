@@ -25,6 +25,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -159,4 +160,46 @@ test("THE STARTUP BANNER SAYS WHETHER TAKEDOWN WORKS, so the next one announces 
   });
   assert.match(banner, /takedown\s+public takedown DISABLED/,
     "a vault that cannot take anything down did not say so when it started");
+});
+
+test("THE VAULT MINTS INVITE CODES, and says what handing them out decides", async () => {
+  // Nothing generated codes; `--invites` took a list somebody typed. An operator inventing codes
+  // by hand invents one per person, and that single habit undoes every other defence here: the
+  // code arrives in the same request as the object, so it names the uploader with no cryptography.
+  // `invite.issuance` on the DERIVABLE table carries the disclosure; this is the warning at the
+  // point where the choice is actually made.
+  const { stdout, stderr } = await promisify(execFile)("node",
+    ["--experimental-strip-types", MAIN, "--generate-invites", "12"]);
+  const codes = stdout.trim().split("\n");
+  assert.equal(codes.length, 12);
+  assert.equal(new Set(codes).size, 12, "two codes collided");
+  for (const c of codes) {
+    assert.match(c, /^[0-9a-f]{32}$/, "a code is not 128 bits of hex, so it may be guessable");
+  }
+  // The warning, and the part of it that is easy to leave out: the open-batch practice is not free.
+  assert.match(stderr, /PRIVACY DECISION/);
+  assert.match(stderr, /A code you give to one named person is an identity/);
+  assert.match(stderr, /PUBLISH A BATCH OPENLY/);
+  assert.match(stderr, /not free/,
+    "the open-batch practice is presented without its cost — an open code is usable by anyone");
+  assert.match(stderr, /rate limiting that anyone can exhaust/);
+  // And it does not start a server: minting is not running.
+  assert.ok(!stdout.includes("vault on"), "generating codes started a vault");
+});
+
+test("and the startup banner says it too, beside the other capability states", async () => {
+  // The banner already announces the limiter, storage, takedown and transport. The invite count
+  // was printed as a bare number, which reads as inventory rather than as a decision.
+  const child = execFile("node", ["--experimental-strip-types", MAIN, "--port", "0",
+    "--invites", "a,b"]);
+  const banner = await new Promise<string>((ok) => {
+    let out = "";
+    child.stdout!.on("data", (d: Buffer) => {
+      out += d.toString();
+      if (out.includes("transport ")) { child.kill(); ok(out); }
+    });
+  });
+  assert.match(banner, /invites {2}2/);
+  assert.match(banner, /whether they are an identity/,
+    "the invite count is printed as inventory, with nothing saying what issuing them decides");
 });

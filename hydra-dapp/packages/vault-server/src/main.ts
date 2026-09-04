@@ -6,6 +6,7 @@
  * until now it was a class with an HTTP adapter and no way to start it — which meant the
  * disclosure table described something nobody could run.
  *
+ *     node packages/vault-server/src/main.ts --generate-invites 50   # mint codes and stop
  *     node packages/vault-server/src/main.ts --port 8080 --dir ./vault --invites a,b,c
  *
  * Add `--removal-token-file ./removal.token` to be able to take a public post down. Without it
@@ -19,6 +20,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 
 import { Vault } from "./server.ts";
 import { serve } from "./http.ts";
@@ -31,6 +33,39 @@ const flag = (name: string, fallback = ""): string => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : fallback;
 };
+
+/**
+ * Mint invite codes and stop, without starting a server.
+ *
+ * BECAUSE AN OPERATOR WHO HAS TO INVENT CODES BY HAND WILL INVENT ONE PER PERSON, and that single
+ * habit undoes everything else this vault does. An upload requires a code, the only way to get one
+ * is from the operator, and `hydra init --invites` is the only way in — so on the submission
+ * surface a source asks the organisation for permission to upload BEFORE their first message. If
+ * the codes are per-person, the invite is an identity acquired before anything else happens, and it
+ * dominates the timing defence, the cover traffic and the padded read alike. See
+ * `decisions/0038` and the `invite.issuance` row.
+ *
+ * 128 bits from the OS, so a code cannot be guessed and nothing about it encodes who it is for.
+ */
+const generate = Number(flag("generate-invites", "0"));
+if (generate > 0) {
+  for (let i = 0; i < generate; i++) console.log(randomBytes(16).toString("hex"));
+  console.error("");
+  console.error(`${generate} invite codes. Each buys ONE upload, and one message costs several —`);
+  console.error("a client sends its cover objects alongside the message, and every one of them is");
+  console.error("an upload. Issue accordingly, or the timing defence is what runs out first.");
+  console.error("");
+  console.error("HOW YOU HAND THESE OUT IS A PRIVACY DECISION, and it is the one this vault cannot");
+  console.error("make for you or see you make. A code you give to one named person is an identity:");
+  console.error("it arrives in the same request as their object, so you can name the uploader of");
+  console.error("anything, with no cryptography and no correlation work.");
+  console.error("");
+  console.error("If you are accepting anonymous submissions, PUBLISH A BATCH OPENLY so that holding");
+  console.error("one identifies nobody. That is not free: an open code is usable by anyone, so your");
+  console.error("abuse control degrades to per-code rate limiting that anyone can exhaust. That is");
+  console.error("the trade, and it is a real one — see claude-docs/decisions/0038.");
+  process.exit(0);
+}
 
 const invites = flag("invites").split(",").filter(Boolean);
 const vault = new Vault({
@@ -90,7 +125,10 @@ const { url } = await serve(vault, Number(flag("port", "8080")), {
 });
 
 console.log(`vault on ${url}`);
-console.log(`invites  ${invites.length}`);
+console.log(`invites  ${invites.length}`
+  + (invites.length ? "  (how you hand these out decides whether they are an identity —" : "")
+  + (invites.length ? "\n         one per named person makes the invite an identity that arrives"
+    + "\n         with the object. `--generate-invites N` explains the trade.)" : ""));
 console.log(`storage  ${flag("dir") || "memory only — everything is lost on restart"}`);
 console.log(`limiter  ${mode}${mode === "none" ? "" : ` at ${perMinute}/min`}`
   + `${mode === "per-peer" ? "  (adds rate.peerBucket to the table)" : ""}`);
