@@ -1,7 +1,7 @@
 /**
  * Where a running stack records itself, so any later process — an agent command,
- * the TUI, another shell — can find it. Without this, `hydra up` and
- * `hydra indexer --status` are unrelated programs.
+ * the TUI, another shell — can find it. Without this, `hydra-dev up` and
+ * `hydra-dev indexer --status` are unrelated programs.
  */
 
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";

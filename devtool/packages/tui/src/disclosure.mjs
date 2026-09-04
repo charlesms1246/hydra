@@ -28,8 +28,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..");
 
 /**
- * The configuration `hydra up` actually runs. Defined once, in the CLI, and
- * re-exported here: `hydra leak --json` and this matrix are the same pane, and a
+ * The configuration `hydra-dev up` actually runs. Defined once, in the CLI, and
+ * re-exported here: `hydra-dev leak --json` and this matrix are the same pane, and a
  * second copy of the config is the one way they could describe different
  * machines. See agentcmds.mjs for why `network` is omitted.
  */
@@ -48,7 +48,7 @@ export { leakConfig };
  */
 export const CONFIG_FIXED = [
   // Two arguments — `new IndexerDiscoveryProvider(indexerUrl, poolAddress)` — so
-  // no OHTTP relay is configured for the discovery calls `hydra up` makes.
+  // no OHTTP relay is configured for the discovery calls `hydra-dev up` makes.
   ["ohttp OFF", "ohttp OFF", "packages/cli/src/control.mjs:36"],
   // leakConfig() omits `network` on purpose; leak.mjs then names no auditor key.
   ["network UNKNOWN", "network UNKNOWN", "devnet, not mainnet or sepolia"],

@@ -12,7 +12,7 @@
     "node": ">=24"
   },
   "bin": {
-    "hydra": "packages/cli/src/cli.mjs"
+    "hydra-dev": "packages/cli/src/cli.mjs"
   },
   "files": [
     "packages/cli",

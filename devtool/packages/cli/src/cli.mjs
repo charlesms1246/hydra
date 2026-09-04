@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * hydra — one entry point for the local STRK20 stack.
+ * hydra-dev — one entry point for the local STRK20 stack.
  *
- * Two audiences, one implementation. A developer runs `hydra` for the TUI; an
- * agent runs `hydra indexer --status --json` and parses the result. Both go
+ * Two audiences, one implementation. A developer runs `hydra-dev` for the TUI; an
+ * agent runs `hydra-dev indexer --status --json` and parses the result. Both go
  * through COMMANDS in agentcmds.mjs, so they can never report different things.
  */
 
@@ -16,24 +16,24 @@ const args = argv.slice(1);
 const asJson = argv.includes("--json");
 
 function usage() {
-  const pad = (s) => s.padEnd(12);
+  const pad = (s) => s.padEnd(18);
   console.log(`
-  hydra — local STRK20 privacy stack
+  hydra-dev — local STRK20 privacy stack
 
   Interactive
-    hydra                     open the TUI
-    hydra bootstrap           install node dependencies (run this first)
-    hydra up                  start devnet + pool + local discovery service
-    hydra down                stop a running stack
-    hydra init dapp           scaffold the STRK20 starter kit against this stack
+    hydra-dev                 open the TUI
+    hydra-dev bootstrap       install node dependencies (run this first)
+    hydra-dev up              start devnet + pool + local discovery service
+    hydra-dev down            stop a running stack
+    hydra-dev init dapp       scaffold the STRK20 starter kit against this stack
 
   Status — every one of these takes --json for agents
-${Object.entries(COMMANDS).map(([n, c]) => `    ${pad("hydra " + n)}  ${c.help}`).join("\n")}
+${Object.entries(COMMANDS).map(([n, c]) => `    ${pad("hydra-dev " + n)}  ${c.help}`).join("\n")}
 
   Examples
-    hydra indexer --status --json
-    hydra faucet --address 0x34ba… --amount 1e18
-    hydra tx 0x07f1…
+    hydra-dev indexer --status --json
+    hydra-dev faucet --address 0x34ba… --amount 1e18
+    hydra-dev tx 0x07f1…
 
   HYDRA_UPSTREAM   path to a starknet-privacy checkout
   HYDRA_HOME       where the running stack records itself (default ~/.hydra)
@@ -47,7 +47,7 @@ if (cmd === undefined || cmd === "tui") {
   const missing = missingDeps();
   if (missing.length) {
     console.error(`\n  dependencies not installed: ${missing.map((m) => "packages/" + m).join(", ")}`);
-    console.error("  run:  hydra bootstrap\n");
+    console.error("  run:  hydra-dev bootstrap\n");
     process.exit(1);
   }
   const { start } = await import("../../tui/src/app.mjs");
@@ -56,7 +56,7 @@ if (cmd === undefined || cmd === "tui") {
   usage();
 } else if (cmd === "up") {
   if (!report(check())) {
-    console.error("  environment incomplete — fix the above, then rerun `hydra up`\n");
+    console.error("  environment incomplete — fix the above, then rerun `hydra-dev up`\n");
     process.exit(1);
   }
   const { up } = await import("./up.mjs");

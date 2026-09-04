@@ -1,7 +1,7 @@
 /**
  * `startStack`/`stopStack` without spawning anything.
  *
- * The real ones fork `hydra up`, which is exactly what the sandbox exists to avoid.
+ * The real ones fork `hydra-dev up`, which is exactly what the sandbox exists to avoid.
  * `startStack` returns a real EventEmitter as `child` because app.mjs attaches a
  * `close` listener to it and clears its busy state from there — a plain object would
  * leave the TUI stuck on "starting…" forever, which is the bug this shape prevents.

@@ -117,7 +117,7 @@ export const StatusBar = ({ width, svc, note }) => {
  *
  * A stack this TUI started is a devnet, a discovery service and a control API. On
  * quit that is a real choice, not a confirmation: leaving them up is the right
- * answer when you are about to run `hydra status` or a test, and the wrong one
+ * answer when you are about to run `hydra-dev status` or a test, and the wrong one
  * when you are done for the day. Neither is safe to assume, so it asks, and it
  * says what is still running.
  */

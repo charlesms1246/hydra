@@ -84,7 +84,7 @@ export const BUILD_HINTS = {
 
 /**
  * Traps found the hard way while getting upstream's e2e suite green. Printed by
- * `hydra doctor` because none of them are in upstream's e2e README.
+ * `hydra-dev doctor` because none of them are in upstream's e2e README.
  */
 export const GOTCHAS = [
   "Do NOT set RUST_LOG=error for the e2e suite. The harness waits for the discovery " +
@@ -100,6 +100,6 @@ export const GOTCHAS = [
   "WSL2 in networkingMode=mirrored blackholes connections to unbound 127.0.0.1 ports " +
     "instead of refusing them (::1 still refuses, so it looks fine until something probes " +
     "IPv4). starknet-devnet's npm wrapper treats anything but ECONNREFUSED as fatal while " +
-    "picking a port, so `hydra up` dies with `connect ETIMEDOUT 127.0.0.1:6050` after ~135s " +
+    "picking a port, so `hydra-dev up` dies with `connect ETIMEDOUT 127.0.0.1:6050` after ~135s " +
     "and never spawns devnet. The `loopback refuses` doctor row detects this.",
 ];

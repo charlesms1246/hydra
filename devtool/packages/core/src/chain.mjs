@@ -5,7 +5,7 @@ import { readState } from "./state.mjs";
 
 export async function latestBlocks(n = 8) {
   const st = await readState();
-  if (!st) return { available: false, reason: "no running stack — run `hydra up`" };
+  if (!st) return { available: false, reason: "no running stack — run `hydra-dev up`" };
   const head = await rpc(st.devnetUrl, "starknet_blockNumber");
   if (!head.ok) return { available: false, reason: head.error };
   const top = head.result;
@@ -41,7 +41,7 @@ export async function latestBlocks(n = 8) {
  */
 export async function txStatus(hash) {
   const st = await readState();
-  if (!st) return { available: false, reason: "no running stack — run `hydra up`" };
+  if (!st) return { available: false, reason: "no running stack — run `hydra-dev up`" };
   const r = await rpc(st.devnetUrl, "starknet_getTransactionReceipt", [hash]);
   if (!r.ok) return { available: true, found: false, error: r.error };
   const rc = r.result;

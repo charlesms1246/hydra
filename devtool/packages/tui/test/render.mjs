@@ -629,7 +629,7 @@ check_("every rig pane has a `hydra <cmd> --json` twin", () => {
 });
 
 const leakCmd = await COMMANDS.leak.run(["transfer"]);
-check_("the home screen has a `hydra leak --json` twin, on the same config", () => {
+check_("the home screen has a `hydra-dev leak --json` twin, on the same config", () => {
   if (!COMMANDS.leak) throw new Error("COMMANDS has no `leak`; the disclosure matrix has no CLI twin");
   const mine = leakConfig(s);
   if (leakCmd.config.discovery !== mine.discovery || leakCmd.config.proving !== mine.proving) {
@@ -652,8 +652,8 @@ check_("the home screen has a `hydra leak --json` twin, on the same config", () 
     }
   }
   const text = COMMANDS.leak.render(leakCmd);
-  if (!text.includes("NOT a claim of privacy")) throw new Error("`hydra leak` renders no gloss for NOT_DISCLOSED");
-  return "hydra leak · 30 cells identical to the pane's";
+  if (!text.includes("NOT a claim of privacy")) throw new Error("`hydra-dev leak` renders no gloss for NOT_DISCLOSED");
+  return "hydra-dev leak · 30 cells identical to the pane's";
 });
 
 // ---------------------------------------------------------------------------
@@ -1082,7 +1082,7 @@ check_("addresses are printed in full, padded the way an explorer prints them", 
 }
 
 check_("no declared action shape asserts a chain fact it cannot read", () => {
-  // `hydra leak transfer` used to ship `opensChannel: false` — the reassuring branch —
+  // `hydra-dev leak transfer` used to ship `opensChannel: false` — the reassuring branch —
   // so the agent-facing surface answered NOT_DISCLOSED_BY_THIS_TX with the reason "the
   // caller states the channel already exists", about a caller who had stated nothing.
   // On a fresh stack that is wrong: get_num_of_channels(bob) is 0 before the first

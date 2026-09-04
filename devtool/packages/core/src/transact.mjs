@@ -1,5 +1,5 @@
 /**
- * Client for the control API that `hydra up` exposes.
+ * Client for the control API that `hydra-dev up` exposes.
  *
  * Every call runs a real transaction against the local pool: proving, the
  * 10-block maturity advance, and an outside execution. They take seconds, not
@@ -12,7 +12,7 @@ import { fetchJson } from "./probe.mjs";
 async function control(path, body, timeoutMs = 180000) {
   const st = await readState();
   if (!st?.controlUrl) {
-    return { ok: false, error: "no running stack — start one with `hydra up` (or u in the TUI)" };
+    return { ok: false, error: "no running stack — start one with `hydra-dev up` (or u in the TUI)" };
   }
   const r = await fetchJson(`${st.controlUrl}/${path}`, { method: "POST", body: body ?? {}, timeoutMs });
   if (!r.ok) return { ok: false, error: r.json?.error ?? r.error ?? `http ${r.status}` };

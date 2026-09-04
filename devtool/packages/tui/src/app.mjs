@@ -196,7 +196,7 @@ function App() {
   const up = Boolean(svc?.devnet?.up);
 
   // The Run builder's `from` and `to` are pickers over the stack's own accounts, so
-  // the field list is derived rather than typed. `hydra up` with more accounts puts
+  // the field list is derived rather than typed. `hydra-dev up` with more accounts puts
   // them in the picker; no stack puts none, and the hint says so.
   const runFieldDefs = useMemo(() => {
     const syms = Object.keys(svc?.tokens ?? {});
@@ -296,7 +296,7 @@ function App() {
   const bringUp = useCallback((env = {}) => {
     if (stackRef.current) return note("a stack is already supervised by this TUI", "warn");
     setBusy({ label: "starting the stack — this takes a moment", since: Date.now() });
-    setLogTitle("hydra up");
+    setLogTitle("hydra-dev up");
     setLog([]);
     setPage("log");
     setNavCursor(pageIndex("log"));
@@ -326,7 +326,7 @@ function App() {
       return note("stack down", "ok");
     }
     // No supervised child: signal the recorded pids. This is the path `d` takes
-    // when devnet has already died and the indexer from the same `hydra up` is
+    // when devnet has already died and the indexer from the same `hydra-dev up` is
     // still alive, which is why the binding is not gated on a live devnet.
     const r = await stopStack();
     addLine(r.ok ? `signalled ${r.killed.join(", ") || "nothing"}` : r.reason, r.ok ? "info" : "warn");
@@ -660,7 +660,7 @@ function App() {
      *
      * A stack this TUI started is a devnet, a discovery service and a control API,
      * and both answers are right some of the time: leaving them up is what you want
-     * before running `hydra status` or a test, and wrong when you are done. The old
+     * before running `hydra-dev status` or a test, and wrong when you are done. The old
      * prompt only appeared when something was mid-flight and always signalled the
      * stack, so the background case needed you to kill the terminal instead.
      */
@@ -968,7 +968,7 @@ export async function start() {
     const { COMMANDS } = await import("../../cli/src/agentcmds.mjs");
     const s = await COMMANDS.status.run();
     console.log("\n" + COMMANDS.status.render(s));
-    console.log("\n  (not a tty — no TUI. `hydra help` lists the --json commands.)\n");
+    console.log("\n  (not a tty — no TUI. `hydra-dev help` lists the --json commands.)\n");
     return;
   }
   // What shape a cell is, asked of the terminal rather than assumed, so the mark is

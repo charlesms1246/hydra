@@ -2,7 +2,7 @@
  * The simulated world, over the wire.
  *
  * One HTTP server plays three roles the real stack splits across processes: devnet's
- * JSON-RPC, the discovery service's /health, and `hydra up`'s control API. It exists so
+ * JSON-RPC, the discovery service's /health, and `hydra-dev up`'s control API. It exists so
  * the TUI can reach the world through the real @hydra/core — real probe.mjs timeouts,
  * real u256 balance parsing, real error shapes — rather than through a stubbed core that
  * could drift from what ships.

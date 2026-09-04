@@ -5,6 +5,6 @@
   "type": "module",
   "description": "One command to a working local STRK20 privacy stack",
   "bin": {
-    "hydra": "src/cli.mjs"
+    "hydra-dev": "src/cli.mjs"
   }
 }

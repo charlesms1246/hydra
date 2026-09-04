@@ -1,7 +1,7 @@
 /**
  * Starting and stopping the stack as a managed child process.
  *
- * `hydra up` holds devnet in its own process and tears it down on SIGTERM, so
+ * `hydra-dev up` holds devnet in its own process and tears it down on SIGTERM, so
  * supervising it is a matter of spawning it and signalling it — not
  * reimplementing any of it here.
  */
@@ -23,7 +23,7 @@ export async function isRunning() {
 }
 
 /**
- * Spawns `hydra up`. Returns the child plus a stop() that signals it and waits.
+ * Spawns `hydra-dev up`. Returns the child plus a stop() that signals it and waits.
  * Output is streamed through onLine so a caller can show progress — bringing the
  * stack up takes tens of seconds and silence reads as a hang.
  */

@@ -161,7 +161,7 @@ export const BINDINGS = [
   { scope: "global", keys: ["u"], label: "start the stack", mutates: true,
     when: (s) => !s.up, run: (s, a) => a.bringUp() },
   // Deliberately NOT gated on s.up. The half-dead stack — devnet gone, the
-  // indexer child from the same `hydra up` still alive with a recorded pid — is
+  // indexer child from the same `hydra-dev up` still alive with a recorded pid — is
   // exactly the state that needs cleaning up, and it is the state where s.up is
   // false.
   { scope: "global", keys: ["p"], label: "stop the stack", mutates: true,

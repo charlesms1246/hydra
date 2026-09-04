@@ -1,5 +1,5 @@
 /**
- * `hydra bootstrap` — install the node dependencies the packages need.
+ * `hydra-dev bootstrap` — install the node dependencies the packages need.
  *
  * A fresh clone has no node_modules, so the TUI died with a raw
  * ERR_MODULE_NOT_FOUND stack trace naming 'ink'. That is the first thing a new
@@ -44,6 +44,6 @@ export function bootstrap(only) {
       failed++;
     }
   }
-  console.log(failed === 0 ? "\n  ready — run `hydra` for the TUI\n" : `\n  ${failed} package(s) failed\n`);
+  console.log(failed === 0 ? "\n  ready — run `hydra-dev` for the TUI\n" : `\n  ${failed} package(s) failed\n`);
   return failed === 0;
 }

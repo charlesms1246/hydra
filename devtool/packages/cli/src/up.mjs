@@ -33,7 +33,7 @@ function freePort() {
  * ECONNREFUSED — every other error is rethrown, not skipped
  * (`node_modules/starknet-devnet/dist/util.js`, `isFreePort`). WSL2 running
  * `networkingMode=mirrored` drops connections to unbound IPv4 loopback ports instead of
- * resetting them, so that probe sits for ~135s and then throws, and `hydra up` dies with
+ * resetting them, so that probe sits for ~135s and then throws, and `hydra-dev up` dies with
  * `connect ETIMEDOUT 127.0.0.1:6050` having never spawned devnet. (`::1` still refuses
  * correctly, which is why nothing else on such a machine notices.) 6050 is exactly the
  * port it tries first: DEFAULT_DEVNET_PORT 5050 plus its 1000 step.
@@ -130,7 +130,7 @@ export async function up() {
   console.log("  starting control API…");
   const control = await startControl({ devnet, env, upstream: up_, indexerUrl });
 
-  // Publish where everything is, so `hydra status`, the agent commands and the
+  // Publish where everything is, so `hydra-dev status`, the agent commands and the
   // TUI can find a stack they did not start.
   await writeState({
     startedAt: new Date().toISOString(),

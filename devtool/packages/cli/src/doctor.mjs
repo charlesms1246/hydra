@@ -22,7 +22,7 @@ const WARN = "WARN";
  * it times out after ~135s instead of returning ECONNREFUSED in a millisecond. (`::1`
  * still refuses correctly, which is why this looks fine until something probes IPv4.)
  *
- * That breaks `hydra up` before devnet is ever spawned. `starknet-devnet`'s npm wrapper
+ * That breaks `hydra-dev up` before devnet is ever spawned. `starknet-devnet`'s npm wrapper
  * picks a port with `isFreePort()`, which connects and accepts a port as free ONLY on
  * ECONNREFUSED — every other error is rethrown (`node_modules/starknet-devnet/dist/util.js`).
  * So `up` dies with `connect ETIMEDOUT 127.0.0.1:6050` and no devnet in sight. 6050 is
@@ -113,7 +113,7 @@ export function check() {
     got: loopback,
     hint:
       "An unbound 127.0.0.1 port is blackholed here rather than refused — on WSL2 that is\n" +
-      "       `networkingMode=mirrored`. `hydra up` handles it: it chooses devnet's port by\n" +
+      "       `networkingMode=mirrored`. `hydra-dev up` handles it: it chooses devnet's port by\n" +
       "       binding instead of by connecting. The cost is a slower first readiness poll,\n" +
       "       because starknet-devnet's own health check waits out its 30s HTTP timeout once\n" +
       "       before devnet answers. Set networkingMode=NAT and `wsl --shutdown` if you want\n" +

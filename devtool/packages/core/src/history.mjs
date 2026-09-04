@@ -3,7 +3,7 @@
  *
  * Nothing recorded any of it before. The TUI's log is `useState([])` and is cleared
  * on every flow, fix and startup; its ledger is in memory; `state.json` is a flat
- * snapshot that `hydra down` deletes; the control API's log dies with the process.
+ * snapshot that `hydra-dev down` deletes; the control API's log dies with the process.
  * So "recent failures" and "tool history" were unanswerable — not hard to render,
  * unanswerable — and a Tools page claiming to show them would have been inventing.
  *

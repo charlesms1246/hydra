@@ -2,7 +2,7 @@
  * Saved run flows.
  *
  * Kept in `$HYDRA_HOME/flows.json` and NOT in `state.json`, which `clearState()`
- * deletes on `hydra down` — a flow you built is yours, and losing it because you
+ * deletes on `hydra-dev down` — a flow you built is yours, and losing it because you
  * stopped a devnet would be absurd.
  *
  * A flow stores enum members and strings only: an action type, account names or

@@ -1,10 +1,10 @@
 /**
- * `hydra init dapp` — scaffold the official STRK20 starter kit and point it at
+ * `hydra-dev init dapp` — scaffold the official STRK20 starter kit and point it at
  * whatever stack is running.
  *
  * Scaffolded on demand rather than vendored: it stays current with upstream and
  * hydra does not carry a Next.js tree it did not write. The cost is that this one
- * command needs the network, which is why it is not on the `hydra up` path.
+ * command needs the network, which is why it is not on the `hydra-dev up` path.
  */
 
 import { spawnSync } from "node:child_process";
@@ -18,7 +18,7 @@ const REPO = "https://github.com/Akashneelesh/strk20-starter-kit";
 export async function initDapp(args) {
   const what = args[0];
   if (what !== "dapp") {
-    console.error("  usage: hydra init dapp [--dir apps/dapp]");
+    console.error("  usage: hydra-dev init dapp [--dir apps/dapp]");
     return false;
   }
   const i = args.indexOf("--dir");
@@ -39,15 +39,15 @@ export async function initDapp(args) {
   const st = await readState();
   const env = st
     ? [
-        "# Written by `hydra init dapp` against the stack that was running.",
+        "# Written by `hydra-dev init dapp` against the stack that was running.",
         `NEXT_PUBLIC_RPC_URL=${st.devnetUrl}`,
         `NEXT_PUBLIC_STRK20_POOL=${st.poolAddress}`,
         `NEXT_PUBLIC_INDEXER_URL=${st.indexerUrl}`,
         `NEXT_PUBLIC_STRK_TOKEN=${st.tokens?.STRK ?? ""}`,
       ]
     : [
-        "# No stack was running, so these are unset. Run `hydra up`, then rerun",
-        "# `hydra init dapp`, or fill these in yourself.",
+        "# No stack was running, so these are unset. Run `hydra-dev up`, then rerun",
+        "# `hydra-dev init dapp`, or fill these in yourself.",
         "NEXT_PUBLIC_RPC_URL=",
         "NEXT_PUBLIC_STRK20_POOL=",
         "NEXT_PUBLIC_INDEXER_URL=",

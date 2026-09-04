@@ -112,7 +112,7 @@ function cairoDep(text) {
  * the ones with a `src/main.rs` produce a binary worth building.
  *
  * Returns `OPERATIONS` unchanged when there is no readable checkout, so the Build
- * page has something to show before `hydra bootstrap` has ever run.
+ * page has something to show before `hydra-dev bootstrap` has ever run.
  */
 export function discoverOperations(upstream) {
   const root = read(join(upstream, "Scarb.toml"));
@@ -168,7 +168,7 @@ export function discoverOperations(upstream) {
   for (const dir of members(read(join(upstream, "Cargo.toml")))) {
     const name = packageName(read(join(upstream, dir, "Cargo.toml")));
     if (!name) continue;
-    // A library crate has nothing to run; `hydra up` spawns the binary, so a build
+    // A library crate has nothing to run; `hydra-dev up` spawns the binary, so a build
     // op for a crate with no `src/main.rs` would be a button with no consequence.
     try { statSync(join(upstream, dir, "src/main.rs")); } catch { continue; }
     ops.push({ id: `build:cargo:${name}`, group: "build", label: name, dir: ".",
@@ -194,7 +194,7 @@ export function discoverOperations(upstream) {
 /**
  * Is the deployed pool older than the artifact on disk?
  *
- * The only deploy path in this repo is `hydra up`: `sdk/src/testing/devnet.ts` reads
+ * The only deploy path in this repo is `hydra-dev up`: `sdk/src/testing/devnet.ts` reads
  * `target/dev/privacy_Privacy.contract_class.json` and deploys it inside
  * `Devnet.initialize()`. So "deploy" is a restart, and the fact worth surfacing —
  * which nothing surfaced before — is that the running chain may be executing older

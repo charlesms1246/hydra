@@ -1,5 +1,5 @@
 /**
- * The status view every surface shares: `hydra status`, `hydra <svc> --status`,
+ * The status view every surface shares: `hydra-dev status`, `hydra-dev <svc> --status`,
  * and the TUI header all call this. One implementation, so they cannot disagree.
  */
 

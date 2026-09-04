@@ -55,7 +55,7 @@ export async function probeIndexer(url) {
   const r = await fetchJson(`${url}/health`);
   // A 503 with a body is not "down". Upstream answers 503/UNHEALTHY whenever chain-head lag
   // exceeds `health_max_lag_secs` (default 60 — `crates/discovery-service/src/config.rs:139`,
-  // handler at `api/handlers.rs:43-52`). `hydra up` runs devnet with
+  // handler at `api/handlers.rs:43-52`). `hydra-dev up` runs devnet with
   // --block-generation-on transaction, so an idle stack mints no blocks and that "lag" is
   // just time since the last transaction. Reporting the service as down for being idle sent
   // a reader to restart a process that was serving correctly; one shield brings it back to

@@ -51,7 +51,7 @@ export function formatUnits(raw, decimals = 18, places = 4) {
 
 export async function wallets() {
   const st = await readState();
-  if (!st) return { available: false, reason: "no running stack — run `hydra up`" };
+  if (!st) return { available: false, reason: "no running stack — run `hydra-dev up`" };
   const out = [];
   for (const a of st.accounts ?? []) {
     const row = { name: a.name, address: a.address, balances: {} };
@@ -70,7 +70,7 @@ export async function wallets() {
  */
 export async function faucet({ address, amount = 1e18, unit = "FRI" }) {
   const st = await readState();
-  if (!st) return { ok: false, error: "no running stack — run `hydra up`" };
+  if (!st) return { ok: false, error: "no running stack — run `hydra-dev up`" };
   const r = await fetchJson(`${st.devnetUrl}/mint`, {
     method: "POST",
     body: { address, amount: Number(amount), unit },
@@ -83,14 +83,14 @@ export async function faucet({ address, amount = 1e18, unit = "FRI" }) {
 /**
  * Track another ERC20 alongside STRK and ETH.
  *
- * Tokens live in the recorded stack state, so every reader — `hydra wallets`, the
+ * Tokens live in the recorded stack state, so every reader — `hydra-dev wallets`, the
  * TUI, an agent — picks the new one up without being told. Validated by actually
  * calling `balanceOf` on it: an address that does not answer is a typo, and
  * storing it would put a permanent "—" in the table with no explanation.
  */
 export async function addToken({ symbol, address }) {
   const st = await readState();
-  if (!st) return { ok: false, error: "no running stack — run `hydra up`" };
+  if (!st) return { ok: false, error: "no running stack — run `hydra-dev up`" };
   const sym = String(symbol ?? "").trim().toUpperCase();
   const addr = String(address ?? "").trim();
   if (!/^[A-Z0-9]{1,10}$/.test(sym)) return { ok: false, error: "symbol must be 1-10 letters or digits" };
@@ -122,14 +122,14 @@ export async function removeToken(symbol) {
  * Write the wallet set to disk as JSON.
  *
  * Addresses, balances and tracked tokens — and NOT private keys, which this
- * process never holds: `hydra up` records only what `status()` needs, and devnet's
+ * process never holds: `hydra-dev up` records only what `status()` needs, and devnet's
  * predeployed keys are derived from its seed rather than stored here. The file
  * says so, because an export called "wallets" that silently omits keys would
  * otherwise read as a complete backup.
  */
 export async function exportWallets(dest) {
   const st = await readState();
-  if (!st) return { ok: false, error: "no running stack — run `hydra up`" };
+  if (!st) return { ok: false, error: "no running stack — run `hydra-dev up`" };
   const w = await wallets();
   if (!w.available) return { ok: false, error: w.reason };
   const path = dest ?? join(HYDRA_HOME, `wallets-${st.startedAt?.slice(0, 10) ?? "export"}.json`);

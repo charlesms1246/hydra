@@ -12,7 +12,7 @@
  *
  * Two things on this page are honest absences rather than missing features.
  * **Uptime is stack-scoped, not per-process**: `state.json` records one `startedAt`
- * for the whole `hydra up`, so it is paired with `pidAlive` rather than presented
+ * for the whole `hydra-dev up`, so it is paired with `pidAlive` rather than presented
  * as a per-service figure. And **there is no update check**: nothing here reaches
  * the network, so what looks like one everywhere else is, here, pin drift against
  * `pins.mjs` — labelled as that and not as "up to date".

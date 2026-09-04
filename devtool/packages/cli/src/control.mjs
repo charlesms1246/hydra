@@ -1,5 +1,5 @@
 /**
- * A local control API inside `hydra up`.
+ * A local control API inside `hydra-dev up`.
  *
  * Doing a private transfer needs the `Devnet` object — `executeOutside` advances
  * the chain past the 10-block proof buffer and submits an outside execution

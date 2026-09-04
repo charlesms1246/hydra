@@ -29,7 +29,7 @@ import { RUNNABLE } from "../../core/src/flows.mjs";
  * The builder's fields, for the accounts this stack actually has.
  *
  * A function rather than a constant because `from` and `to` are pickers over live
- * data: `hydra up --accounts 4` puts four names in the list without an edit here,
+ * data: `hydra-dev up --accounts 4` puts four names in the list without an edit here,
  * and a stack that is down puts none, which is honest — there is nothing to pick.
  *
  * @param accounts  status().accounts — `[{name, address, flows}]`

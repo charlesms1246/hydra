@@ -1,5 +1,5 @@
 /**
- * The command surface an agent calls directly: `hydra indexer --status --json`.
+ * The command surface an agent calls directly: `hydra-dev indexer --status --json`.
  *
  * Every command is a thin wrapper over @hydra/core and every one accepts --json,
  * because a surface an agent can only read by parsing prose is not a surface.
@@ -17,8 +17,8 @@ import { check } from "./doctor.mjs";
 const dot = (up, warn) => (up ? "●" : warn ? "◐" : "○");
 
 /**
- * The configuration `hydra up` actually runs, declared honestly. It lives here,
- * not in the TUI, because `hydra leak --json` and the TUI's disclosure matrix
+ * The configuration `hydra-dev up` actually runs, declared honestly. It lives here,
+ * not in the TUI, because `hydra-dev leak --json` and the TUI's disclosure matrix
  * must describe the same machine — one definition is the only way they cannot
  * drift, and the CLI is the layer the TUI already imports.
  *
@@ -30,23 +30,23 @@ const dot = (up, warn) => (up ? "●" : warn ? "◐" : "○");
  *
  * `discovery` is "indexer-self-hosted" because packages/cli/src/control.mjs:36
  * constructs `new IndexerDiscoveryProvider(indexerUrl, poolAddress)` — two
- * arguments, so OHTTP is off — against the indexer `hydra up` started.
+ * arguments, so OHTTP is off — against the indexer `hydra-dev up` started.
  */
 export function leakConfig(s) {
   return { discovery: "indexer-self-hosted", proving: s?.prover?.mode ?? "mock" };
 }
 
 /**
- * The declared action shapes `hydra leak` reports on.
+ * The declared action shapes `hydra-dev leak` reports on.
  *
  * `transfer` carries NO `opensChannel`, and that omission is the point. It used to
- * say `false` — the reassuring branch — so `hydra leak transfer` answered
+ * say `false` — the reassuring branch — so `hydra-dev leak transfer` answered
  * NOT_DISCLOSED_BY_THIS_TX with the reason "the caller states the channel already
  * exists", about a caller who had stated nothing. On a fresh stack it was simply
  * wrong: `get_num_of_channels(bob)` is 0 before the first transfer, so that transfer
  * DOES open a channel and DOES write bob's plaintext address.
  *
- * Whether a channel is open is a chain fact, not an action shape. `hydra leak` takes
+ * Whether a channel is open is a chain fact, not an action shape. `hydra-dev leak` takes
  * no stack and cannot read it, so the honest answer is UNKNOWN — which is what
  * packages/leak returns for an absent field, and which the header comment above and
  * packages/core/src/flows.mjs:118-124 both already required.
@@ -77,7 +77,7 @@ export const COMMANDS = {
       L.push(`  ${dot(s.agents.skills.installed.length > 0)} skills    ` +
         `${s.agents.skills.installed.length}/${s.agents.skills.expected.length} installed`);
       if (s.stack) L.push(`\n  pool      ${s.stack.poolAddress}`);
-      if (!s.stack) L.push(`\n  no running stack — 'hydra up'`);
+      if (!s.stack) L.push(`\n  no running stack — 'hydra-dev up'`);
       return L.join("\n");
     },
   },
@@ -124,7 +124,7 @@ export const COMMANDS = {
     help: "fund an address on devnet — devnet only, there is no mainnet faucet",
     run: async (args) => {
       const address = argOf(args, "--address");
-      if (!address) return { ok: false, error: "usage: hydra faucet --address 0x… [--amount 1e18]" };
+      if (!address) return { ok: false, error: "usage: hydra-dev faucet --address 0x… [--amount 1e18]" };
       return faucet({ address, amount: argOf(args, "--amount") ?? 1e18 });
     },
     render: (r) => r.ok ? `  funded — new balance ${r.new_balance ?? "(see --json)"}` : `  failed: ${r.error}`,
@@ -138,10 +138,10 @@ export const COMMANDS = {
   },
 
   tx: {
-    help: "transaction status — hydra tx <hash>",
+    help: "transaction status — hydra-dev tx <hash>",
     run: async (args) => {
       const hash = args.find((a) => a.startsWith("0x"));
-      if (!hash) return { available: false, reason: "usage: hydra tx 0x…" };
+      if (!hash) return { available: false, reason: "usage: hydra-dev tx 0x…" };
       return txStatus(hash);
     },
     render: (t) => !t.available ? `  ${t.reason}` : !t.found ? `  not found: ${t.error ?? ""}` :
@@ -159,7 +159,7 @@ export const COMMANDS = {
    * off chain to check it.
    */
   leak: {
-    help: `what an action discloses — hydra leak [${Object.keys(LEAK_ACTIONS).join("|")}]`,
+    help: `what an action discloses — hydra-dev leak [${Object.keys(LEAK_ACTIONS).join("|")}]`,
     run: async (args) => {
       const which = args.find((a) => !a.startsWith("-")) ?? "transfer";
       const action = LEAK_ACTIONS[which];
