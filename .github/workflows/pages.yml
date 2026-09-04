@@ -1,0 +1,96 @@
+# Publish the marketing site to GitHub Pages.
+#
+# ⛔ THIS BUILDS `build:public`, NEVER `build`, AND THE DIFFERENCE IS A LICENSING ONE.
+#
+# `next build` copies everything in `public/` into `out/`. On a machine that has them — which is
+# any developer's machine — that includes `NON-Natural-Grotesk-Regular.woff2`, licensed for
+# personal use, and `hydra.svg`, a third party's trademark. **Publishing `out/` redistributes both
+# exactly as committing them would, and the build SUCCEEDS while doing it.** The page looks
+# correct either way; nothing fails, nothing warns.
+#
+# `build:public` substitutes the wordmark face with Geist and the mark with `>|<`, and its
+# preflight refuses to run at all if either restricted file is present. Those files are gitignored,
+# so a CI checkout does not have them — which makes CI the natural place for this build and is why
+# the workflow can assert rather than hope.
+#
+# This comment lives here as well as in `web/README.md` because the workflow is what somebody edits
+# when a build fails, and `npm run build` is the obvious thing to reach for.
+name: pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # No lockfile ambiguity: the site's tree is small and pinned, and a resolution that differs
+      # from the one tested is a different site.
+      - run: npm ci
+
+      # The restricted assets are gitignored, so a clean checkout must not have them. If one is
+      # present the checkout is not clean, and a public build is not safe to make from it.
+      - name: Refuse to build from a checkout carrying restricted assets
+        run: |
+          for f in public/fonts/NON-Natural-Grotesk-Regular.woff2 public/hydra.svg app/icon.svg; do
+            if [ -e "$f" ]; then
+              echo "::error::$f is present in a CI checkout. It is gitignored and must not be here."
+              exit 1
+            fi
+          done
+
+      - run: npm run build:public
+
+      # ⛔ ASSERT THE MODE, because a workflow that silently falls back to `build` is the exposure
+      # with an automation in front of it. The public build stamps `data-build="public"` on the
+      # document; its absence means something other than `build:public` produced this directory.
+      - name: Assert the published build is the public one
+        run: |
+          grep -q 'data-build="public"' out/index.html || {
+            echo "::error::out/ was not produced by build:public — refusing to publish."
+            exit 1
+          }
+          for f in $(find out -iname '*NON-Natural*' -o -iname 'hydra.svg' -o -iname 'icon.svg'); do
+            echo "::error::$f reached out/ — refusing to publish a restricted asset."
+            exit 1
+          done
+
+      # The tests read the built artefact, so they run against exactly what is about to ship.
+      - run: node --test test/*.test.ts
+        env:
+          HYDRA_PUBLIC: "1"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
