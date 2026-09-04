@@ -84,6 +84,34 @@ async function rpc(
  * own disclosure table (`node-view.ts`), and a table is only honest if something captures what
  * that party actually receives. `adversary/test/node-view.test.ts` is that capture.
  */
+/**
+ * The transaction hash out of `sncast --json`, which is NOT the last line.
+ *
+ * **`hydra send` PRINTED `published undefined` AGAINST SEPOLIA** — a real transaction, landed and
+ * paid for, whose id the client threw away. sncast 0.63 emits TWO json objects: the response, and
+ * then a `notification` carrying voyager links. Taking `.pop()` parses the notification, which has
+ * no `transaction_hash`, and `as string` is a cast rather than a check, so `undefined` travelled
+ * all the way to the user's terminal typed as `string`.
+ *
+ * Losing it is not cosmetic. The hash is the only handle on the transaction: it is what
+ * `live-authorship` checks authorship with, what a user pastes into voyager, and what a transcript
+ * would have to cite. The write succeeded and became unciteable.
+ *
+ * SELECTED BY SHAPE, NOT BY POSITION. Position is what broke — a future sncast is free to add a
+ * third line, and the line carrying a hash is the one that has one. Refuses rather than returning
+ * a non-string, because a cast is what let this reach a user.
+ */
+export function transactionHashFrom(out: string): string {
+  for (const line of out.trim().split("\n").filter(Boolean)) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch { continue; }
+    const hash = (parsed as { transaction_hash?: unknown })?.transaction_hash;
+    if (typeof hash === "string" && /^0x[0-9a-f]+$/i.test(hash)) return hash;
+  }
+  throw new Error("sncast reported no transaction hash. The transaction may still have been "
+    + `submitted — check the account's nonce before retrying, or a resend spends gas twice:\n${out}`);
+}
+
 export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): Chain {
   const target = config.network ? ["--network", config.network] : ["--url", config.rpcUrl];
   return {
@@ -97,8 +125,7 @@ export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): 
         "--arguments", `${calldata[0]}, ${calldata[1]}`,
         ...target,
       ], { encoding: "utf8" });
-      const last = out.trim().split("\n").filter(Boolean).pop()!;
-      return JSON.parse(last).transaction_hash as string;
+      return transactionHashFrom(out);
     },
 
     async events() {

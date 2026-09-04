@@ -150,6 +150,9 @@ const REACHED_ONLY_BY_TESTS: Record<string, string> = {
   encodePrekey: "used in-file by deliver; exported so the wire encoding is testable on its own",
   decodePrekey: "used in-file by collect; exported so a malformed slot can be tested directly",
 
+  transactionHashFrom: "called in-file by starknet().publish; exported so the parse can be driven "
+    + "over captured sncast output without spending a transaction to produce some",
+
   // Miscellaneous, each used in-file.
   LABELS: "key labels used in-file; exported so the domain separation is assertable",
   links: "used in-file by evidence; exported so a linkage claim is checkable without its prose",

@@ -19,7 +19,16 @@
  * filtering — none of which a quiet contract can exercise. The first version pointed at the
  * Starknet ID identity contract, which turned out to emit **nothing in two thousand Sepolia
  * blocks**, so the paging case reported itself unexercised and two others failed outright. The
- * default is now the ETH token, whose `Transfer` events are continuous, and it is overridable.
+ * The default was the ETH token, and **that went quiet too** — two of these tests failed with
+ * "no events in the last 20 blocks" a few weeks after being written, because STRK became the fee
+ * token and ETH transfers on Sepolia became occasional. The default is now STRK, which every
+ * transaction on the network pays a fee in, so it is busy for a structural reason rather than
+ * because it happened to be busy on the day it was chosen. Still overridable.
+ *
+ * That is the second time this file's premise expired, which is the durable point: **a live test
+ * pointed at somebody else's contract has a dependency that can rot without anyone touching this
+ * repo.** It fails loudly rather than silently, which is why the assertions say "this test is
+ * measuring nothing" instead of passing on an empty list.
  */
 
 import { test, before } from "node:test";
@@ -35,7 +44,15 @@ const NETWORK = process.env.HYDRA_NETWORK ?? "sepolia";
  * networks; overridable because "busy" is a property of the network on the day.
  */
 const BUSY = process.env.HYDRA_BUSY_CONTRACT
-  ?? "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+  ?? "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+
+/**
+ * OUR OWN contract, which is the quiet one. The paging-by-block-range case is specifically about
+ * this deployment: five events across the contract's whole life, which the node still answers in
+ * three pages. Running that case against `BUSY` would page through the ETH token's entire history.
+ */
+const OURS = process.env.HYDRA_CONTRACT
+  ?? "0x06ea776549f898490b11aca1d49af58498d6a5246f3847ad4fa163f97ffcb0c6";
 
 const clientFrom = (fromBlock: number, contract = BUSY) => starknet({
   rpcUrl: RPC!, contract, fromBlock, accountsFile: "", account: "", network: NETWORK,
@@ -81,6 +98,50 @@ test("FROM_BLOCK IS RESPECTED: a later offset returns strictly less", async () =
   assert.ok(wide.length > 0, "no events at all — this test is measuring nothing");
 });
 
+test("PAGING IS FORCED BY THE BLOCK RANGE, not only by the event count", async () => {
+  // **MEASURED ON SEPOLIA: a single unpaged query against our own contract returned ONE of five
+  // events.** Not because five is a lot — because the node scans a bounded number of BLOCKS per
+  // response and issues a continuation token when it stops, whether or not it found anything.
+  //
+  // That is the client's actual configuration. `fromBlock` is the deployment block, so every
+  // `events()` call spans the contract's whole life — 238,000 blocks on the run this came from,
+  // three pages to cross with five events in them. A client that read only the first page would
+  // have seen the FIRST message ever sent and none since, which reads as "no new messages"
+  // rather than as an error.
+  //
+  // The test below hunts for a busy contract to make paging happen. It does not need one: a quiet
+  // contract and a wide range page just as hard, and this is the case we actually ship.
+  const wide = clientFrom(1, OURS);
+  const events = await wide.events();
+  assert.ok(events.length > 0, "no events at all over the contract's whole history");
+
+  // One unpaged request over the same range, to show the loop is doing something.
+  const oneShot = await (await fetch(RPC!, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "starknet_getEvents",
+      params: [{ from_block: { block_number: 1 }, to_block: "latest",
+        address: OURS, chunk_size: 100 }],
+    }),
+  })).json() as { result?: { events: unknown[]; continuation_token?: string } };
+
+  assert.ok(oneShot.result, "the node refused the wide query outright");
+  if (oneShot.result.continuation_token === undefined) {
+    console.error("this node answered the whole range in one response, so PAGING WAS NOT "
+      + "EXERCISED by this run. Not asserted — a node that does not page cannot prove a client "
+      + "that does. Sepolia via cartridge did page; a local devnet will not.");
+    return;
+  }
+  assert.ok(events.length >= oneShot.result.events.length,
+    `the paging client returned FEWER events (${events.length}) than a single unpaged request `
+    + `(${oneShot.result.events.length}), so the loop is dropping pages`);
+  // The whole point: the tail is only reachable by following the token.
+  assert.ok(events.length > oneShot.result.events.length,
+    "the client saw no more than one page's worth over a range the node itself paged, so the "
+    + "continuation loop is not running");
+});
+
 test("PAGING PAST A CONTINUATION TOKEN", async () => {
   // The client pages with `chunk_size: 100` and follows `continuation_token` in a loop. That loop
   // has never run against real data.
@@ -97,10 +158,45 @@ test("PAGING PAST A CONTINUATION TOKEN", async () => {
   }
   assert.ok(events.length > 100,
     "more than one chunk came back, so the continuation loop ran and did not drop the tail");
-  // And the pages joined without duplicating the boundary, which is the loop's likeliest bug.
-  const hashes = events.map((e) => `${e.blockNumber}:${e.txHash}:${e.data.join(",")}`);
-  assert.equal(new Set(hashes).size, hashes.length,
-    "an event appears twice, so a page boundary was re-read");
+
+  // And the pages joined without duplicating or dropping the boundary, which is the loop's
+  // likeliest bug — CHECKED BY COUNT against an independently paged raw query, not by per-event
+  // identity.
+  //
+  // **IDENTITY IS NOT AVAILABLE HERE, and the first version of this assertion fired because of
+  // it.** It keyed on `blockNumber:txHash:data` and reported "an event appears twice" against a
+  // real token — but an ERC-20 emits `Transfer` and `Approval` in one transaction with THE SAME
+  // `data` (`[amount, 0]`), distinguished only by `keys`, and `Chain.events()` does not return
+  // `keys`. So two genuinely different events are indistinguishable in what the client hands back,
+  // and the guard was accusing the paging loop of a bug that measurement showed it does not have:
+  // with `keys` included, zero duplicates in 128 events across two pages.
+  //
+  // Dropping `keys` is right for this product — one contract, one event type, the selector is
+  // constant — but it means a test about paging must not pretend to per-event identity it cannot
+  // reconstruct. A count is something both sides can honestly compute.
+  let token: string | undefined;
+  let raw = 0;
+  do {
+    const page = await (await fetch(RPC!, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "starknet_getEvents",
+        params: [{ from_block: { block_number: latest - 40 }, to_block: "latest",
+          address: BUSY, chunk_size: 100, ...(token ? { continuation_token: token } : {}) }],
+      }),
+    })).json() as { result: { events: unknown[]; continuation_token?: string } };
+    raw += page.result.events.length;
+    token = page.result.continuation_token;
+  } while (token);
+
+  // Not exact: the chain advances between the two runs, so the later one legitimately sees more.
+  assert.ok(events.length <= raw + 40,
+    `the client returned ${events.length} events where the raw pages held ${raw} — more than new `
+    + "blocks can explain, so a page boundary was re-read");
+  assert.ok(events.length >= raw - 40,
+    `the client returned ${events.length} events where the raw pages held ${raw} — the `
+    + "continuation loop is dropping a page");
 });
 
 test("PUBLISHERS FILTERS BY THE RANGE IT IS GIVEN", async () => {
