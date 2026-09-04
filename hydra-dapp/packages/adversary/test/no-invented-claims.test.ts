@@ -25,7 +25,16 @@ import { WARNINGS } from "../../claims/src/warnings.ts";
 import { codeOf } from "../src/prose.ts";
 
 const PACKAGES = join(import.meta.dirname, "..", "..");
-const FRONT_ENDS = ["cli", "tui", "client"];
+/**
+ * Every package that puts a sentence in front of a human — not just the ones a user types into.
+ *
+ * The boundary was "the front ends", and that was too narrow. `vault-server`'s startup banner is
+ * read by an operator; `operator`'s review output is read by somebody deciding to remove a post;
+ * `moderation`'s report body is read by the public. A claim that drifts in any of those misleads
+ * the person acting on it — and the reviewer case is the sharpest, because the number they are
+ * being warned about is the one they would otherwise act on.
+ */
+const FRONT_ENDS = ["cli", "tui", "client", "vault-server", "operator", "moderation"];
 
 /**
  * Claim-shaped language, extending `web/content.ts`'s vocabulary with the forms these two clients
@@ -33,18 +42,38 @@ const FRONT_ENDS = ["cli", "tui", "client"];
  * statement never produces one.
  */
 const FORBIDDEN = [
-  // The site's list.
-  "anonymous", "untraceable", "unbreakable", "military-grade",
-  "we cannot see", "nobody can see", "completely private", "fully private", "100%",
-  // The forms these clients actually shipped. Every one of these was true of a real string.
+  // The site's list, narrowed to CLAIM FORMS rather than vocabulary. `web/` can match bare words
+  // because it scans short marketing prose; scanning source across six packages, the bare word
+  // "anonymous" matched `"If you are accepting anonymous submissions"` — a use case, not a claim —
+  // and "100%" matched a measured statement about window containment inside a disclosure row.
+  // Noise is what gets a check deleted, so it matches the assertion and not the word.
+  "is anonymous", "are anonymous", "fully anonymous", "completely anonymous",
+  "untraceable", "unbreakable", "military-grade",
+  "we cannot see", "nobody can see", "completely private", "fully private",
+  // The forms this repo actually shipped. Every one was true of a real string here.
   "anyone can prove", "it is provable", "provable to anyone",
   "cannot be traced", "no one can tell", "impossible to",
+  // UNLINKABILITY, which the first version of this list did not contain at all — so it missed the
+  // vault banner asserting "two connections cannot be linked to one client", which is the exact
+  // shape of claim this exists to stop being written by hand.
+  "cannot be linked", "cannot be correlated", "cannot be joined", "nobody can link",
 ];
+
+/**
+ * The disclosure tables, which are the GENERATED side and are exempt for the reason `claims/` is.
+ *
+ * `web/` draws this line with `data-generated`: the forbidden list applies to prose a person wrote,
+ * not to rendered generated content. These files are that content — structured rows, each with its
+ * own two-way guard checking it against real captures in both directions. Scanning them would make
+ * the single source fail its own check, and the pressure would land on the check.
+ */
+const GENERATED = ["observations.ts", "node-view.ts", "statement.ts", "warnings.ts"];
 
 const sources = () => FRONT_ENDS.flatMap((pkg) => {
   const dir = join(PACKAGES, pkg, "src");
   return readdirSync(dir, { recursive: true, encoding: "utf8" })
     .filter((f) => /\.tsx?$/.test(f))
+    .filter((f) => !GENERATED.some((g) => f.endsWith(g)))
     .map((f) => ({ path: `${pkg}/src/${f}`, text: readFileSync(join(dir, f), "utf8") }));
 });
 
@@ -71,7 +100,7 @@ test("THE CHECK IS NOT VACUOUS: the vocabulary matches what actually shipped", (
   // A forbidden list that never matched anything is a list nobody can tell is working. Every
   // phrase below was in a real string in this repo, so the check is calibrated against the
   // defects it exists to prevent rather than against imagination.
-  const wasReal = ["anyone can prove", "it is provable"];
+  const wasReal = ["anyone can prove", "it is provable", "cannot be linked"];
   for (const phrase of wasReal) {
     assert.ok(FORBIDDEN.includes(phrase), `${phrase} shipped and is not in the list`);
   }

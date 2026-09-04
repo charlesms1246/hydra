@@ -46,18 +46,36 @@ const sourcesOf = (pkg: string) => {
 
 test("EVERY FRONT END RENDERS THE SAME CLAIMS, from the same place", () => {
   assert.ok(WARNINGS.length >= 4, "the claim set shrank — check nothing was quietly inlined again");
-  const rendering = new Map(FRONT_ENDS.map((pkg) => [pkg,
-    sourcesOf(pkg).map((f) => codeOf(f.text)).join("\n")]));
+  // IMPORT LINES REMOVED BEFORE MATCHING. Without this the guard sees the symbol in the `import`
+  // statement and passes even when nothing renders it — a mutation replacing `SIGNED.short` with
+  // a hand-written string went straight through. Importing a claim is not showing it, and the
+  // whole failure mode here is a claim that stops being rendered while the wiring stays.
+  const rendered = (text: string) => codeOf(text)
+    .split("\n").filter((l) => !/^\s*import\b/.test(l))
+    // QUOTED STRINGS REMOVED TOO, so a symbol NAME appearing as display text does not count as a
+    // reference to the symbol. `paint(" SIGNED ", "inverse")` is a badge a user reads, not a use
+    // of `SIGNED` — and with it left in, a mutation replacing the rendered claim with hand-written
+    // prose still passed. Backticks are kept, because `${SIGNED.short}` is exactly the reference
+    // being looked for and lives inside one.
+    .map((l) => l.replace(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g, '""'))
+    .join("\n");
+  const rendering = new Map([...new Set(WARNINGS.flatMap((w) => w.surfaces))].map((pkg) => [pkg,
+    sourcesOf(pkg).map((f) => rendered(f.text)).join("\n")]));
 
   // A claim shown by one front end and not the other is the drift itself. `SECOND_CLIENT` is the
   // case that proves the direction runs both ways — the CLI was the stale one there.
   const symbols = { "compose.signed": "SIGNED", "compose.deniable": "DENIABLE",
-    "record.notWritten": "RECORD_NOT_WRITTEN", "identity.secondClient": "SECOND_CLIENT" };
+    "record.notWritten": "RECORD_NOT_WRITTEN", "identity.secondClient": "SECOND_CLIENT",
+    "vault.tlsTermination": "TLS_TERMINATION" };
   for (const w of WARNINGS) {
     const symbol = symbols[w.id as keyof typeof symbols];
     assert.ok(symbol, `${w.id} has no symbol in this guard — add it, or the claim is unchecked`);
-    const shown = FRONT_ENDS.filter((pkg) => new RegExp(`\\b${symbol}\\b`).test(rendering.get(pkg)!));
-    assert.deepEqual(shown, FRONT_ENDS,
+    // Checked against the surfaces the claim DECLARES, not against every package: the compose
+    // claims belong to both clients and drifting between them is the defect; the vault's TLS claim
+    // belongs to the vault. A rule that demanded all of them everywhere would be followed by
+    // nobody.
+    const shown = w.surfaces.filter((pkg) => new RegExp(`\\b${symbol}\\b`).test(rendering.get(pkg)!));
+    assert.deepEqual(shown, [...w.surfaces],
       `${w.id} is rendered by ${shown.join(", ") || "neither front end"} — a claim shown in one `
       + "interface and not the other is how all three of these drifted");
   }

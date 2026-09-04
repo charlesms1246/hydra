@@ -1,0 +1,11 @@
+{
+  "name": "@hydra-platform/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The client, as a command. `hydra` — see src/cli.ts for what it can do.",
+  "engines": { "node": ">=24" },
+  "bin": {
+    "hydra": "src/cli.ts"
+  }
+}

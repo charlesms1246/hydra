@@ -26,6 +26,7 @@ import { Vault } from "./server.ts";
 import { serve } from "./http.ts";
 import { removalAuthorityFromFile } from "./authority.ts";
 import { compelledAuthorityFromFile } from "./compelled.ts";
+import { TLS_TERMINATION } from "../../claims/src/warnings.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import type { RateLimitConfig } from "./ratelimit.ts";
 
@@ -184,6 +185,9 @@ console.log(compelledAuthority
     + "           whoever holds their capability. No process served here can remove one.");
 if (args.includes("--observe-transport")) console.log("transport observation is ON");
 if (args.includes("--observe-reads")) console.log("read logging is ON");
+// FROM `claims/src/warnings.ts`. This was hand-written prose asserting that "two connections
+// cannot be linked to one client" — a privacy claim, in a package nothing was checking, and rule 3
+// has no exception for a claim that happens to be true.
 console.log(tlsKey
-  ? "transport TLS terminates here; session tickets are disabled, so every connection is a full\n         handshake and two connections cannot be linked to one client"
+  ? TLS_TERMINATION.full.map((l) => (l ? `transport ${l}` : "")).join("\n")
   : "transport PLAINTEXT — anyone on the path reads every id and every body");

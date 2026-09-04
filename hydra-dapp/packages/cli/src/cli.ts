@@ -35,6 +35,8 @@
  *     hydra disclose [--cite]                     what everyone involved can see
  *     hydra status
  *
+ *     hydra-tui                                   the same client as a terminal interface
+ *
  * `send` and `flush` are separate because the upload has to come later than the chain event —
  * see `commands.ts`. Running `flush` on a timer is the intended use, and `status` says so.
  */

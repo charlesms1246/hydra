@@ -32,6 +32,15 @@ export type Warning = {
   readonly full: readonly string[];
   /** One line, for a status bar. Must not say more than `full` does. */
   readonly short: string;
+  /**
+   * Which packages must render it.
+   *
+   * NOT EVERY CLAIM BELONGS TO EVERY SURFACE. The compose claims are shown by both clients and
+   * drifting between them is the defect this module exists for; the vault's TLS claim is shown by
+   * the vault alone. A guard that demanded all of them everywhere would be satisfied only by
+   * putting a server's banner in a chat client, which is how a rule stops being followed.
+   */
+  readonly surfaces: readonly string[];
 };
 
 /**
@@ -44,6 +53,7 @@ export type Warning = {
  */
 export const SIGNED: Warning = {
   id: "compose.signed",
+  surfaces: ["cli", "tui"],
   because: "decisions/0038 finding 3; attributionLabel draws the same line when reading",
   short: "SIGNED — only you could have written this; only THEY can check it until you anchor",
   full: [
@@ -62,6 +72,7 @@ export const SIGNED: Warning = {
 /** Deniable, the other half of the same toggle. */
 export const DENIABLE: Warning = {
   id: "compose.deniable",
+  surfaces: ["cli", "tui"],
   because: "handshake/src/authorship.ts — a key you both hold authenticates neither of you",
   short: "deniable — either of you could have written this",
   full: [
@@ -80,6 +91,7 @@ export const DENIABLE: Warning = {
  */
 export const RECORD_NOT_WRITTEN: Warning = {
   id: "record.notWritten",
+  surfaces: ["cli", "tui"],
   because: "decisions/0031 verified the ABI and landed a record; 0027 for what the record binds",
   short: "this client does not write your record — which account pays is the link it creates",
   full: [
@@ -101,6 +113,7 @@ export const RECORD_NOT_WRITTEN: Warning = {
  */
 export const SECOND_CLIENT: Warning = {
   id: "identity.secondClient",
+  surfaces: ["cli", "tui"],
   because: "decisions/0033 — two devices salt decoys with the commitment, so cover is not identical",
   short: "another client is running on this identity — both are spending your invites",
   full: [
@@ -110,6 +123,34 @@ export const SECOND_CLIENT: Warning = {
   ],
 };
 
+/**
+ * What terminating TLS here does and does not buy.
+ *
+ * WAS ASSERTED IN THE VAULT'S STARTUP BANNER, in hand-written prose: *"session tickets are
+ * disabled, so every connection is a full handshake and two connections cannot be linked to one
+ * client"*. It is very likely true — `decisions/0021` disabled resumption deliberately and
+ * `tls.resumption` sits on the not-observable table — and standing rule 3 does not have an
+ * exception for claims that happen to hold. A privacy claim is generated or it is not made.
+ *
+ * The qualification is the part hand-written prose kept dropping: **resumption is one linking
+ * mechanism among several.** An address links connections whatever TLS does, and this server sees
+ * one on every request.
+ */
+export const TLS_TERMINATION: Warning = {
+  id: "vault.tlsTermination",
+  surfaces: ["vault-server"],
+  because: "decisions/0021 disabled session tickets; tls.resumption on the not-observable table",
+  short: "TLS terminates here; session tickets are off, so resumption does not link connections",
+  full: [
+    "TLS terminates HERE rather than behind a proxy. Both choices disclose SNI, cipher suite and",
+    "ALPN to somebody; this one discloses them to the party already describing what they can see.",
+    "",
+    "Session tickets are disabled, so every connection is a full handshake and resumption gives",
+    "no way to join two of them. That is one linking mechanism closed, not linkage in general —",
+    "the address is on every request, and this server sees it.",
+  ],
+};
+
 /** Every warning both front ends must render identically. The guard iterates this. */
 export const WARNINGS: readonly Warning[] =
-  [SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT];
+  [SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, TLS_TERMINATION];
