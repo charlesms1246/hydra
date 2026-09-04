@@ -84,6 +84,16 @@ export function appealStatement(decisionId: string): Buffer {
  * 248 bits is unambiguously below P for every input, needs no modular reduction, and no constant
  * to be kept in step with the chain's. What it costs is 8 bits of collision resistance against an
  * attacker who must also produce a signature from an account they do not control.
+ *
+ * SHA256 RATHER THAN POSEIDON, AND THE REASON IS THE ARTIFACT, NOT THE ARITHMETIC. Poseidon is the
+ * chain's native hash and produces a felt by construction with no truncation, which is the better
+ * answer to every question except the one that matters here: **who has to compute this, and with
+ * what.** An appellant is carrying a detached artifact out of band, possibly on a borrowed machine,
+ * possibly relaying it through somebody else. `sha256` of a printable string is computable with
+ * anything — `sha256sum`, a phone, a website they do not have to trust with a secret, since the
+ * input is public. Poseidon needs a Starknet library, which means the appellant needs our software
+ * to contest our decision. That is the same defect as the nonce, in a quieter form: a dependency on
+ * the operator, standing between somebody and their appeal.
  */
 export const appealDigest = (decisionId: string): string =>
   createHash("sha256").update(appealStatement(decisionId)).digest("hex").slice(0, 62);
