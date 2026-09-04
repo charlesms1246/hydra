@@ -63,6 +63,7 @@ import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
 import { load, save, exists, locked, usePassphrase, currentPassphrase,
   passphraseFromEnvironment, STATE_FILE, PASSPHRASE_ENV } from "./state.ts";
+import type { State } from "./state.ts";
 import { refusePassphrase, promptPassphrase } from "./at-rest.ts";
 
 const [command, ...rest] = process.argv.slice(2);
@@ -169,6 +170,41 @@ async function resolvePassphrase(): Promise<void> {
 }
 
 if (locked() || flag("passphrase-file")) await resolvePassphrase();
+
+/**
+ * Repair a state file that starts reading from block 0 — see `deploymentBlock`.
+ *
+ * **`init` LEARNED THE DEPLOYMENT BLOCK; EVERY IDENTITY CREATED BEFORE THAT DID NOT.** Those files
+ * still say `fromBlock: 0`, so they still ask a node for the contract's log from the genesis of the
+ * network, and the fix would have helped only people who started over. That is the worse half of a
+ * migration to skip: the ones who already have conversations are exactly the ones with something
+ * to lose by re-initialising.
+ *
+ * ONCE, AND THEN WRITTEN DOWN. Nine seconds of bisection against 178 RPC round trips on every
+ * single read, so it pays for itself before the first read finishes.
+ *
+ * ONLY WHEN IT IS 0. A caller who set `--from-block` meant it, and a devnet contract really is at
+ * a low block. This never overrides a value somebody chose.
+ *
+ * NEVER FATAL. A node that cannot be reached here must not stop a read that might still work from
+ * cache or fail with its own better message; 0 is what the file already had.
+ */
+async function repairFromBlock(state: State): Promise<void> {
+  if (state.fromBlock !== 0 || !state.contract || !state.rpcUrl) return;
+  try {
+    const latest = await blockHeight(state.rpcUrl);
+    const at = await deploymentBlock(state.rpcUrl, state.contract, latest);
+    if (at === 0) return;
+    state.fromBlock = at;
+    save(state);
+    console.error(`(reading from block ${at}, where this contract was deployed — this state file `
+      + "predates that being recorded, and every read was scanning the whole chain. Fixed once.)");
+  } catch {
+    // Deliberately silent. The command that follows will report a node it cannot reach, in its
+    // own words, and two messages about one unreachable node is one too many.
+  }
+}
+
 
 switch (command) {
   case "init": {
@@ -398,6 +434,7 @@ switch (command) {
     const state = load();
     const [name, ...words] = positional;
     if (!name || !words.length) usage();
+    await repairFromBlock(state);
     const signed = command === "publish";
     const result = await sendMessage(
       state, chainFor(state), name, signed ? "signed" : "ephemeral", words.join(" "));
@@ -654,6 +691,7 @@ switch (command) {
     const state = load();
     const [name] = positional;
     if (!name) usage();
+    await repairFromBlock(state);
     // Direction, not just text. A channel is two one-way keys and a transcript that does not
     // say which one opened a line is a transcript that puts your words in their mouth.
     // I7: never a name without what backs it. `attributionLabel` is the only place either front
