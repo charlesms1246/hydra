@@ -7,6 +7,7 @@ import { Section } from "../../components/Section.tsx";
 import { Auditor } from "../../components/Auditor.tsx";
 import { MessagePath } from "../../components/viz/MessagePath.tsx";
 import { AnonymitySet } from "../../components/viz/AnonymitySet.tsx";
+import { AsciiPanel } from "../../components/viz/AsciiPanel.tsx";
 import { Footer } from "../../components/Footer.tsx";
 
 /**
@@ -57,6 +58,45 @@ export default function Pitch() {
             </p>
           </div>
         </Section>
+
+        {/*
+          The reference's dominant page shape: two dense fields, full-bleed to the gutter, with a
+          tag chip and a captioned row beneath. It is what carries those pages visually, and
+          without an equivalent this one is a document with rules drawn on it.
+        */}
+        <div className="panels">
+          <div>
+            <AsciiPanel cols={92} rows={44} blur={1.9} gain={1.5} tag="ON CHAIN" />
+            <div className="panel-note">
+              <h3>What everyone sees</h3>
+              <p>
+                A pointer, and the account that published it. Permanent, public, and readable by
+                anyone who has not yet thought of a reason to look.
+              </p>
+            </div>
+          </div>
+          <div>
+            {/* A tighter crop at lower gain, so the second panel reads as a different object
+                rather than as the first one turned up — the reference's two fields are two
+                images, and two exposures of one drawing has to work as hard to look like two. */}
+            <AsciiPanel
+              cols={92}
+              rows={44}
+              blur={2.2}
+              gain={1.15}
+              rotate={0.42}
+              crop={{ x: 0.3, y: 0.24, w: 0.42, h: 0.52 }}
+              tag="IN THE VAULT"
+            />
+            <div className="panel-note">
+              <h3>What the server holds</h3>
+              <p>
+                Sealed bytes in one of five size bands, arriving with four decoys, minutes after
+                you pressed send.
+              </p>
+            </div>
+          </div>
+        </div>
 
         <Section n="02" id="mechanism" title="WHAT IT ACTUALLY DOES">
           <div className="prose">

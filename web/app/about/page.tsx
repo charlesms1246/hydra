@@ -5,6 +5,7 @@ import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
+import { AsciiPanel } from "../../components/viz/AsciiPanel.tsx";
 
 /**
  * About, and the page the disclosure statement hangs off.
@@ -29,6 +30,17 @@ export default function About() {
           <h1>About</h1>
           <p className="tagline">{SITE.about.lede}</p>
         </header>
+
+        <div className="panels panels-wide">
+          <AsciiPanel
+            cols={190}
+            rows={34}
+            blur={2.4}
+            gain={1.25}
+            crop={{ x: 0.06, y: 0.18, w: 0.88, h: 0.6 }}
+            tag="THE DRAWING THE CLIENT SHIPS"
+          />
+        </div>
 
         <Section n="01" id="what" title="WHAT IT IS">
           <div className="prose">

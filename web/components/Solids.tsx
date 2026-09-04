@@ -214,11 +214,31 @@ export function Solids() {
     effect.domElement.style.backgroundColor = "transparent";
     mount.appendChild(effect.domElement);
 
+    /**
+     * ⛔ **A zero-sized mount must not reach `setSize`, and a throw here must not reach React.**
+     *
+     * `AsciiEffect` renders through an offscreen canvas and calls `drawImage` on it. Sized 0×0 it
+     * throws `InvalidStateError` — and because the first draw happens synchronously inside this
+     * effect, the exception propagates into React, which unmounts the tree. **The entire page goes
+     * blank**, with the markup correct in the HTML and nothing on screen.
+     *
+     * That is the worst failure this component can have: not a background that fails to appear,
+     * but a decorative element taking the document with it. A fixed element can measure zero for
+     * ordinary reasons — the frame before layout settles, a hidden tab, a print stylesheet — so
+     * this is a normal state to be in, not an error to report.
+     */
+    let sized = false;
+
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = mount;
+      if (w === 0 || h === 0) {
+        sized = false;
+        return;
+      }
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       effect.setSize(w, h);
+      sized = true;
     };
     resize();
     window.addEventListener("resize", resize);
@@ -258,8 +278,26 @@ export function Solids() {
         s.mesh.rotation.z = s.spin.z * turn + s.mesh.userData.rz0;
       }
 
-      renderer.render(scene, camera);
-      effect.render(scene, camera);
+      if (!sized) {
+        // Not laid out yet, or laid out to nothing. Try again next frame rather than drawing into
+        // a canvas that has no dimensions.
+        resize();
+        return;
+      }
+
+      /*
+       * The draw is wrapped because this element is decoration and the page is not. If WebGL or
+       * the effect fails for any reason at any time, the background stops and the document stays
+       * — which is the only acceptable failure mode for something nobody reads.
+       */
+      try {
+        renderer.render(scene, camera);
+        effect.render(scene, camera);
+      } catch {
+        cancelAnimationFrame(frame);
+        effect.domElement.remove();
+        document.body.classList.remove("has-canvas");
+      }
     };
 
     // Keep each solid's starting orientation so scroll rotation is added to it rather than

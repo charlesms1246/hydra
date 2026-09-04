@@ -4,6 +4,7 @@ import { Nav } from "../components/Nav.tsx";
 import { Section } from "../components/Section.tsx";
 import { Footer } from "../components/Footer.tsx";
 import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
+import { AsciiPanel } from "../components/viz/AsciiPanel.tsx";
 
 /**
  * The landing page. Marketing, and only marketing.
@@ -53,6 +54,13 @@ export default function Home() {
             ))}
           </div>
         </Section>
+
+        {/* One wide field, full-bleed, between the argument and the warning — the reference
+            breaks its pages with an image at exactly this point, and a page of rules and prose
+            needs the same beat. */}
+        <div className="panels panels-wide">
+          <AsciiPanel cols={190} rows={40} blur={1.7} gain={1.45} tag="HYDRA" />
+        </div>
 
         <Section n="03" id="before" title="BEFORE YOU USE IT">
           <ul className="warnings">

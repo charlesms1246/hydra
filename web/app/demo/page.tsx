@@ -5,6 +5,7 @@ import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
+import { AsciiPanel } from "../../components/viz/AsciiPanel.tsx";
 
 /**
  * The demo index: two tools, two pages, and a page that sends you to the right one.
@@ -30,6 +31,18 @@ export default function Demo() {
           <h1>See it run</h1>
           <p className="tagline">{SITE.demo.lede}</p>
         </header>
+
+        <div className="panels panels-wide">
+          <AsciiPanel
+            cols={190}
+            rows={34}
+            blur={2.0}
+            gain={1.6}
+            rotate={0.18}
+            crop={{ x: 0.1, y: 0.12, w: 0.8, h: 0.72 }}
+            tag="BOTH RUN IN A TERMINAL"
+          />
+        </div>
 
         <Section n="01" id="tools" title="TWO TOOLS">
           <div className="why two">
