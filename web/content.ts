@@ -36,6 +36,22 @@ import { MEASURED } from "../hydra-dapp/packages/claims/src/statement.ts";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+/**
+ * Small measured integers, spelled.
+ *
+ * Interpolating `MEASURED` fixed the correctness problem and introduced a reading one: "padded to
+ * one of 5 fixed sizes" is a sentence with a datum dropped into it. Prose spells small numbers,
+ * and the pitch is prose. Above ten it stays a numeral, which is also what prose does.
+ *
+ * The value still comes from the constant — this only chooses how to render it, so a change to a
+ * default still moves the copy.
+ */
+const WORDS = [
+  "zero", "one", "two", "three", "four", "five",
+  "six", "seven", "eight", "nine", "ten",
+] as const;
+const spell = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 10 ? WORDS[n] : String(n));
+
 export const SITE = {
   name: "Hydra",
   tagline: "Private messaging on Starknet, where what leaks is computed rather than promised.",
@@ -185,10 +201,10 @@ export const SITE = {
       title: "What the system actually does",
       body: [
         "A message's pointer goes on Starknet's STRK20 privacy pool. Its contents go to a storage "
-        + `server as a sealed blob, padded to one of ${MEASURED.buckets.length} fixed sizes. The `
-        + `upload is delayed by up to ${MEASURED.jitterBlocks} blocks and mixed with `
-        + `${MEASURED.coverRate} decoy uploads, and the decoys are fetched by the recipient `
-        + "exactly the way real messages are.",
+        + `server as a sealed blob, padded to one of ${spell(MEASURED.buckets.length)} fixed `
+        + `sizes. The upload is delayed by up to ${spell(MEASURED.jitterBlocks)} blocks and mixed `
+        + `with ${spell(MEASURED.coverRate)} decoy uploads, and the decoys are fetched by the `
+        + "recipient exactly the way real messages are.",
         "You choose, per message, whether it carries a signature. A signed message can be proved "
         + "to be yours and you cannot take that back. A deniable one carries no signature at all, "
         + "so either party could have written it and neither can prove which.",

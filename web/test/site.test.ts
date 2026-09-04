@@ -596,22 +596,40 @@ test("the tools do not describe themselves in words this site refuses", () => {
  * of the few that are not measurements at all.
  */
 test("no hand-written sentence asserts a number the code did not produce", () => {
+  /**
+   * Both spellings, because `content.ts` renders small integers as words.
+   *
+   * That was a readability fix — "padded to one of 5 fixed sizes" is a sentence with a datum
+   * dropped into it — and it quietly opened a hole in this check: a hand-written "eight blocks"
+   * is exactly the assertion the guard exists to catch, and a numeral-only matcher cannot see it.
+   * So the spelled forms are measured too, and the prose is scanned for both.
+   */
+  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const spell = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 10 ? words[n] : String(n));
+  const both = (n: number) => [String(n), spell(n)];
+
   const measured = new Set([
+    ...both(MEASURED.jitterBlocks),
+    ...both(MEASURED.coverRate),
+    ...both(MEASURED.coverRate + 1),
+    ...both(MEASURED.buckets.length),
+    ...both(MEASURED.noteFelts),
+    ...both(MEASURED.senderIdentifiedOnChain),
     String(MEASURED.jitterBlocks),
-    String(MEASURED.coverRate),
-    String(MEASURED.coverRate + 1),
-    String(MEASURED.buckets.length),
-    String(MEASURED.noteFelts),
     `${Math.round(MEASURED.isolatedMessageIdentified * 100)}`,
     `${Math.round(MEASURED.clusteredMessageIdentified * 100)}`,
-    String(MEASURED.senderIdentifiedOnChain),
   ]);
   /**
    * Numerals that are not measurements: version and mode strings, a year, the ordinals that
    * number the sections. Listed rather than pattern-matched, because "which numbers are allowed
    * to be typed by a person" is exactly the judgement that should be written down.
    */
-  const notMeasurements = new Set(["0600", "24", "0", "20", "1", "2", "3", "4", "5", "6", "7"]);
+  const notMeasurements = new Set([
+    "0600", "24", "0", "20", "1", "2", "3", "4", "5", "6", "7",
+    // Ordinary English that happens to be a number word, in phrases carrying no measurement:
+    // "one client per identity", "either of you", "one of five". Listed, not pattern-matched.
+    "one", "two",
+  ]);
 
   const prose = [
     ...SITE.what, ...SITE.notYet, ...SITE.doesNotClaim, ...SITE.beforeYouUse,
@@ -622,8 +640,10 @@ test("no hand-written sentence asserts a number the code did not produce", () =>
     ...SITE.why.map((w) => w.body),
   ];
 
+  const numberWord = new RegExp(`\\b(\\d+|${words.slice(3).join("|")})\\b`, "gi");
   for (const line of prose) {
-    for (const [, numeral] of line.matchAll(/\b(\d+)\b/g)) {
+    for (const [, raw] of line.matchAll(numberWord)) {
+      const numeral = raw.toLowerCase();
       assert.ok(
         measured.has(numeral) || notMeasurements.has(numeral),
         `"${numeral}" is asserted in hand-written copy and is not a value MEASURED produces:\n`

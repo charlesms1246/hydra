@@ -32,7 +32,7 @@ export default function Demo() {
         </header>
 
         <Section n="01" id="tools" title="TWO TOOLS">
-          <div className="why">
+          <div className="why two">
             {SITE.demo.tools.map((t) => (
               <article key={t.id}>
                 <span className="why-label">{t.who}</span>

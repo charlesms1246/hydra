@@ -111,6 +111,19 @@ export function Solids() {
     // ambient animation.
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
+    /*
+     * The landing page is built around this field; every other page is built around text.
+     *
+     * On `/` a full viewport of hero sits above the first sentence, so the solids have room to be
+     * seen before anything has to be read. On `/install/` and the rest, prose starts immediately
+     * and a field at landing-page strength competes with it from the first line — which is what
+     * it did. So those pages get it dimmer and fade it out over half the distance: present at the
+     * masthead, gone by the time anybody is reading.
+     */
+    const hero = !!document.querySelector(".hero");
+    const rest = hero ? REST_OPACITY : REST_OPACITY * 0.45;
+    const exitViewports = hero ? EXIT_VIEWPORTS : EXIT_VIEWPORTS * 0.45;
+
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -197,7 +210,7 @@ export function Solids() {
       // repairs itself if the reader happens to scroll — which is the bug that makes a field
       // claiming to be a function of scroll position quietly not be one.
       const scrolled = window.scrollY / Math.max(window.innerHeight, 1);
-      const progress = Math.min(1, scrolled / EXIT_VIEWPORTS);
+      const progress = Math.min(1, scrolled / exitViewports);
       const eased = progress * progress;
 
       /*
@@ -209,7 +222,7 @@ export function Solids() {
        * somebody is trying to read it. Fading against the same progress value means they are
        * already well dimmed by the time they cross, and gone before the section ends.
        */
-      mount.style.opacity = String(REST_OPACITY * (1 - progress) ** 1.4);
+      mount.style.opacity = String(rest * (1 - progress) ** 1.4);
 
       for (const s of solids) {
         travel.copy(s.exit).multiplyScalar(eased * EXIT_DISTANCE);

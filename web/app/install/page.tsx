@@ -6,6 +6,7 @@ import { SITE } from "../../content.ts";
 import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
+import { Code } from "../../components/Code.tsx";
 import { Footer } from "../../components/Footer.tsx";
 
 /**
@@ -68,7 +69,7 @@ export default function Install() {
                 <pre className="terminal">
                   <code>{s.commands.map((c) => `$ ${c}`).join("\n")}</code>
                 </pre>
-                <p>{s.note}</p>
+                <p><Code>{s.note}</Code></p>
               </li>
             ))}
           </ol>

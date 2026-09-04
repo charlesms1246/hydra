@@ -1,11 +1,7 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { SITE } from "../content.ts";
 import { PageFrame } from "../components/PageFrame.tsx";
 import { Nav } from "../components/Nav.tsx";
 import { Section } from "../components/Section.tsx";
-import { Solids } from "../components/Solids.tsx";
 import { Footer } from "../components/Footer.tsx";
 
 /**
@@ -23,25 +19,9 @@ import { Footer } from "../components/Footer.tsx";
  * generated statement does not — which is the whole risk of having a marketing page at all.
  */
 
-/**
- * The ASCII field — the project's own art, the same `art.txt` the TUI draws.
- *
- * It is the no-script layer. `components/Solids.tsx` draws over it and hides it on mount, so
- * a reader with JavaScript gets the animation and a reader without one gets this. Copied into
- * `web/` rather than imported from `devtool/`, because it is decoration: the statement is
- * imported since the coupling IS the guarantee, and a drawing is not.
- */
-function asciiField(): string {
-  return readFileSync(join(process.cwd(), "art.txt"), "utf8").replace(/\n$/, "");
-}
-
 export default function Home() {
   return (
     <>
-      <pre className="field" aria-hidden>
-        {asciiField()}
-      </pre>
-      <Solids />
       <PageFrame word={SITE.name.toUpperCase()} />
       <Nav current="home" />
 

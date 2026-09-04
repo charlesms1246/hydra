@@ -665,7 +665,7 @@ body.has-canvas .field {
   z-index: 50;
   display: flex;
   align-items: center;
-  gap: clamp(1.5rem, 5vw, 4rem);
+  gap: clamp(0.875rem, 3vw, 2.5rem);
   padding: 0.6rem 1.25rem;
   background: var(--g-8);
   border: 1px solid var(--g-12);
@@ -696,6 +696,20 @@ body.has-canvas .field {
 .nav-mark {
   font-size: 0.8125rem !important;
   letter-spacing: 0.05em !important;
+}
+
+/*
+ * The links.
+ *
+ * `display: flex` is load-bearing, not cosmetic: without it the anchors are inline with nothing
+ * between them and the bar renders `PITCHDEMOINSTALLABOUT`. The gap on `.nav` spaces the three
+ * top-level groups — mark, dots, links — and does nothing for the links inside this one.
+ */
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.875rem, 2.2vw, 2rem);
+  min-width: 0;
 }
 
 /* The dots. Decoration, and the one piece of the reference's nav worth keeping — they are what
@@ -743,6 +757,12 @@ body.has-canvas .field {
   .why {
     grid-template-columns: repeat(3, 1fr);
     border-bottom: 1px solid var(--g-12);
+  }
+
+  /* Two cards, not three. Without this the pair sits in a three-column grid and the empty third
+     reads as a card that failed to load rather than as space. */
+  .why.two {
+    grid-template-columns: repeat(2, 1fr);
   }
   .why article {
     padding: 2.5rem 2rem;
@@ -977,4 +997,16 @@ body.has-canvas .field {
 .why h3 a:hover,
 .why h3 a:focus-visible {
   color: var(--accent);
+}
+
+/* Inline code in hand-written prose. A step down the ramp and a shade of the mono face — not a
+   box, which at this density would turn a paragraph into a row of buttons. */
+.steps p code,
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  color: var(--g-80);
+  background: var(--g-8);
+  padding: 0.1em 0.35em;
+  border-radius: 2px;
 }
