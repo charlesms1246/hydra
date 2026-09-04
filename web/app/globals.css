@@ -1,0 +1,846 @@
+/*
+ * The marketing site's whole design system. One stylesheet, no framework, no utility classes.
+ *
+ * The visual language is taken from `~/projects/Gestalt/web_design/` — itself a reskin of the
+ * Dragonfly Capital site — and the reason is not that it looks good. It is a DOCUMENT
+ * aesthetic: registration marks, numbered sections, hairline rules, and a monospace metadata
+ * column hanging off every row. This site's entire argument is that every claim names the file
+ * that makes it true, and `Claim.from` is already that metadata column. The reference just
+ * gives it somewhere to live.
+ *
+ * Which means the aesthetic is BORROWING THE AUTHORITY OF AN AUDITED DOCUMENT, and only earns
+ * it if the citations are real. `test/site.test.ts` checks that each one resolves to a tracked
+ * file. A `from` pointing at something a reader cannot open would be this design lying in the
+ * most expensive way available to it: confidently, in monospace, in the column that exists to
+ * prove the sentence beside it.
+ *
+ * NOTHING HERE IS TAILWIND, deliberately. Gestalt's components are app-specific — order books,
+ * charts, trade panels — and the only structurally reusable one is its `PageFrame`, which is
+ * forty lines. Adding Tailwind and shadcn to set seven static sections would be flexibility
+ * nobody asked for.
+ */
+
+/* --------------------------------------------------------------------------------------------
+ * Faces. Every one is served from this origin.
+ *
+ * A visitor to this page may be deciding whether to leak to a newsroom. A font fetched from
+ * Google tells Google their IP and referrer, on a page whose entire subject is which third
+ * parties learn what — so there is no `next/font/google` here and no URL that leaves this host.
+ * `test/site.test.ts` fails on any absolute URL that is not one of the declared links.
+ *
+ * `font-display: block` on the wordmark rather than `swap`: it is the whole hero at 14vw, and a
+ * fallback grotesk flashing at that size and then reflowing is uglier than a beat of nothing.
+ * Everything else uses `swap`, because prose that arrives late is worse than prose in the
+ * fallback face.
+ * ------------------------------------------------------------------------------------------ */
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Variable-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/InstrumentSerif-Regular-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+/*
+ * NON Natural Grotesk is licensed to the user for personal use, which covers building this and
+ * does not cover redistributing the file. So the binary is gitignored and `scripts/preflight.ts`
+ * fails the build with a path and an explanation when it is missing, rather than quietly
+ * falling back to Geist and shipping a wordmark nobody chose. See `web/README.md`.
+ */
+@font-face {
+  font-family: "NON Natural Grotesk";
+  src: url("/fonts/NON-Natural-Grotesk-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: block;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * The palette: three colours, and a ramp with no hue in it.
+ *
+ * Black, white, one accent. Everything else is a step on the black-to-white line. This is a
+ * hard constraint carried over from the reference, and the constraint is what makes the system
+ * work rather than the particular hue — if a state needs distinguishing it is distinguished by
+ * weight, fill, glyph or position, never by introducing a fourth colour.
+ *
+ * The accent is red. Used sparingly and never as the only cue: section numbers, the wordmark,
+ * and the rule above a partial guarantee. No text smaller than 1rem is set in it, because at
+ * 5.5:1 on black it clears AA for large text with less room than white does.
+ * ------------------------------------------------------------------------------------------ */
+
+:root {
+  --black: #000000;
+  --white: #ffffff;
+  --accent: #ff4438;
+
+  --g-4: #0a0a0a;
+  --g-8: #121212;
+  --g-12: #1c1c1c;
+  --g-20: #2e2e2e;
+  --g-32: #4a4a4a;
+  --g-48: #6e6e6e;
+  --g-64: #949494;
+  --g-80: #bdbdbd;
+
+  --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --display: "NON Natural Grotesk", "Geist", ui-sans-serif, sans-serif;
+
+  /* The page gutter, matched to the frame inset so the rules line up with the corner marks. */
+  --gutter: clamp(1rem, 4vw, 4rem);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* The section links in the footer are the only navigation; nothing should snap or lurch. */
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--black);
+  color: var(--white);
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * The frame — corner letters and registration crosshairs.
+ *
+ * The only serif in the chrome, which is what makes the corner letters read as a printer's mark
+ * rather than as interface. `aria-hidden`, because "H Y R A" read aloud is noise.
+ * ------------------------------------------------------------------------------------------ */
+
+.frame {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  user-select: none;
+  padding: clamp(0.75rem, 1.5vw, 1.5rem);
+}
+
+.frame > div {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.frame span {
+  position: absolute;
+  font-family: var(--serif);
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
+  line-height: 1;
+  color: var(--g-80);
+}
+
+.frame .tl { top: 0; left: 0; }
+.frame .tr { top: 0; right: 0; }
+.frame .bl { bottom: 0; left: 0; }
+.frame .br { bottom: 0; right: 0; }
+
+.frame .cross {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--g-32);
+}
+
+.frame .ct { top: -0.15rem; left: 50%; transform: translateX(-50%); }
+.frame .cb { bottom: -0.15rem; left: 50%; transform: translateX(-50%); }
+.frame .cl { left: -0.15rem; top: 50%; transform: translateY(-50%); }
+.frame .cr { right: -0.15rem; top: 50%; transform: translateY(-50%); }
+
+/* --------------------------------------------------------------------------------------------
+ * The ASCII field.
+ *
+ * Gestalt's is a canvas renderer, per-cell-per-frame on the main thread, and could not be
+ * ported without shipping the script to draw it. This one is the project's OWN art — the same
+ * `art.txt` the TUI draws on its Disclosure page — inlined as text at build time. It costs one
+ * element and no requests, and it is the product's picture rather than a borrowed texture.
+ * ------------------------------------------------------------------------------------------ */
+
+/*
+ * The animated layer sits over the ASCII drawing and replaces it. `has-canvas` is added to
+ * `<body>` by `Solids.tsx` only once WebGL is actually running, so a reader with no script, no
+ * WebGL, or a reduced-motion preference keeps the static drawing rather than getting nothing.
+ */
+.solids {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /*
+   * The at-rest value only. `Solids.tsx` overrides this inline every frame, fading the field out
+   * as the page scrolls — see the exit fade there for why that is load-bearing rather than
+   * decorative. This is what a reader sees before any scroll, and what they keep if the script
+   * never runs.
+   */
+  opacity: 0.32;
+}
+
+/*
+ * `AsciiEffect` builds its own `<div><table>` and sets font-family and line-height on it. The
+ * face is overridden here so the field is set in the same mono as the rest of the site — an
+ * ASCII backdrop in a different monospace than the labels beside it reads as a screenshot of
+ * something else.
+ */
+.solids > div {
+  font-family: var(--mono) !important;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+body.has-canvas .field {
+  display: none;
+}
+
+.field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+  font-family: var(--mono);
+  /* Small enough that the 100x51 drawing reads as a silhouette rather than as a dot grid:
+     past about 1vw the individual glyphs separate and the creature stops being legible. */
+  font-size: clamp(4px, 0.9vw, 12px);
+  line-height: 1.15;
+  letter-spacing: 0.05em;
+  white-space: pre;
+  color: var(--g-20);
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Layout
+ * ------------------------------------------------------------------------------------------ */
+
+.page {
+  position: relative;
+  z-index: 1;
+  padding: 0 var(--gutter) 0;
+}
+
+.hero {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 1.5rem;
+}
+
+/*
+ * The wordmark. `NON Natural Grotesk` has one weight and no italic — it has exactly this job.
+ *
+ * NOTHING ELSE GOES IN THE HERO. The most expensive real estate on the page is where an
+ * over-claim goes, so it holds the name and one sentence that names a mechanism, and no
+ * guarantee at all.
+ */
+.wordmark {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(3.5rem, 15vw, 15rem);
+  line-height: 0.85;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+  margin: 0;
+}
+
+.tagline {
+  font-family: var(--serif);
+  font-size: clamp(1.125rem, 2.2vw, 1.75rem);
+  line-height: 1.35;
+  color: var(--g-80);
+  max-width: 34ch;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Section headers — accent number over a large grotesk title, straddling a full-bleed hairline,
+ * with the section's own tick pinned to the rule at the far left.
+ * ------------------------------------------------------------------------------------------ */
+
+.section {
+  padding-block: clamp(4rem, 12vh, 10rem) 0;
+}
+
+.section-head {
+  position: relative;
+  text-align: center;
+  border-bottom: 1px solid var(--g-20);
+  margin-inline: calc(var(--gutter) * -1);
+  padding-inline: var(--gutter);
+  margin-bottom: clamp(2rem, 5vh, 4rem);
+}
+
+.section-number {
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
+  line-height: 1;
+  color: var(--accent);
+  display: block;
+}
+
+.section-title {
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(1.75rem, 5vw, 4rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 0;
+  transform: translateY(0.12em);
+}
+
+/* The tick. Sits ON the rule, like a plate number in the margin of a printed figure. */
+.section-tick {
+  position: absolute;
+  left: var(--gutter);
+  bottom: -0.55em;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  color: var(--g-48);
+  background: var(--black);
+  padding-right: 0.75rem;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Prose
+ * ------------------------------------------------------------------------------------------ */
+
+.prose {
+  max-width: 62rem;
+  margin-inline: auto;
+}
+
+.prose p {
+  font-family: var(--serif);
+  font-size: clamp(1.25rem, 2.4vw, 2rem);
+  line-height: 1.3;
+  margin: 0 0 1.5rem;
+}
+
+/*
+ * The second paragraph indents and carries a monospace label in its left margin — the reference's
+ * `ETHOS` treatment. Below the breakpoint the label sits above the text instead of beside it,
+ * because a 4rem margin on a phone is most of the screen.
+ */
+.prose .labelled {
+  color: var(--g-64);
+}
+
+.prose-label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  color: var(--g-48);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 60rem) {
+  .prose .labelled {
+    margin-left: 25%;
+    position: relative;
+  }
+  .prose-label {
+    position: absolute;
+    left: -5.5rem;
+    top: 0.75em;
+    margin: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------------------------
+ * The auditor section.
+ *
+ * Standing rule 5: the auditor line appears in every disclosure statement, always, and never as
+ * a footnote. So it gets the reference's biggest typographic moment — and it is filled from
+ * `statement()` rather than written here, which is the only way to satisfy that rule and the
+ * rule that claims are generated rather than asserted at the same time.
+ * ------------------------------------------------------------------------------------------ */
+
+.auditor {
+  max-width: 68rem;
+  margin-inline: auto;
+}
+
+/*
+ * Large, but not hero scale.
+ *
+ * The reference's biggest serif moment carries three words. This carries a generated claim of
+ * about four hundred characters, because it is not a slogan — it is the disclosure, in the words
+ * the statement produced. At 4.5rem it became a wall nobody would read, which would be a way of
+ * burying it that happens to look emphatic. This is the largest size at which the whole sentence
+ * still reads as a sentence.
+ */
+.auditor-lead {
+  font-family: var(--serif);
+  font-size: clamp(1.5rem, 3.2vw, 2.5rem);
+  line-height: 1.2;
+  margin: 0 0 clamp(2rem, 5vh, 3.5rem);
+  color: var(--white);
+  text-wrap: balance;
+}
+
+.auditor-rest {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 60rem) {
+  .auditor-rest {
+    grid-template-columns: 1fr 1fr;
+    gap: 3rem;
+  }
+}
+
+.auditor-rest p {
+  font-family: var(--serif);
+  font-size: clamp(1.125rem, 1.8vw, 1.5rem);
+  line-height: 1.35;
+  color: var(--g-80);
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Claim rows — the reference's content-list layout, which is already the shape of a `Claim`.
+ *
+ *   [ mono index ] [ serif sentence ] [ mono citation ]
+ *
+ * THE CITATION IS NOT A LINK, deliberately. Some `from` paths point into the repository and
+ * some once pointed at documents no reader could open; a page that never offers a click it
+ * cannot honour is better than one that offers a 404. When every citation resolves to a public
+ * URL this can become an anchor, and not before.
+ * ------------------------------------------------------------------------------------------ */
+
+.claims {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--g-12);
+}
+
+.claim {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem 2rem;
+  padding: 1.75rem 0;
+  border-bottom: 1px solid var(--g-12);
+}
+
+@media (min-width: 60rem) {
+  .claim {
+    grid-template-columns: 3.5rem minmax(0, 1fr) 18rem;
+    align-items: start;
+    gap: 2rem;
+  }
+}
+
+.claim-index {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--g-32);
+  padding-top: 0.5em;
+  font-variant-numeric: tabular-nums;
+}
+
+.claim-says {
+  font-family: var(--serif);
+  font-size: clamp(1.0625rem, 1.5vw, 1.375rem);
+  line-height: 1.35;
+  color: var(--white);
+}
+
+.claim-from {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--g-48);
+  word-break: break-word;
+  padding-top: 0.6em;
+}
+
+/*
+ * A partial guarantee is marked by a rule, not by a colour — the palette has no fourth colour to
+ * spend and "amber means careful" is a convention this page has not earned. The number in the
+ * sentence is the real signal; this only makes the set visible at a glance.
+ */
+.claim.partial {
+  border-left: 1px solid var(--accent);
+  padding-left: 1.25rem;
+}
+
+@media (min-width: 60rem) {
+  .claim.partial {
+    margin-left: -1.25rem;
+  }
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Warnings — what it is not ready for. Above the guarantees, never below.
+ * ------------------------------------------------------------------------------------------ */
+
+.warnings {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto;
+  max-width: 62rem;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.warnings li {
+  font-family: var(--serif);
+  font-size: clamp(1.125rem, 1.8vw, 1.5rem);
+  line-height: 1.35;
+  color: var(--g-80);
+  border-left: 1px solid var(--g-32);
+  padding-left: 1.5rem;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Footer.
+ *
+ * The reference's footer is mostly a company's legal furniture — terms, disclosures, a
+ * copyright line, an address. THERE IS NO COMPANY. So the columns hold what is true: where the
+ * code is, and what the page is. No canary, no contact, no entity, no copyright.
+ * ------------------------------------------------------------------------------------------ */
+
+.footer {
+  position: relative;
+  z-index: 1;
+  margin-top: clamp(5rem, 15vh, 10rem);
+  border-top: 1px solid var(--g-20);
+  padding: clamp(2rem, 5vh, 4rem) var(--gutter) clamp(4rem, 10vh, 7rem);
+}
+
+.footer-cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3rem;
+  max-width: 90rem;
+  margin-inline: auto;
+}
+
+@media (min-width: 48rem) {
+  .footer-cols {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.footer-col h2 {
+  font-family: var(--serif);
+  font-size: 1.125rem;
+  font-weight: 400;
+  text-align: center;
+  margin: 0 0 1rem;
+  color: var(--g-80);
+}
+
+.footer-col ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.footer-col li {
+  border-bottom: 1px solid var(--g-12);
+}
+
+.footer-col a,
+.footer-col span {
+  display: block;
+  padding: 0.75rem 0;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 0.9375rem;
+  letter-spacing: 0.02em;
+  color: var(--white);
+  text-decoration: none;
+}
+
+.footer-col a:hover,
+.footer-col a:focus-visible {
+  color: var(--accent);
+}
+
+.footer-note {
+  max-width: 62rem;
+  margin: clamp(3rem, 8vh, 5rem) auto 0;
+  border-top: 1px solid var(--g-12);
+  padding-top: 2rem;
+}
+
+.footer-note p {
+  font-family: var(--serif);
+  font-size: clamp(1.125rem, 1.8vw, 1.5rem);
+  line-height: 1.35;
+  color: var(--g-64);
+  margin: 0;
+}
+
+.footer-tick {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  color: var(--g-48);
+  display: block;
+  margin-bottom: 1rem;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Accessibility
+ * ------------------------------------------------------------------------------------------ */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+
+/* --------------------------------------------------------------------------------------------
+ * The nav — a fixed pill, borrowed from the reference's chrome.
+ * ------------------------------------------------------------------------------------------ */
+
+.nav {
+  position: fixed;
+  top: clamp(0.75rem, 1.5vw, 1.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: clamp(1.5rem, 5vw, 4rem);
+  padding: 0.6rem 1.25rem;
+  background: var(--g-8);
+  border: 1px solid var(--g-12);
+  border-radius: 2px;
+  max-width: calc(100vw - 6rem);
+}
+
+.nav a {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  color: var(--white);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav a:hover,
+.nav a:focus-visible {
+  color: var(--accent);
+}
+
+.nav a[aria-current="page"] {
+  color: var(--accent);
+}
+
+.nav-mark {
+  font-size: 0.8125rem !important;
+  letter-spacing: 0.05em !important;
+}
+
+/* The dots. Decoration, and the one piece of the reference's nav worth keeping — they are what
+   makes the bar read as an instrument rather than as a menu. */
+.nav-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.nav-dots i {
+  width: 4px;
+  height: 4px;
+  background: var(--g-32);
+}
+
+.nav-dots i:nth-child(2) {
+  background: var(--accent);
+}
+
+@media (max-width: 30rem) {
+  .nav-dots {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------------------------------------------
+ * "Why it is different" — three cards, no borders, separated by rules.
+ * ------------------------------------------------------------------------------------------ */
+
+.why {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  max-width: 90rem;
+  margin-inline: auto;
+  border-top: 1px solid var(--g-12);
+}
+
+.why article {
+  padding: 2.5rem 0;
+  border-bottom: 1px solid var(--g-12);
+}
+
+@media (min-width: 60rem) {
+  .why {
+    grid-template-columns: repeat(3, 1fr);
+    border-bottom: 1px solid var(--g-12);
+  }
+  .why article {
+    padding: 2.5rem 2rem;
+    border-bottom: none;
+    border-right: 1px solid var(--g-12);
+  }
+  .why article:last-child {
+    border-right: none;
+  }
+  .why article:first-child {
+    padding-left: 0;
+  }
+}
+
+.why-label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 1.25rem;
+}
+
+.why h3 {
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(1.25rem, 2vw, 1.625rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 1rem;
+  color: var(--white);
+}
+
+.why p {
+  font-family: var(--serif);
+  font-size: 1.125rem;
+  line-height: 1.4;
+  color: var(--g-64);
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * The call to the disclosure page.
+ *
+ * It is a link to a document about what leaks, so it is set as a line of text rather than as a
+ * button. A button would be asking; this is offering.
+ * ------------------------------------------------------------------------------------------ */
+
+.cta {
+  max-width: 62rem;
+  margin: 3rem auto 0;
+}
+
+.cta a {
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(1.125rem, 2vw, 1.5rem);
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--g-32);
+  padding-bottom: 0.25rem;
+}
+
+.cta a:hover,
+.cta a:focus-visible {
+  border-bottom-color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------------------------
+ * The disclosure page's header. A document masthead, not a hero.
+ * ------------------------------------------------------------------------------------------ */
+
+.doc-head {
+  padding: clamp(7rem, 18vh, 12rem) 0 0;
+  max-width: 62rem;
+}
+
+.doc-head h1 {
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(2.5rem, 7vw, 5rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+}
+
+.doc-head .tagline {
+  text-align: left;
+  max-width: 46ch;
+}
+
+/* The mark. Inverted to white by filter rather than shipped twice — one file, two appearances. */
+.nav-mark img {
+  display: block;
+  filter: invert(1);
+  opacity: 0.9;
+}
+
+.nav-mark:hover img,
+.nav-mark:focus-visible img {
+  filter: invert(38%) sepia(89%) saturate(4000%) hue-rotate(347deg) brightness(101%) contrast(101%);
+  opacity: 1;
+}

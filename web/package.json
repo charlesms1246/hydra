@@ -6,9 +6,25 @@
   "engines": {
     "node": ">=24"
   },
-  "description": "The marketing site. Static, no dependencies, and it ships no JavaScript — see build.ts.",
+  "description": "The marketing site. Statically exported, self-hosted fonts, no third-party requests — see README.md.",
   "scripts": {
-    "build": "node build.ts",
-    "test": "node --test test/*.test.ts"
+    "preflight": "node scripts/preflight.ts",
+    "dev": "npm run preflight && next dev --webpack",
+    "build": "npm run preflight && next build --webpack",
+    "test": "npm run build && node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.2.12",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.185.4",
+    "typescript": "^5"
   }
 }
