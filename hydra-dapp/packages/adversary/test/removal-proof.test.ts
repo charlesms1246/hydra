@@ -19,6 +19,8 @@ import { rootOf, proofFor, verifyProof, TREE_LEAVES } from "../../vault-server/s
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { publish, wireBytes } from "../../vault-client/src/blobs.ts";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { codeOf } from "../src/prose.ts";
 
 const intent = { confirmedPublicAt: "2026-09-04T00:00:00Z", reason: "removal proof" };
 const bytes = (b: Parameters<typeof wireBytes>[0]) => wireBytes(b) as unknown as Uint8Array;
@@ -195,4 +197,64 @@ test("THE AUDIT RUNS OVER HTTP, by somebody who is not the operator", async () =
     assert.deepEqual(Object.keys(meta).sort(), ["leaves", "root"]);
     assert.equal(meta.leaves, TREE_LEAVES, "the endpoint reports a variable leaf count");
   } finally { server.close(); }
+});
+
+/**
+ * **THE ONLY CHECK THAT SHOWS A REMOVAL RATHER THAN A PRESENCE.**
+ *
+ * Found by running `hydra audit` against a genuinely removed object on a live vault. The output
+ * said *"that root plus a proof you kept is what shows it"* — and **nothing in the product accepted
+ * a kept proof.** The sentence was right about the cryptography and wrong about the software: an
+ * E-UNREACHABLE, described in prose, on the flagship claim of `decisions/0039`.
+ *
+ * The asymmetry is the reason it has to exist. A live proof shows an object is in the tree NOW.
+ * Once the operator removes it, no answer the vault gives can show it ever was — the vault is the
+ * party being audited. So the evidence must leave the operator's control BEFORE the removal, and
+ * something must read it back afterwards WITHOUT asking them anything.
+ */
+test("A KEPT PROOF VERIFIES AFTER THE OBJECT IS GONE, against the root published while it was there",
+  () => {
+    const ids = ["pub:aaa", "pub:bbb", "pub:ccc"];
+    const before = rootOf(ids);
+    const kept = proofFor(ids, "pub:bbb")!;
+    assert.ok(kept, "no proof for an object that is present");
+    assert.equal(verifyProof(before, "pub:bbb", kept), true);
+
+    // The operator removes it. The tree they commit to no longer contains it, and they will not
+    // produce a proof for it — that is what removal means here.
+    const after = rootOf(ids.filter((i) => i !== "pub:bbb"));
+    assert.notEqual(before, after, "removing an object did not move the root");
+    assert.equal(proofFor(ids.filter((i) => i !== "pub:bbb"), "pub:bbb"), null);
+
+    // The kept proof still checks against the OLD root, which is the whole mechanism.
+    assert.equal(verifyProof(before, "pub:bbb", kept), true,
+      "a proof kept before removal stopped verifying against the root it was taken under");
+    // And explicitly NOT against the new one — otherwise it would prove nothing about removal.
+    assert.equal(verifyProof(after, "pub:bbb", kept), false,
+      "the kept proof verifies against the post-removal root too, so it distinguishes nothing");
+  });
+
+test("a kept proof cannot be moved onto another object", () => {
+  // Otherwise an auditor could be handed one proof and claim it covers anything.
+  const ids = ["pub:aaa", "pub:bbb", "pub:ccc"];
+  const root = rootOf(ids);
+  const kept = proofFor(ids, "pub:bbb")!;
+  assert.equal(verifyProof(root, "pub:aaa", kept), false,
+    "a proof for one id verified another, so a kept proof proves nothing in particular");
+});
+
+test("THE AUDIT COMMAND OFFERS BOTH HALVES — the check and the keeping", () => {
+  // The gap was not the mathematics, which was already here and already tested. It was that no
+  // command reached it. Pinned against the CLI's own text so the capability cannot go back to
+  // being something only prose mentions.
+  const cli = readFileSync(new URL("../../cli/src/cli.ts", import.meta.url), "utf8");
+  const code = codeOf(cli);
+  assert.match(code, /flag\("proof"\)/, "no way to hand `audit` a proof you kept");
+  assert.match(code, /flag\("keep"\)/, "no way to keep a proof while the object is still served");
+  // Offline is the property, not a detail: an auditor must not have to tell the operator they are
+  // auditing. The `--proof` branch must return before any request goes out.
+  const branch = code.slice(code.indexOf('flag("proof")'));
+  const untilBreak = branch.slice(0, branch.indexOf("break;"));
+  assert.ok(!/fetch\(/.test(untilBreak),
+    "the kept-proof check contacts the vault, so the party being audited learns of the audit");
 });

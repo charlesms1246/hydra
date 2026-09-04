@@ -29,7 +29,8 @@
  *   the public class — a post with no return channel, readable by anyone who has the id:
  *     hydra post REASON "text"                    > a pub: id   (there is no feed and no index)
  *     hydra fetch ID…                             read public posts back
- *     hydra audit ID ROOT                         check a removal against a published commitment
+ *     hydra audit ID ROOT [--keep FILE]           check a removal against a published commitment
+    hydra audit ID ROOT --proof FILE            check a proof you kept — needs no vault
  *     hydra lookup 0xADDRESS                      > their bundle, off chain, without asking them
  *     hydra forget NAME [--before EVENT]          delete messages; the key is already gone
  *     hydra disclose [--cite]                     what everyone involved can see
@@ -49,7 +50,7 @@ import { describePost, describeFetch } from "../../client/src/public.ts";
 import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED }
   from "../../claims/src/warnings.ts";
 import { verifyProof } from "../../vault-server/src/root.ts";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
   init, publishBundle, open, accept, openAndSend, collect, sendMessage, flush, readChannel,
   fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
@@ -440,8 +441,43 @@ switch (command) {
     const [blobId, root] = positional;
     if (!blobId || !root) {
       console.error("hydra audit <blobId> <root>   — the root from a published report");
+      console.error("hydra audit <blobId> <root> --proof FILE   — check a proof you kept, offline");
+      console.error("hydra audit <blobId> <root> --keep FILE    — save the proof this vault gives");
       usage();
     }
+
+    // **A PROOF YOU KEPT, CHECKED WITHOUT ASKING THE VAULT ANYTHING.**
+    //
+    // This branch exists because running the command against a removed object found the message
+    // below naming a capability that did not exist. It said "that root plus a proof you kept is
+    // what shows it" — and there was no way to hand a kept proof to anything. The instruction was
+    // correct about the cryptography and wrong about the software, which is the same defect class
+    // as an unreachable takedown: a mechanism whose only description is prose.
+    //
+    // It is also the ONLY branch that proves a REMOVAL rather than a presence. A live proof shows
+    // an object is in the tree now; nothing the vault will answer once it has removed something
+    // can show that it used to be, because the vault is the party the audit is about. So the
+    // evidence has to have left the vault's control BEFORE the removal, and this reads it back.
+    //
+    // OFFLINE ON PURPOSE — no `state.vaultUrl`, no network. An auditor checking whether an
+    // operator removed something should not have to tell that operator they are checking.
+    const proofFile = flag("proof");
+    if (proofFile) {
+      const kept = JSON.parse(readFileSync(proofFile, "utf8")) as
+        { index: number; path: string[] };
+      const good = verifyProof(root, blobId, kept);
+      console.log(good
+        ? `${blobId} WAS committed to under root ${root.slice(0, 16)}…\n\n`
+          + "if that root was published by the operator and the object is not served now, that is\n"
+          + "a removal, shown without their cooperation. the root is the part they signed up to;\n"
+          + "this proof is the part you kept."
+        : "THE KEPT PROOF DOES NOT VERIFY against that root. That means this proof and this root\n"
+          + "are not from the same tree — check you have paired them correctly before concluding\n"
+          + "anything about the operator.");
+      if (!good) process.exitCode = 1;
+      break;
+    }
+
     const res = await fetch(`${state.vaultUrl}/v1/pub/proof`, {
       method: "POST", body: JSON.stringify({ id: blobId }),
     });
@@ -458,10 +494,23 @@ switch (command) {
       console.log("committing to right now.");
       console.log("");
       console.log("if it WAS in an earlier published root, it was removed, and that root plus a");
-      console.log("proof you kept is what shows it. if it was never in one, nothing here says it");
-      console.log("ever existed — which is the limit of what this can tell you.");
+      console.log("proof you kept is what shows it:");
+      console.log("");
+      console.log(`    hydra audit ${blobId.slice(0, 16)}… <that root> --proof <the file you kept>`);
+      console.log("");
+      console.log("that check needs no vault, which is the point — the party you are auditing");
+      console.log("cannot decline it. if you kept no proof, nothing here says this ever existed,");
+      console.log("and that is the limit of what this can tell you.");
       process.exitCode = 1;
       break;
+    }
+    // SAVE IT WHILE IT EXISTS. A proof is only obtainable while the object is still served, and
+    // it is worthless the moment you need it if you did not take it first.
+    const keepFile = flag("keep");
+    if (keepFile) {
+      writeFileSync(keepFile, `${JSON.stringify(proof)}\n`, { mode: 0o600 });
+      console.log(`proof written to ${keepFile} — check it later with `
+        + `\`hydra audit ${blobId.slice(0, 12)}… <root> --proof ${keepFile}\`, which needs no vault.`);
     }
     const ok = verifyProof(root, blobId, proof);
     console.log(ok
