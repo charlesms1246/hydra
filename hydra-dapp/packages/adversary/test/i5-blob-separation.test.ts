@@ -20,6 +20,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { scanMatches, assertScansEveryFile } from "../src/scan.ts";
 import { uncoveredRoutes } from "../src/must-not-compile.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -104,16 +105,15 @@ test("publishing requires a stated intent, and keeps it", () => {
 test("no export converts one blob class into the other", () => {
   // The audit that outlives the types: a future function with an honest-looking name that
   // takes an EncryptedBlob and returns a PublicBlob would satisfy every test above.
-  // /usr/bin/grep, not the shell's — the shell's here is gitignore-aware and an audit that
-  // silently skips files is not an audit.
+  // **THIS AUDIT WAS BLIND TO `blobs.ts`, THE FILE IT IS ABOUT.** That file carries a correct
+  // domain separator as a raw NUL byte, `/usr/bin/grep` calls such a file binary and suppresses
+  // matched content under `-o`, and no match is the PASSING case here — so the guard scanned its
+  // own boundary file, saw nothing, and passed. `scanSource` reads bytes in Node, which has never
+  // had this problem, rather than shelling out to a tool that interprets them.
   const src = join(HERE, "..", "..", "vault-client", "src");
-  // grep exits 1 on no match and execFileSync throws for that — but no match is the PASSING
-  // case here, so it has to be caught rather than allowed to fail the test.
-  let out = "";
-  try {
-    out = execFileSync("/usr/bin/grep", ["-rhoE", "EncryptedBlob\\)[^{]*: *PublicBlob", src],
-      { encoding: "utf8" }).trim();
-  } catch { out = ""; }
+  // The instrument before the finding: if this cannot read every file, what follows means nothing.
+  assertScansEveryFile(src, assert);
+  const out = scanMatches("EncryptedBlob\\)[^{]*: *PublicBlob", src).join("\n").trim();
   assert.equal(out, "", `a function converts encrypted to public:\n${out}`);
   // And exactly one place constructs a PublicBlob, so there is one thing to review.
   const constructors = readFileSync(join(src, "blobs.ts"), "utf8")

@@ -15,6 +15,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { scanSource, assertScansEveryFile } from "../src/scan.ts";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -87,14 +88,23 @@ function reachableFrom(entry: string, seen = new Set<string>()): Set<string> {
 function grep(pattern: string, path: string): string[] {
   const stripped = (line: string): string => line.replace(/^[^:]*:\d+:/, "").trimStart();
   try {
-    return execFileSync("/usr/bin/grep", ["-rn", "--include=*.ts", "-E", pattern, path],
-      { encoding: "utf8" }).split("\n").filter(Boolean)
+    return scanSource(pattern, path)
       // A line whose match is inside a comment is not the server doing anything.
       .filter((l) => !/^(\/\/|\*|\/\*)/.test(stripped(l)));
   } catch {
     return [];
   }
 }
+
+test("THE INSTRUMENT BEFORE THE FINDING — every file under vault-server/src is readable", () => {
+  // **THE LATENT CASE.** No file in `vault-server/src` contains a NUL byte today, so this guard
+  // was never blind — the trap was simply set for whoever adds one. That is a different priority
+  // from the two guards that were blind, and a worse one to leave, because nobody would remember.
+  //
+  // The check is not about NUL: any file this scanner cannot read makes the count diverge and
+  // fails here loudly, rather than quietly shrinking what every assertion below is measured over.
+  assertScansEveryFile(SERVER_SRC, assert);
+});
 
 /**
  * One assertion per mechanism. Keyed by the same union the guarantees use, so a typo is a

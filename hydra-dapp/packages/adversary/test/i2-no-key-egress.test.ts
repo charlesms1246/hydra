@@ -33,19 +33,33 @@ import { noteCalldata } from "../../channel/src/note.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
 import { sealForChannel, publish, wireBytes } from "../../vault-client/src/blobs.ts";
 import { Vault, ENCRYPTED_ENDPOINT } from "../../vault-server/src/server.ts";
+import { scanSource, assertScansEveryFile } from "../src/scan.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGES = join(HERE, "..", "..");
 
-/** grep exits 1 on no match, which is the passing case here. */
-function grep(pattern: string, path: string): string[] {
-  try {
-    return execFileSync("/usr/bin/grep", ["-rn", "--include=*.ts", "-E", pattern, path],
-      { encoding: "utf8" }).split("\n").filter(Boolean);
-  } catch {
-    return [];
-  }
-}
+/**
+ * Through `scan.ts`, which reads files containing a NUL byte.
+ *
+ * **THIS GUARD WAS BLIND TO `blobs.ts` AND `inbox.ts` — the two files where key handling is most
+ * concentrated.** Both carry a correct domain separator as a raw NUL rather than a `\0` escape,
+ * `/usr/bin/grep` classifies such a file as binary and suppresses matched content under `-n`, and
+ * no match is the passing case here. So this scanned two of its most important subjects, saw
+ * nothing, and passed.
+ */
+const grep = (pattern: string, path: string): string[] => scanSource(pattern, path);
+
+test("THE INSTRUMENT BEFORE THE FINDING — this guard can read every file it claims to scan", () => {
+  // **NOT ABOUT NUL, THOUGH NUL IS WHY IT EXISTS.** The class is a scanner silently seeing fewer
+  // files than it claims to, and its causes are many: an encoding, a permission, a symlink, a glob
+  // that stopped matching, a directory that moved. Every one of them shrinks the corpus that every
+  // other assertion in this file is checked against, and every one of them does it quietly —
+  // because for all of these guards, no match is the passing case.
+  //
+  // This is the vacuity discipline already applied to matches, applied to INPUTS: not *did this
+  // check find something*, but *did this check see everything it claims to scan*.
+  assertScansEveryFile(PACKAGES, assert);
+});
 
 /** Everything on the client side of the wire. */
 const SOURCES = ["identity", "channel", "vault-client", "vault-server"].map((p) => join(PACKAGES, p, "src"));

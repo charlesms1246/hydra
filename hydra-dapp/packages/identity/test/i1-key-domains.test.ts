@@ -32,6 +32,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { scanMatches, scanFiles, assertScansEveryFile } from "../../adversary/src/scan.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -111,14 +112,12 @@ test("exactly one function mints a seed, and exactly one reads raw bytes", () =>
   // --ignore-files, and an audit that silently skips files is not an audit.
   // grep exits 1 on no match, which execFileSync throws for — and zero matches is the
   // interesting failure here, not an error.
-  const count = (re: string) => {
-    try {
-      return execFileSync("/usr/bin/grep", ["-rhoE", re, join(HERE, "..", "src")], { encoding: "utf8" })
-        .split("\n").filter(Boolean).length;
-    } catch {
-      return 0;
-    }
-  };
+  // Through `scan.ts`, which reads bytes in Node rather than shelling out to a tool that
+  // interprets them. `identity/src` holds no NUL byte today — this is the LATENT case, converted
+  // because the trap is set for whoever adds one, and a guard that returns 0 for "could not read"
+  // is indistinguishable from one that read everything and found nothing.
+  assertScansEveryFile(join(HERE, "..", "src"), assert);
+  const count = (re: string) => scanMatches(re, join(HERE, "..", "src")).length;
   assert.equal(count("^export function rootSeed\\b"), 1, "not exactly one place mints a Seed");
   // Entropy enters through a closed set of NAMED sources and nowhere else. This used to be a
   // `(bytes, provenance)` pair, which meant `entropyFrom(expose(poolSecret, …), "wallet")`
@@ -151,13 +150,7 @@ test("exactly one function mints a seed, and exactly one reads raw bytes", () =>
 test("test material is never used outside a test", () => {
   // `fromTestVector` exists because tests need reproducible seeds, and hiding it behind a flag
   // would be worse than naming it. What makes that safe is that it never appears in `src/`.
-  const hits = (() => {
-    try {
-      return execFileSync("/usr/bin/grep",
-        ["-rl", "fromTestVector", join(HERE, "..", "src")], { encoding: "utf8" })
-        .split("\n").filter(Boolean);
-    } catch { return []; }
-  })();
+  const hits = scanFiles("fromTestVector", join(HERE, "..", "src"));
   assert.deepEqual(hits.filter((f) => !f.endsWith("domains.ts")), [],
     `test-vector entropy is used in production code:\n${hits.join("\n")}`);
 });
