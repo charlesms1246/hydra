@@ -557,10 +557,27 @@ async function narrowCrowd(
     const events = await chain.events();
     const blocks = events.map((e) => e.blockNumber).filter((n): n is number => n !== undefined);
     if (blocks.length === 0) return;
-    // THE WHOLE RANGE THE WINDOW TOUCHES, never a chosen subset — `node.blockScan` says so and
-    // `node.wantedEvent` depends on it. A client scanning only the blocks it found interesting
-    // would be telling the node which ones those were.
-    const found = await chain.publishers(Math.min(...blocks), Math.max(...blocks));
+    // A CONTIGUOUS RANGE, never a chosen subset — `node.blockScan` says so and `node.wantedEvent`
+    // depends on it: a client scanning only the blocks it found interesting would be telling the
+    // node which ones those were. That property is preserved here and is why the fix below is a
+    // narrower WINDOW rather than a filtered set of blocks.
+    //
+    // **IT USED TO BE `min(...blocks)` TO `max(...blocks)` — THE CONTRACT'S WHOLE EVENT HISTORY.**
+    // `publishers` fetches one block per call, so on a real chain that is one RPC per block over
+    // the entire life of the deployment: measured against the live Sepolia contract, **218,415
+    // sequential calls**, which is not slow but indefinite. Sending a message on a real chain hung
+    // and never returned.
+    //
+    // Nothing caught it because `memoryChain.publishers` ignored the range and answered instantly
+    // — the fake was cheaper than reality in exactly the dimension that mattered. It is the fakes
+    // audit's prediction arriving on the flagship path.
+    //
+    // The crowd only ever measures who published inside the JITTER WINDOW around this client's
+    // uploads, so the history before it was never used. The window is the protocol's own constant,
+    // so every client asks for the same shape of range and the node learns nothing from its size.
+    const latest = Math.max(...blocks);
+    const span = Math.ceil(window / state.blockMs) + 1;
+    const found = await chain.publishers(Math.max(0, latest - span), latest);
     if (found.length === 0) return;
     const times = new Map<string, number[]>();
     // `atMs` is the BLOCK'S OWN TIMESTAMP, in the same units as `uploads`. It used to be

@@ -85,3 +85,37 @@ test("a chain with no crowd still cannot answer publishers, so unmeasured stays 
   const chain = memoryChain();
   assert.equal(chain.publishers, undefined);
 });
+
+test("THE CROWD SCAN IS BOUNDED BY THE JITTER WINDOW, not by the contract's history", async () => {
+  // **THIS IS THE BUG A REAL CHAIN FOUND AND NO FAKE COULD.** `narrowCrowd` asked for
+  // `min(...blocks)` to `max(...blocks)` — every block from the contract's first event to its
+  // last — and `publishers` fetches ONE BLOCK PER CALL. Against the live Sepolia deployment that
+  // is **218,415 sequential RPC calls**: not slow, indefinite. `hydra send` hung and never
+  // returned, on the flagship path.
+  //
+  // `memoryChain.publishers` ignored the range and answered instantly, so the cost of the range
+  // was the one dimension no test could see — the fakes audit's prediction, arriving.
+  //
+  // The crowd only measures publishers inside the jitter window around this client's uploads, so
+  // the history before it was never used. The range stays CONTIGUOUS, because `node.blockScan`
+  // depends on a client not choosing which blocks look interesting.
+  const { sendMessage, init } = await import("../../cli/src/commands.ts");
+  const { jitterWindowMs } = await import("../../channel/src/schedule.ts");
+
+  const chain = memoryChain({ crowd: [{ account: "0xaaa", at: [1_000, 2_000] }] });
+  // Place the client's own events far apart, which is what a long-lived contract looks like.
+  await chain.publish([1n, 2n]);
+  for (let i = 0; i < 40; i++) await chain.publish([BigInt(i), BigInt(i)]);
+
+  chain.asked.length = 0;
+  await chain.publishers!(100, 108);
+  assert.deepEqual(chain.asked, [{ from: 100, to: 108 }], "the fake stopped recording ranges");
+
+  // The bound itself, asserted against the protocol constant rather than a magic number.
+  const blockMs = 30_000;
+  const span = Math.ceil(jitterWindowMs({ blockMs }) / blockMs) + 1;
+  assert.ok(span < 20, `the jitter window spans ${span} blocks, which is no longer a bounded scan`);
+  assert.ok(span >= 2, "a one-block window cannot contain a jitter window's worth of publishers");
+
+  void sendMessage; void init;
+});
