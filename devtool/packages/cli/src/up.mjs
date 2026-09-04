@@ -174,6 +174,12 @@ export async function up() {
 ${(env.extraAccounts ?? []).map((a, i) => `    user${i + 3}             ${a.address}`).join("\n")}
 
   Proving is mocked. Discovery is local. No proving-service or indexer URL is needed.
+
+  Expected below, once every ~10s, from devnet and not from this stack:
+    ERROR ...json_rpc_handler: Socket handler got an unexpected message: Ok(Ping(b"Hello"))
+  A WebSocket keepalive Ping that starknet-devnet v0.8.0-rc.3's socket handler logs at
+  ERROR rather than ignoring. Harmless, upstream's, and named here so you are told once
+  rather than trained to skip ERROR lines.
 ${AUDITOR_NOTE}
   Ctrl-C to tear down.
 `);
