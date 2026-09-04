@@ -35,6 +35,8 @@
  *     hydra disclose [--cite]                     what everyone involved can see
  *     hydra status
  *
+ *   --debug on any command prints the stack behind a failure as well as its message.
+ *
  *     hydra-tui                                   the same client as a terminal interface
  *
  * `send` and `flush` are separate because the upload has to come later than the chain event —
@@ -68,7 +70,7 @@ const [command, ...rest] = process.argv.slice(2);
  * and `--force` is exactly the flag somebody reaches for when the safe path has already refused
  * them. A parser wrong about its own grammar fails on the command a user is most determined to run.
  */
-const BOOLEAN = new Set(["force", "cite"]);
+const BOOLEAN = new Set(["force", "cite", "debug"]);
 
 /**
  * The value after `--name`, or the fallback.
@@ -107,6 +109,28 @@ const usage = () => {
   console.error(lines.slice(3, end).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
   process.exit(2);
 };
+
+/**
+ * A failure is advice, not a crash.
+ *
+ * EVERY ERROR IN THIS FILE WAS AN UNHANDLED THROW. The messages are the good part of this client —
+ * "no invites left … Get more before flushing" is exactly what somebody needs — and they arrived
+ * wrapped in a stack trace, which reads as the program breaking rather than as the program telling
+ * you something. A user who thinks the tool is broken does not act on what it said.
+ *
+ * Registered rather than wrapping the switch, because the switch uses top-level `await`: a rejected
+ * promise there is an unhandled rejection and never reaches a `try` around the statement.
+ *
+ * The stack is one flag away and not a keystroke closer. `--debug` is for somebody debugging this
+ * client; everybody else is trying to send a message.
+ */
+const die = (e: unknown): never => {
+  console.error(e instanceof Error ? e.message : String(e));
+  if (has("debug")) console.error(e);
+  process.exit(1);
+};
+process.on("uncaughtException", die);
+process.on("unhandledRejection", die);
 
 switch (command) {
   case "init": {
