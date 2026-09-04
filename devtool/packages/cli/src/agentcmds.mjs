@@ -82,7 +82,7 @@ export const COMMANDS = {
       L.push(`  ${dot(s.indexer.up && s.indexer.healthy, s.indexer.up)} indexer   ` +
         `${s.indexer.up ? s.indexer.url : "down"}` +
         (s.indexer.up ? `   lag ${s.indexer.lagSecs ?? "?"}s` : ""));
-      L.push(`  ${dot(true)} prover    ${s.prover.mode}`);
+      L.push(`  ${dot(Boolean(s.prover.mode))} prover    ${s.prover.mode ?? "—"}`);
       L.push(`  ${dot(s.agents.mcp.present)} mcp       ${s.agents.mcp.present ? "present" : "withheld"}`);
       L.push(`  ${dot(s.agents.skills.installed.length > 0)} skills    ` +
         `${s.agents.skills.installed.length}/${s.agents.skills.expected.length} installed`);

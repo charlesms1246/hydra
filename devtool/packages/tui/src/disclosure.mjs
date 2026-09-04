@@ -43,8 +43,11 @@ export { leakConfig };
  * a measured word from a typed one otherwise.
  *
  * Only `proving` is measured (status().prover.mode, packages/core/src/
- * services.mjs:40); `discovery` is leakConfig()'s own literal, above, justified
- * by the same control.mjs line as `ohttp OFF`.
+ * services.mjs:102) — and only when a stack is running. With none, there is no
+ * prover, services.mjs reports `mode: null`, leakConfig omits `proving`, and the
+ * strip says UNKNOWN rather than naming a mode nobody read. `discovery` is
+ * leakConfig()'s own literal, above, justified by the same control.mjs line as
+ * `ohttp OFF`.
  */
 export const CONFIG_FIXED = [
   // Two arguments — `new IndexerDiscoveryProvider(indexerUrl, poolAddress)` — so
@@ -59,6 +62,10 @@ export const CONFIG_FIXED = [
 
 /** Two values read from the stack, three typed ones marked as typed. */
 export const ConfigStrip = ({ cfg, width }) => {
+  // leakConfig() omits `proving` when the stack could not be read, the same way it
+  // omits `network`. Interpolating it raw printed "proving undefined"; UNKNOWN is
+  // the word the rest of this vocabulary already uses for a value nobody read.
+  const proving = cfg.proving ?? "UNKNOWN";
   const cited = CONFIG_FIXED.map(([v, , c]) => `${v} (${c})`).join(" · ");
   const long = CONFIG_FIXED.map(([v]) => v).join(" · ");
   const short = CONFIG_FIXED.map(([, v]) => v).join(" · ");
@@ -68,10 +75,10 @@ export const ConfigStrip = ({ cfg, width }) => {
   // label. No VALUE is ever dropped — every word on this line changes what the
   // matrix below it means. The indent goes before any of them.
   const tiers = [
-    `discovery ${cfg.discovery} · proving ${cfg.proving} · fixed ${cited}`,
-    `discovery ${cfg.discovery} · proving ${cfg.proving} · fixed ${long}`,
-    `discovery ${cfg.discovery} · ${cfg.proving} · fixed ${short}`,
-    `${cfg.discovery} ${cfg.proving} · fixed ${tight}`,
+    `discovery ${cfg.discovery} · proving ${proving} · fixed ${cited}`,
+    `discovery ${cfg.discovery} · proving ${proving} · fixed ${long}`,
+    `discovery ${cfg.discovery} · ${proving} · fixed ${short}`,
+    `${cfg.discovery} ${proving} · fixed ${tight}`,
   ];
   const line = tiers.find((t) => t.length + 1 <= width) ?? tiers[tiers.length - 1];
   return html`<${Text} color=${C.muted}>${(line.length + 1 <= width ? " " + line : line).slice(0, width)}<//>`;

@@ -99,7 +99,13 @@ export async function status() {
     stack: st ? { startedAt: st.startedAt, poolAddress: st.poolAddress } : null,
     devnet: { ...devnet, pid: st?.devnetPid ?? null, pidAlive: pidAlive(st?.devnetPid) },
     indexer: { ...indexer, pid: st?.indexerPid ?? null, pidAlive: pidAlive(st?.indexerPid) },
-    prover: { mode: st?.proving ?? "mock", note: "mock proof provider — no proving service URL needed" },
+    // With no recorded stack there is no prover, so there is no proving mode to report.
+    // This used to answer "mock" regardless, which asserted a fact about a process that
+    // does not exist — and `hydra-dev leak` then printed it as the proving configuration
+    // in force. Same defect as leakConfig's old default, one layer down. ERRORS.md E-DEV15.
+    prover: st
+      ? { mode: st.proving ?? "mock", note: "mock proof provider — no proving service URL needed" }
+      : { mode: null, note: "no running stack — no prover, and no proving mode to report" },
     agents: { ...agents, mcp: { ...agents.mcp, tools } },
     accounts: st?.accounts ?? [],
     tokens: st?.tokens ?? null,
