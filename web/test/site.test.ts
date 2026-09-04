@@ -40,9 +40,9 @@ const OUT = join(WEB, "out");
 let home = "";
 /** The disclosure page: the generated statement, and the two hand-written warning lists. */
 let html = "";
-let visible = "";
-/** Prose a person wrote, across BOTH pages, with every generated block removed. */
+/** Prose a person wrote, across BOTH pages, scripts included. */
 let handWritten = "";
+let removedClaims = 0;
 
 before(() => {
   const pages = { home: join(OUT, "index.html"), doc: join(OUT, "disclosures/index.html") };
@@ -54,72 +54,59 @@ before(() => {
   }
   home = readFileSync(pages.home, "utf8");
   html = readFileSync(pages.doc, "utf8");
-  visible = stripScripts(html);
   // Both pages, because the forbidden-word rule is about anything a person wrote anywhere on
-  // this site. The landing page is the more dangerous of the two: it has no generated block to
-  // hide behind and every sentence on it was chosen to attract somebody.
-  handWritten = stripGenerated(visible) + stripGenerated(stripScripts(home));
+  // this site. **The landing page is the more dangerous of the two**, now that the tables have
+  // moved: it is entirely hand-written, it has no generated block to hide behind, and every
+  // sentence on it was chosen to attract somebody.
+  ({ text: handWritten, removed: removedClaims } = handWrittenProse());
 });
 
-/**
- * The markup with every `<script>` removed.
- *
- * Next serialises the entire React tree into `self.__next_f.push(...)` at the end of the
- * document, so **every sentence on this page appears in the HTML twice** — once as rendered
- * markup and once as an escaped string in that payload. The copy in the payload carries
- * `data-generated\":\"statement\"` with escaped quotes, which no attribute-shaped matcher will
- * find, so a generated claim would survive the strip below and be checked as though a person
- * wrote it. The forbidden-word check would then fail on the statement's own text: it is the
- * generated half that is allowed to say uncomfortable things.
- *
- * This was not true of the old static generator, where the markup was the whole file. It is the
- * one place the move to a bundler changed what these tests are looking at.
- */
-function stripScripts(source: string): string {
-  return source.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
-}
 
 /**
- * The page with every generated block removed, so the forbidden-word check can be strict about
- * the prose a person wrote and silent about the sentences the statement produced.
+ * Both pages as one body of text, normalised, with every generated sentence literally removed.
  *
- * Depth-aware rather than a regex to the next closing tag: the generated blocks contain nested
- * elements, and a lazy `[\s\S]*?</section>` would stop at the first inner close and leave most
- * of the generated text in the "hand-written" half — which fails open, quietly, in the direction
- * that lets an unmeasured claim through.
+ * **This subtracts strings rather than parsing markup, and that is the whole point.** The
+ * previous version stripped `<script>` blocks and then removed elements carrying
+ * `data-generated`. It had to strip scripts, because Next serialises the entire React tree into
+ * `self.__next_f.push(...)` and every sentence on the page therefore appears twice — once as
+ * markup and once as an escaped string that no attribute-shaped matcher can see.
+ *
+ * That strip was checked for what it stopped MIS-seeing and not for what it stopped seeing, and
+ * it turned out to lose something real: **a string passed as a prop to a client component and
+ * never rendered exists only in the payload.** A forbidden phrase placed there was invisible to
+ * this check — verified by mutation, not by reading. There is no such prop today, and "today"
+ * is not an invariant; the shape of this site is one `<Solids note="..." />` away from it.
+ *
+ * So nothing is stripped. Every claim `statement()` produces is subtracted by value from the
+ * whole document, scripts included, and whatever remains is prose a person wrote — wherever the
+ * bundler chose to put it, in whatever encoding.
  */
-function stripGenerated(source: string): string {
-  let out = source;
-  for (;;) {
-    const at = out.search(/<(\w+)[^>]*\sdata-generated=/);
-    if (at === -1) return out;
-    const tag = /^<(\w+)/.exec(out.slice(at))![1];
-    const open = new RegExp(`<${tag}\\b`, "g");
-    const close = new RegExp(`</${tag}>`, "g");
-    let depth = 0;
-    let i = at;
-    let end = -1;
-    while (i < out.length) {
-      open.lastIndex = i;
-      close.lastIndex = i;
-      const o = open.exec(out);
-      const c = close.exec(out);
-      if (!c) break;
-      if (o && o.index < c.index) {
-        depth++;
-        i = o.index + 1;
-      } else {
-        depth--;
-        i = c.index + 1;
-        if (depth === 0) {
-          end = c.index + `</${tag}>`.length;
-          break;
-        }
-      }
+function normalise(raw: string): string {
+  return raw
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/\\u0026/g, "&")
+    .replace(/\\"/g, '"')
+    .replace(/\\n/g, "\n")
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/** Everything on the site that the statement did not generate. */
+function handWrittenProse(): { text: string; removed: number } {
+  const s = statement();
+  const generated = [...s.whoCanSeeWhat, ...s.whatIsPartial, ...s.whatWeCannotSee];
+  let text = `${normalise(home)}\n${normalise(html)}`;
+  let removed = 0;
+  for (const c of generated) {
+    for (const piece of [c.says, c.from]) {
+      if (text.includes(piece)) removed++;
+      text = text.split(piece).join(" ");
     }
-    assert.ok(end > at, `unbalanced <${tag}> around a data-generated block`);
-    out = out.slice(0, at) + out.slice(end);
   }
+  return { text, removed };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -154,7 +141,7 @@ test("every claim the statement makes is on the disclosure page", () => {
  */
 test("the landing page quotes no claim and no citation", () => {
   const s = statement();
-  const text = decode(stripScripts(home));
+  const text = normalise(home);
   for (const claim of [...s.whoCanSeeWhat, ...s.whatIsPartial, ...s.whatWeCannotSee]) {
     assert.ok(
       !text.includes(claim.says),
@@ -201,11 +188,13 @@ test("the hand-written prose makes no privacy claim of its own", () => {
   // And the words that ARE allowed are allowed because they are attached to a measurement: the
   // generated sections quote percentages, and those come from the tests that produced them.
   assert.match(html, /data-generated="statement"/);
-  // The stripper has to have actually removed something, or the check above passed by looking at
-  // a page it failed to parse.
+  // The subtraction has to have actually found the generated text, or the check above passed by
+  // looking at a document it failed to match against. Both `says` and `from` for every claim, on
+  // both pages, so the count is comfortably above the number of claims.
   assert.ok(
-    handWritten.length < visible.length * 0.75,
-    "stripGenerated removed suspiciously little — has the generated markup stopped carrying the attribute?",
+    removedClaims >= 58,
+    `only ${removedClaims} generated strings were found and removed — the claims are no longer `
+    + "matching the rendered page, so this check is inspecting text it cannot interpret",
   );
 });
 
@@ -247,11 +236,12 @@ test("the auditor is stated plainly, above the tables, and generated rather than
   assert.ok(section > 0, "the auditor section is not on the page");
   assert.ok(section < tables, "the auditor section moved below the tables, which is a footnote");
 
-  // And it is inside a generated block, so the forbidden-word check never applies to it and
-  // nobody is tempted to paraphrase it into something that reads better.
+  // And it is marked as generated, so the forbidden-word check never applies to it and nobody is
+  // tempted to paraphrase it into something that reads better.
+  assert.match(html, /class="auditor" data-generated="statement"/);
   assert.ok(
     !handWritten.includes(claims[0].says),
-    "the auditor text survived stripGenerated, so it is being treated as hand-written prose",
+    "the auditor text is being treated as hand-written prose",
   );
 
   // The graph disclosure specifically — the one it leads with.
@@ -280,7 +270,7 @@ test("nothing on the page names a company, an address or a canary", () => {
   // Section 07 is removed first: it is the page stating in as many words that there is no
   // company, no contact and no canary, and a check that trips on the denial would be reading the
   // sentence backwards.
-  let text = decode(visible) + decode(stripScripts(home));
+  let text = `${normalise(home)}\n${normalise(html)}`;
   for (const line of SITE.doesNotClaim) text = text.split(line).join("");
   text = text.toLowerCase();
   for (const implied of ["warrant canary", "all rights reserved", "©", "copyright ", " inc.", " ltd", "gmbh"]) {
@@ -370,11 +360,7 @@ test("no key material or key-derivation code reaches the exported site", () => {
  * does not drag key derivation behind it would empty this list, and then it should be deleted
  * and the assertion made absolute. Tracked with hydra-dd.
  */
-const KNOWN_CROSSINGS = [
-  "hydra-dapp/packages/identity/src/domains.ts",
-  "hydra-dapp/packages/vault-client/src/blobs.ts",
-  "hydra-dapp/packages/vault-client/src/buckets.ts",
-];
+const KNOWN_CROSSINGS = ["hydra-dapp/packages/vault-client/src/buckets.ts"];
 
 test("nothing new reaches identity or vault-client", () => {
   const crossings = boundaryCrossings(ROOT, entryPoints(WEB)).map((c) => c.file);
