@@ -244,7 +244,7 @@ export const DERIVABLE: readonly Derivation[] = [
   },
   {
     id: "invite.issuance",
-    given: "whatever record the issuer kept of who they handed each invite code to",
+    given: "whatever record the issuer kept of who they handed each invite code to — which is NOT public, and is the only input on this table that is not",
     what: "which person uploaded a given object, with no cryptography involved at all",
     why: "NOT A PROPERTY OF THIS CODE, AND ON A TABLE ANYWAY, because it can undo every other row. An upload requires an invite code; the only way to obtain one is from the operator, out of band; and `hydra init --invites` is the only way in. So on the submission surface a source asks the organisation for permission to upload BEFORE their first message. If codes are issued one per person — the natural thing for an operator to do, and nothing anywhere tells them otherwise — the invite is an identity acquired before anything else happens, and it dominates the timing defence, the cover traffic and the padded read alike. It composes with `invite.redeemed`: the code rides the same PUT as the object, so the issuer needs no correlation work. The vault cannot see this and cannot prevent it; only the issuing practice decides it. Publishing a batch openly makes possession identify nobody and is NOT free — an open code is usable by anyone, so abuse control degrades to per-code rate limiting anyone can exhaust. The cryptographic answer, a token the issuer signs and cannot recognise on redemption, is deferred and named in `decisions/0038` so nobody re-derives it",
   },

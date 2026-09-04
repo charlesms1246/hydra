@@ -8,9 +8,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test packages/identity/test/*.test.ts $(ls packages/adversary/test/*.test.ts | grep -v '/live-')",
+    "test": "npm run typecheck && node --test packages/identity/test/*.test.ts $(ls packages/adversary/test/*.test.ts | grep -v '/live-')",
     "test:live": "node --test packages/adversary/test/live-*.test.ts",
     "redeploy": "node scripts/redeploy.ts",
-    "tui": "node packages/tui/src/main.ts"
+    "tui": "node packages/tui/src/main.ts",
+    "typecheck": "node --experimental-strip-types scripts/typecheck.ts"
   }
 }

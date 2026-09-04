@@ -35,8 +35,22 @@ import { BUCKETS } from "../../vault-client/src/buckets.ts";
 export type Claim = {
   /** Plain language, no hedging in either direction. */
   readonly says: string;
-  /** Where the value came from. A claim with no source cannot be published. */
+  /**
+   * Where the value came from, as paths a reader can open.
+   *
+   * **EVERY PATH HERE MUST RESOLVE IN A CLONE OF THIS REPOSITORY**, which is why it holds no
+   * `claude-docs/` reference: that directory is gitignored by standing decision, so a citation
+   * into it is uncheckable by construction rather than by accident. Three claims carried one —
+   * two of them the auditor claims, which the site sets in the largest type on the page — and a
+   * dead path beside a live one borrows credibility the dead half cannot pay for.
+   */
   readonly from: string;
+  /**
+   * The decision that settled it, when there is one. NOT RENDERED as a citation, deliberately —
+   * it points at a document a reader outside this machine cannot open, so it is a note for
+   * whoever maintains the claim rather than evidence offered to whoever reads it.
+   */
+  readonly decides?: string;
   /** `true` when the guarantee is unqualified; `false` when it is partial and quantified. */
   readonly complete: boolean;
 };
@@ -106,17 +120,22 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 export function statement(): Statement {
   return {
     // Everything the vault operator sees, said in the operator's own terms.
-    whoCanSeeWhat: OBSERVABLE.map((o) => ({
+    whoCanSeeWhat: OBSERVABLE.map((o): Claim => ({
       says: `Whoever runs the storage server can see ${o.what}.`,
       from: `vault-server/src/observations.ts (${o.id})`,
       complete: true,
-    })).concat(NODE_OBSERVABLE.map((o) => ({
+    })).concat(NODE_OBSERVABLE.map((o): Claim => ({
       says: `Whoever runs the Starknet node you read and publish through — a different party `
         + `from the storage server — can see ${o.what}.`,
       from: `cli/src/node-view.ts (${o.id})`,
       complete: true,
-    }))).concat(DERIVABLE.map((d) => ({
-      says: `Given ${d.given} — which is public — whoever runs the storage server can work out `
+    }))).concat(DERIVABLE.map((d): Claim => ({
+      // NO "— which is public —" HERE ANY MORE. It was a constant in the template, written when
+      // every `given` was chain data, and it produced a FALSE SENTENCE for `invite.issuance`,
+      // whose given is the issuer's own private ledger. Generated text carries more authority
+      // than prose precisely because it is generated, so a false clause in it is worse than one
+      // in a comment. Availability is a property of each row's `given` now, which states it.
+      says: `Given ${d.given}, whoever runs the storage server can work out `
         + `${d.what}. The server does not record it; they compute it.`,
       from: `vault-server/src/observations.ts (${d.id})`,
       complete: true,
@@ -148,7 +167,13 @@ export function statement(): Statement {
       {
         says: "The pool's auditor can decrypt every message you send through it, and can link "
           + "any new identity you fund from your own balance back to you.",
-        from: "identity/src/linkage.ts, claude-docs/decisions/0002-fresh-identity-funding.md",
+        // `claude-docs/` is gitignored by standing decision, so a citation into it is uncheckable
+        // BY CONSTRUCTION rather than by accident — clone the repo and that path is not there,
+        // ever. A citation is a promise a reader can follow; this was a note wearing a citation's
+        // clothes, borrowing credibility the second half could not pay for. The code half stays,
+        // so nothing became uncited. See `decides` for the reference that was dropped.
+        from: "identity/src/linkage.ts",
+        decides: "decisions/0002-fresh-identity-funding.md",
         complete: true,
       },
       {
@@ -164,7 +189,8 @@ export function statement(): Statement {
         says: "Those two together still cannot read a message. The auditor's key opens the pool, "
           + "and a conversation is sealed under a secret agreed separately that neither the pool "
           + "nor the storage server ever holds. What they get is who, not what.",
-        from: "handshake/src/x3dh.ts, claude-docs/decisions/0009-key-agreement.md",
+        from: "handshake/src/x3dh.ts",
+        decides: "decisions/0009-key-agreement.md",
         complete: true,
       },
     ]),
@@ -219,7 +245,10 @@ export function statement(): Statement {
           + `${pct(MEASURED.isolatedMessageIdentified)} of the time — one in five — because it `
           + `is hidden only among its own decoys. Messages sent in quick succession hide among `
           + `each other's too, and drop to about ${pct(MEASURED.clusteredMessageIdentified)}.`,
-        from: "channel/src/schedule.ts, channel/src/cover.ts, i3-cover-traffic.test.ts",
+        // `adversary/test/` prefix, like every other adversary citation in this table. Without it
+        // the path does not resolve, on the claim the site quotes most.
+        from: "channel/src/schedule.ts, channel/src/cover.ts, "
+          + "adversary/test/i3-cover-traffic.test.ts",
         complete: false,
       },
       {
@@ -242,16 +271,17 @@ export function statement(): Statement {
         says: "Sending the same message twice in the same conversation produces the same stored "
           + "object, so the server can see a repeat within a conversation — not across "
           + "conversations, and not what was repeated.",
-        from: "vault-client/src/blobs.ts, claude-docs/decisions/0004-blob-classes.md",
+        from: "vault-client/src/blobs.ts",
+        decides: "decisions/0004-blob-classes.md",
         complete: false,
       },
     ],
 
-    whatWeCannotSee: NOT_OBSERVABLE.map((o) => ({
+    whatWeCannotSee: NOT_OBSERVABLE.map((o): Claim => ({
       says: `Whoever runs the storage server cannot see ${o.what} — ${whyOf(o)}.`,
       from: `vault-server/src/observations.ts (${o.id})`,
       complete: true,
-    })).concat(NODE_NOT_OBSERVABLE.map((o) => ({
+    })).concat(NODE_NOT_OBSERVABLE.map((o): Claim => ({
       says: `Whoever runs the Starknet node cannot see ${o.what} — ${nodeWhyOf(o)}.`,
       from: `cli/src/node-view.ts (${o.id})`,
       complete: true,
