@@ -123,7 +123,7 @@ export const Overview = ({ cols, rows, svc, wal, blocks, doctor, ledger, control
     html`<${Row} label="control" w=${cols3[0]} up=${Boolean(control)}
       value=${control ? "ready — x runs a flow" : "no stack"} />`,
     html`<${Row} label="mcp" w=${cols3[0]} up=${Boolean(mcp?.present)}
-      value=${mcp?.present ? "server present" : "missing"} />`,
+      value=${mcp?.present ? "server present" : "withheld"} />`,
     html`<${Row} label="skills" w=${cols3[0]}
       up=${Boolean(skills && skills.installed.length === skills.expected.length)}
       warn=${Boolean(skills?.installed.length)}

@@ -73,7 +73,7 @@ export const COMMANDS = {
         `${s.indexer.up ? s.indexer.url : "down"}` +
         (s.indexer.up ? `   lag ${s.indexer.lagSecs ?? "?"}s` : ""));
       L.push(`  ${dot(true)} prover    ${s.prover.mode}`);
-      L.push(`  ${dot(s.agents.mcp.present)} mcp       ${s.agents.mcp.present ? "present" : "missing"}`);
+      L.push(`  ${dot(s.agents.mcp.present)} mcp       ${s.agents.mcp.present ? "present" : "withheld"}`);
       L.push(`  ${dot(s.agents.skills.installed.length > 0)} skills    ` +
         `${s.agents.skills.installed.length}/${s.agents.skills.expected.length} installed`);
       if (s.stack) L.push(`\n  pool      ${s.stack.poolAddress}`);
@@ -104,7 +104,12 @@ export const COMMANDS = {
     run: async () => agentStatus(),
     render: (a) => {
       const missing = a.skills.expected.filter((s) => !a.skills.installed.includes(s));
-      return `  ${dot(a.mcp.present)} mcp     ${a.mcp.present ? "present" : "missing"}\n` +
+      // "withheld", not "missing": packages/mcp is untracked and gitignored under
+      // a67514b pending coordinated disclosure, and is excluded from package.json's
+      // `files`. So a fresh clone and an installed tarball both lack it permanently,
+      // and `hydra-dev bootstrap` cannot help. "Missing" sends a reader looking for a
+      // remedy that does not exist. ERRORS.md E-DEV13.
+      return `  ${dot(a.mcp.present)} mcp     ${a.mcp.present ? "present" : "withheld — not in this distribution"}\n` +
         `  ${dot(missing.length === 0)} skills  ${a.skills.installed.join(", ") || "none"}` +
         (missing.length ? `\n    missing: ${missing.join(", ")}` : "");
     },

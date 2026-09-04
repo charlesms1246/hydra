@@ -92,7 +92,7 @@ export const StatusBar = ({ width, svc, note }) => {
       text: `indexer ${ix?.up ? (ix.healthy ? "ok" : `lag ${ix.lagSecs ?? "?"}s`) : "down"}` },
     { g: "◐", t: C.warn, text: `prover ${svc?.prover?.mode ?? "?"}` },
     { g: glyph(svc?.agents?.mcp?.present), t: tone(svc?.agents?.mcp?.present),
-      text: `mcp ${svc?.agents?.mcp?.present ? "present" : "missing"}` },
+      text: `mcp ${svc?.agents?.mcp?.present ? "present" : "withheld"}` },
   ];
   const pool = svc?.stack?.poolAddress;
   const right = pool ? `pool ${pool.slice(0, 8)}…${pool.slice(-4)}` : "no stack";

@@ -109,7 +109,7 @@ export function rowsFor(cat, { doctor, svc, hist, width, filter }) {
     const tools = mcp?.tools ?? [];
     const effects = tools.filter((t) => t.effects).length;
     return [
-      line("mcp server", mcp?.present ? mcp.path : "missing", mcp?.present ? undefined : C.warn),
+      line("mcp server", mcp?.present ? mcp.path : "withheld — not in this distribution", mcp?.present ? undefined : C.warn),
       line("mcp tools", tools.length
         ? `${tools.length} · ${effects} side-effecting, each behind a confirmation`
         : "no manifest — packages/mcp is not present here", tools.length ? undefined : C.muted),
