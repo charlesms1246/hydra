@@ -34,6 +34,8 @@
  */
 
 import { describePost, describeFetch } from "../../client/src/public.ts";
+import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT }
+  from "../../claims/src/warnings.ts";
 import { verifyProof } from "../../vault-server/src/root.ts";
 import { readFileSync } from "node:fs";
 import {
@@ -127,12 +129,9 @@ switch (command) {
     // a record on Sepolia, so the client was reporting less confidence than it had, in a message
     // whose whole job is to help somebody decide. A stale user-facing string is a claim, and this
     // one was wrong in the direction that talks a user out of a thing that works.
-    console.error("this client does not write it, and that is a choice rather than a limitation.");
-    console.error("the write costs gas from an account, and which account pays is exactly the");
-    console.error("link this record creates — so it is yours to make deliberately, with the");
-    console.error("wallet you meant, rather than something a client does while you read the");
-    console.error("warning above. the ABI is verified against the deployed class and a record");
-    console.error("has been landed with it; see claude-docs/decisions/0031.");
+    for (const line of RECORD_NOT_WRITTEN.full) console.error(line);
+    console.error("");
+    console.error("see claude-docs/decisions/0031 and 0027.");
     break;
   }
 
@@ -269,24 +268,10 @@ switch (command) {
     console.log(`upload due at ${new Date(result.uploadAt).toISOString()} with ${result.decoys} decoys`);
     console.log("run `hydra flush` then, or on a timer. uploading now would undo the timing defence.");
     console.log("");
-    console.log(signed
-      // WHAT WAS MISSING HERE IS NOT "anchoring costs your anonymity" — `hydra record` says that,
-      // afterwards. It is that SIGNING ALONE BUYS NO THIRD-PARTY PROOF, so somebody who signs
-      // believing they have created evidence has created something only their recipient can check.
-      // `attributionLabel` already draws exactly this line when READING; it belongs here, where
-      // the choice is actually made. See decisions/0038 finding 3.
-      ? "SIGNED. anyone holding your bundle can prove you wrote this, including people you never\n"
-        + "sent it to. that is what publishing means and it cannot be taken back.\n"
-        + "\n"
-        + "BUT NOT YET TO ANYONE ELSE. the key backing this signature came from your handshake\n"
-        + "with them and is not published, so today only THEY can check it — to a third party\n"
-        + "this proves nothing. making it checkable by anyone means anchoring that key on chain\n"
-        + "under an account (`hydra record`), which joins that account to this identity forever.\n"
-        + "if you are signing in order to be able to prove authorship later, decide that now:\n"
-        + "the proof and the anonymity are the same choice, in opposite directions."
-      : "DENIABLE. the only thing authenticating this is a key you and they both hold, so either\n"
-        + "of you could have written it and neither can prove which. use `publish` if you need\n"
-        + "the other thing.");
+    // RENDERED FROM `claims/src/warnings.ts`, not written here. These sentences existed twice —
+    // once in this file and once in the TUI — and drifted in both directions. Standing rule 3:
+    // privacy claims are generated, never asserted.
+    for (const line of (signed ? SIGNED : DENIABLE).full) console.log(line);
     if (signed) {
       // STANDING RULE 7: publishing is an act, so what the act commits you to belongs in it.
       //
@@ -456,10 +441,7 @@ switch (command) {
     const foreign = foreignSends(state, name);
     if (foreign) {
       console.error("");
-      console.error(`${foreign} message(s) in your own direction were not sent by this client.`);
-      console.error("another client is running on this identity. two clients on one seed mint");
-      console.error("identical cover, and an object uploaded twice is an object the storage");
-      console.error("server knows is cover. use one client per identity.");
+      for (const line of SECOND_CLIENT.full) console.error(line);
     }
     break;
   }

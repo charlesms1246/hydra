@@ -105,6 +105,18 @@ const REACHED_ONLY_BY_TESTS: Record<string, string> = {
   linkability: "the pure one-shot crowd; the client's path is stateful and intersects across "
     + "sends, so it calls the shared `covering` predicate rather than this composition",
   regularity: "a pruning statistic used in-file by prune; exported so the rule is testable alone",
+  crowdOf: "`covering().length`, used in-file by `linkability`; the client calls `covering` "
+    + "directly because it needs the members rather than the count",
+
+  // SURFACED WHEN THE SCAN STOPPED COUNTING COMMENTS AS CALLS. All three were masked by prose
+  // naming them, and the reasons below are what the code says rather than what was intended.
+  respond: "the derived-prekey path; `respondWith` is the only caller-facing responder and "
+    + "declares its own return type from this one, so it is reachable in type position only",
+  openChannel: "a named wrapper over `channelSecret` for a caller holding a vault root; the "
+    + "client derives channel secrets from the X3DH agreement and never holds a channel id",
+  explain: "translates upstream SDK errors for the pool's register/transfer/deposit flows, and "
+    + "NOTHING IN THIS PACKAGE PERFORMS THOSE — it has no consumer here, which is recorded "
+    + "rather than dressed up; see the note to review",
 
   // The anchor WRITE path, deliberately unwired: `hydra record` prints the felts and refuses to
   // write, because which account pays is exactly the link the record creates. The READ path used
@@ -150,7 +162,23 @@ function scan(): { testOnly: Found[]; internal: Found[]; dead: Found[] } {
   const isTest = (p: string) => p.includes(`${"/"}test${"/"}`) || p.endsWith(".test.ts");
   const src = files.filter((p) => !isTest(p));
   const tests = files.filter(isTest);
-  const text = new Map(files.map((p) => [p, readFileSync(p, "utf8")]));
+  // COMMENTS STRIPPED BEFORE ANYTHING IS COUNTED AS A USE. A doc comment naming a symbol is not a
+  // caller, and this scan was fooled by one the first time a file explained a past mistake by
+  // name: `claims/src/warnings.ts` cites "a duplicated `assertUsableId`", and the sweep read that
+  // as a second caller and declared the allowlist entry stale.
+  //
+  // Fifth instance in this repo of an accurate explanation breaking a guard — `grep()` in the
+  // mechanism checks strips comments for exactly this reason, and a negative claim assertion
+  // strips backticked spans for it too. The rule is the same in all three: **a guard must measure
+  // the code, never the prose about it.**
+  // BLOCK COMMENTS AND WHOLE-LINE `//` ONLY. Stripping every `//` to end of line ate the rest of
+  // any line containing a URL — `http://127.0.0.1:8080` is not a comment — and that silently HID
+  // real callers, which is the worse direction for this guard. A trailing comment after code is
+  // left in; it is a much rarer way to name a symbol you are not calling.
+  const strip = (src: string) => src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  const text = new Map(files.map((p) => [p, strip(readFileSync(p, "utf8"))]));
 
   const exports = new Map<string, string>();
   const decl = /^export\s+(?:declare\s+)?(?:async\s+)?(?:abstract\s+class|class|function)\s+([A-Za-z_$][\w$]*)/gm;

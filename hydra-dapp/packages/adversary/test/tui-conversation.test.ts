@@ -339,7 +339,12 @@ test("which of the two things Enter will do is on the screen before it is presse
     m = await feed(m, h.deps, "s");
     assert.equal(m.signing, true);
     assert.match(prose(m), /SIGNED/);
-    assert.match(prose(m), /anyone holding your bundle can prove it/);
+    // THIS ASSERTION USED TO PIN A FALSE CLAIM, which is how the claim survived: the CLI had
+    // already been corrected to say signing alone buys no third-party proof, and this test
+    // required the TUI to keep saying the opposite. Both now render `claims/src/warnings.ts`.
+    assert.match(prose(m), /only THEY can check it until you anchor/);
+    assert.doesNotMatch(prose(m), /anyone can prove it/,
+      "the compose line claims third-party proof that signing alone does not buy");
 
     // And it toggles back, so the mode is a state the user drives rather than a trap.
     m = await feed(m, h.deps, "s");

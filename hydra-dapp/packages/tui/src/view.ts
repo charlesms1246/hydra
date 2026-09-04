@@ -26,6 +26,8 @@ import { linkabilityOf } from "../../cli/src/commands.ts";
 import { bundleFrom, oneTimeRemaining } from "../../handshake/src/prekeys.ts";
 import { derive, rootSeed, entropyFrom, fromStoredSeed, VAULT_DOMAIN } from "../../identity/src/domains.ts";
 import { STATE_FILE } from "../../cli/src/state.ts";
+import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT }
+  from "../../claims/src/warnings.ts";
 import type { State } from "../../cli/src/state.ts";
 
 export type Size = { readonly rows: number; readonly cols: number };
@@ -162,11 +164,12 @@ function chats(m: Model, size: Size, height: number): string[] {
   const foreign = current ? m.foreign[current] ?? 0 : 0;
   // The mode, above the line you are typing on. Which of the two things Enter is about to do is
   // not a setting to be remembered; it is part of the message.
+  // FROM `claims/src/warnings.ts`. This line used to say "anyone holding your bundle can prove
+  // it", which the CLI had already been corrected out of: signing alone buys no third-party proof.
+  // One source, both readers — standing rule 3.
   const mode = m.signing
-    ? paint(" SIGNED ", "inverse", "yellow") + paint(
-      "  only you could have written this, and anyone holding your bundle can prove it", "gray")
-    : paint(" deniable ", "inverse") + paint(
-      "  either of you could have written this — `s` to sign", "gray");
+    ? paint(" SIGNED ", "inverse", "yellow") + paint(`  ${SIGNED.short}`, "gray")
+    : paint(" deniable ", "inverse") + paint(`  ${DENIABLE.short} — \`s\` to sign`, "gray");
   // The crowd, on the page that composes. Plain text and no colour: it is computed from public
   // data and verified by nobody, so anything that read as a badge would be claiming more than
   // I7 allows. `describe` writes the zero case first because zero is the usual answer.
@@ -180,9 +183,8 @@ function chats(m: Model, size: Size, height: number): string[] {
       // commitment, which differs per message — so this no longer warns about identical cover.
       // What is left is still worth saying: both clients spend invites and count sequences, and
       // the other one's messages cannot be read here because this client destroyed that key.
-      ? wrap(`${foreign} message(s) here were sent as you by another client. its words cannot be `
-        + "read on this device — the key was used once and destroyed — and both clients are "
-        + "spending the same invites. use one client per identity.", size.cols - 4)
+      ? wrap(`${foreign} message(s) here were sent as you by another client. `
+        + SECOND_CLIENT.full.slice(1).join(" "), size.cols - 4)
         .slice(0, 2).map((l) => paint(l, "yellow"))
       : note("the chain shows that YOU published, and in what order. the timing defence hides "
         + "which upload holds the text, not that you sent it.", size.cols - 4).slice(0, 2)),
@@ -275,9 +277,12 @@ function record(m: Model, size: Size, height: number): string[] {
       + "republish your keys under a name of their own and be believed as you, which is the "
       + "same forgery signing was meant to close.", size.cols - 4),
     "",
-    ...note("THIS PROGRAM DOES NOT PUT IT ON CHAIN. the identity contract's data ABI is not "
-      + "verified anywhere in this repo and a record written under a guessed entrypoint is a "
-      + "record nobody looks at. (decisions/0027)", size.cols - 4)
+    // WAS FALSE: it said the ABI is "not verified anywhere in this repo", after `0031` verified
+    // it against the deployed class and landed a record. The CLI had already retracted that.
+    // `short`, not `full`: the full text pushed "joins to your conversations" off the bottom of
+    // the frame, and `tui-conversation.test.ts` caught it — which is precisely why that assertion
+    // has a neighbour, as its own comment says.
+    ...note(`THIS PROGRAM DOES NOT PUT IT ON CHAIN — ${RECORD_NOT_WRITTEN.short}.`, size.cols - 4)
       .map((l) => paint(l.replace(/\x1b\[[0-9;]*m/g, ""), "gray")),
     "",
     ...note("PUBLISHING IT CANNOT BE UNDONE. the record names your messaging identity and that "

@@ -20,6 +20,7 @@
  * one modifier away in the interface people spend all their time in, and makes `q` unbindable.
  */
 
+import { SIGNED, DENIABLE } from "../../claims/src/warnings.ts";
 import type { Key } from "./keys.ts";
 import type { State } from "../../cli/src/state.ts";
 import type { Received } from "../../cli/src/commands.ts";
@@ -379,10 +380,10 @@ function action(m: Model, ch: string): Step {
       const channel = selected(m);
       if (ch === "r" && channel) return run(m, "read", { t: "read", channel });
       if (ch === "s") {
-        return just(say({ ...m, signing: !m.signing }, m.signing
-          ? "deniable: either of you could have written the next message"
-          : "SIGNED: only you could have written the next message, and anyone can prove it",
-        "warn"));
+        // FROM `claims/src/warnings.ts` — this said "anyone can prove it", which is false and
+        // which the CLI had already been corrected out of. One source, both readers.
+        return just(say({ ...m, signing: !m.signing },
+          (m.signing ? DENIABLE : SIGNED).short, "warn"));
       }
       if (ch === "D" && channel) {
         return just({
