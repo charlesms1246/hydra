@@ -241,8 +241,20 @@ switch (command) {
     console.log("run `hydra flush` then, or on a timer. uploading now would undo the timing defence.");
     console.log("");
     console.log(signed
+      // WHAT WAS MISSING HERE IS NOT "anchoring costs your anonymity" — `hydra record` says that,
+      // afterwards. It is that SIGNING ALONE BUYS NO THIRD-PARTY PROOF, so somebody who signs
+      // believing they have created evidence has created something only their recipient can check.
+      // `attributionLabel` already draws exactly this line when READING; it belongs here, where
+      // the choice is actually made. See decisions/0038 finding 3.
       ? "SIGNED. anyone holding your bundle can prove you wrote this, including people you never\n"
-        + "sent it to. that is what publishing means and it cannot be taken back."
+        + "sent it to. that is what publishing means and it cannot be taken back.\n"
+        + "\n"
+        + "BUT NOT YET TO ANYONE ELSE. the key backing this signature came from your handshake\n"
+        + "with them and is not published, so today only THEY can check it — to a third party\n"
+        + "this proves nothing. making it checkable by anyone means anchoring that key on chain\n"
+        + "under an account (`hydra record`), which joins that account to this identity forever.\n"
+        + "if you are signing in order to be able to prove authorship later, decide that now:\n"
+        + "the proof and the anonymity are the same choice, in opposite directions."
       : "DENIABLE. the only thing authenticating this is a key you and they both hold, so either\n"
         + "of you could have written it and neither can prove which. use `publish` if you need\n"
         + "the other thing.");

@@ -133,7 +133,7 @@ export const OBSERVABLE: readonly Observation[] = [
   {
     id: "invite.redeemed",
     what: "that some invite was redeemed, and when",
-    why: "single-use enforcement needs the token consumed; the token itself is destroyed and never linked to what follows",
+    why: "single-use enforcement needs the token consumed; the token itself is destroyed and never linked to what follows IN THE RECORD — the vault deletes it from a set and increments a counter, keeping no association. THAT IS NOT TRUE OF THE MOMENT, and this row said only the first half. `x-hydra-invite` is a header on the same PUT that carries the object, so an operator watching requests holds the permission slip and the payload TOGETHER, in one request. `transport.headers` covers headers generically and does not discharge this: a generic row does not tell a source that the thing they were given in order to upload arrives attached to what they uploaded. It matters most on the submission surface, where the requester and the sender are the same person and the request precedes everything — see `invite.issuance` and `decisions/0038`",
   },
   {
     id: "transport.peer",
@@ -241,6 +241,12 @@ export const DERIVABLE: readonly Derivation[] = [
     given: "the blockchain, which is public",
     what: "which account a conversation belongs to — by asking whose published events have upload windows containing this channel's objects, which for the right account is every single one of them",
     why: "SHARPER THAN `channel.author` AND IT NEEDS NO ARITHMETIC. That row matches a channel's object COUNT against an account's message count, so it needs the counts to be distinct. This one needs neither: every object a client uploads is uploaded because a message caused it, and I3 puts it in `[event, event + window)` of that message's own chain event. So the true account's windows contain 100% of the channel's uploads and a stranger's contain only what coincides — a certainty rather than a score. COVER DOES NOT BLUNT IT, and neither does cover that runs on the client's own clock: the operator's statistic is how many of the channel's uploads an account covers, and an idle decoy cannot lower that number, it only adds an object nobody covers. Measured in `adversary/test/standing-cover.test.ts` at 1.000 for every cover policy including one costing thirteen objects a message. What it does depend on is how busy the chain is — an account's window is four minutes wide, so once enough accounts publish often enough for their windows to tile the span, coverage saturates for everybody and the maximum stops naming anyone: 1.000 at six events per account against 0.058 at a hundred and twenty. That is a property of the chain rather than of this software, which is why it is disclosed rather than fixed",
+  },
+  {
+    id: "invite.issuance",
+    given: "whatever record the issuer kept of who they handed each invite code to",
+    what: "which person uploaded a given object, with no cryptography involved at all",
+    why: "NOT A PROPERTY OF THIS CODE, AND ON A TABLE ANYWAY, because it can undo every other row. An upload requires an invite code; the only way to obtain one is from the operator, out of band; and `hydra init --invites` is the only way in. So on the submission surface a source asks the organisation for permission to upload BEFORE their first message. If codes are issued one per person — the natural thing for an operator to do, and nothing anywhere tells them otherwise — the invite is an identity acquired before anything else happens, and it dominates the timing defence, the cover traffic and the padded read alike. It composes with `invite.redeemed`: the code rides the same PUT as the object, so the issuer needs no correlation work. The vault cannot see this and cannot prevent it; only the issuing practice decides it. Publishing a batch openly makes possession identify nobody and is NOT free — an open code is usable by anyone, so abuse control degrades to per-code rate limiting anyone can exhaust. The cryptographic answer, a token the issuer signs and cannot recognise on redemption, is deferred and named in `decisions/0038` so nobody re-derives it",
   },
   {
     id: "handshake.opener",

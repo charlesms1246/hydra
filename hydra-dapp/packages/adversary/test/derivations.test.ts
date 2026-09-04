@@ -107,6 +107,56 @@ const DERIVATIONS: Record<string, () => Promise<void>> = {
     assert.equal(inboxSlots(carolKey).filter((id) => stored().has(id)).length, 0);
   },
 
+  "invite.issuance": async () => {
+    // NOT A DERIVATION FROM WHAT THE VAULT STORES, and that is the point of the row. The vault
+    // keeps header NAMES only (`TransportRecord`) and deletes the token from a set, so its record
+    // genuinely holds no association — `invite.redeemed` is accurate about that. What it cannot be
+    // accurate about is the moment: the operator must READ the token to check it, and it arrives
+    // in the same request as the object. Anything they choose to write down at that boundary is a
+    // join they did not have to work for, and it is their own process.
+    const vault = freshVault();
+    // The issuer's own ledger, which is the "given". Nothing cryptographic about it.
+    const issuedTo = new Map([["inv-ana", "ana"], ["inv-ben", "ben"]]);
+    const vaultWithInvites = new Vault({ invites: [...issuedTo.keys()], buckets: BUCKETS });
+    void vault;
+
+    // What any operator can log at the boundary, in three lines, using only what the request hands
+    // them. This is the whole derivation.
+    const ledger: { person: string; object: string }[] = [];
+    const upload = (invite: string, id: string, body: Uint8Array) => {
+      ledger.push({ person: issuedTo.get(invite)!, object: id });
+      return vaultWithInvites.handle({
+        op: "upload", endpoint: ENCRYPTED_ENDPOINT, id, body, invite,
+      });
+    };
+
+    const anaBlob = send({ channel: openChannel(alice, "a"), author: ephemeral(), blockMs: 30_000 },
+      new TextEncoder().encode("ana's message"), 0, 0, () => 0.5);
+    const benBlob = send({ channel: openChannel(bob, "b"), author: ephemeral(), blockMs: 30_000 },
+      new TextEncoder().encode("ben's message"), 0, 0, () => 0.5);
+    assert.equal(upload("inv-ana", anaBlob.blobId, anaBlob.body).ok, true);
+    assert.equal(upload("inv-ben", benBlob.blobId, benBlob.body).ok, true);
+
+    // The operator now names the uploader of any object, with no cryptography and no correlation.
+    const who = (id: string) => ledger.find((l) => l.object === id)?.person;
+    assert.equal(who(anaBlob.blobId), "ana");
+    assert.equal(who(benBlob.blobId), "ben");
+    assert.notEqual(who(anaBlob.blobId), who(benBlob.blobId),
+      "the join does not distinguish two uploaders, so this row over-claims");
+
+    // AND THE DEFAULT BUILD RETAINS NEITHER HALF, which is why the row is about the practice
+    // rather than about this code: no stored row carries an invite, and the transport record — if
+    // it is even switched on — keeps header NAMES and not values.
+    const stored = JSON.stringify(vaultWithInvites.observe().rows);
+    for (const code of issuedTo.keys()) {
+      assert.ok(!stored.includes(code), `the vault retained ${code} against an object`);
+    }
+    vaultWithInvites.observeRequest({ at: 0, peer: "127.0.0.1", headers: ["x-hydra-invite"] });
+    const transport = JSON.stringify(vaultWithInvites.observe().transport);
+    assert.ok(transport.includes("x-hydra-invite"), "the transport record shape has changed");
+    assert.ok(!transport.includes("inv-ana"), "the transport record now retains header VALUES");
+  },
+
   "channel.activeAccount": async () => {
     // Driven through `cli/src/commands.ts` rather than through the plan, because the claim is
     // about what a CLIENT does. `sendMessage` is the only thing in this system that queues an

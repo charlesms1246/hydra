@@ -34,6 +34,20 @@
  * has to be written down, and each entry carries its reason inline — the same discipline as the
  * destructive-operations table. Adding a line is then a deliberate act somebody has to justify,
  * rather than a line appended to turn a red suite green.
+ *
+ * **A REASON MUST BE A STATEMENT ABOUT THE CODE, NOT ABOUT INTENT**, and this list has already
+ * broken that rule once. The inbox group was exempted with "delivery is unbuilt by decision — see
+ * `decisions/0009`". It was true of `0009` and stopped being true at `0013`, when `hydra invite`
+ * began writing prekey messages into inbox slots — and nothing could ever make it *look* stale,
+ * because it is a claim about a document. "an in-file helper of `deliver`" is a claim the code can
+ * contradict: move the helper and the reason is visibly wrong. Prose decays; an assertion about
+ * where a symbol is used decays visibly.
+ *
+ * A SECOND SCOPE NOTE, for the same family of mistake. The first version of this scan excluded a
+ * symbol's own file when looking for callers, so four functions used only INTERNALLY read as dead
+ * — deleting them would have broken the build. A search whose scope quietly encodes an assumption
+ * gives a confident wrong answer, which is the same shape as a test written from the code it
+ * checks.
  */
 
 import { test } from "node:test";
@@ -54,14 +68,17 @@ const PACKAGES = join(HERE, "..", "..");
  */
 const REACHED_ONLY_BY_TESTS: Record<string, string> = {
   // Test doubles and fixtures — the caller being a test is what they are for.
-  fromTestVector: "a named test double; deriving from a fixed vector is only ever a test's job",
-  memoryChain: "an in-memory Chain, substituted for a real one; a client never constructs it",
+  fromTestVector: "takes a caller-supplied fixed byte vector and a label; no product code path "
+    + "has a fixed vector to pass it",
+  memoryChain: "an in-memory Chain implementation; every product path builds one through "
+    + "`chainFor(state)`, which never returns it",
 
   // Disclosure tables. The guards ARE the intended consumer: a table exists to be checked in both
   // directions against real captures, and nothing in the product reads its own id list.
-  DERIVABLE_IDS: "a disclosure id list; the two-way table guard is its consumer by design",
-  MODERATION_OBSERVABLE_IDS: "same — the moderation table's ids, consumed by its completeness guard",
-  NODE_OBSERVABLE_IDS: "same — the node table's ids",
+  DERIVABLE_IDS: "the id list of the DERIVABLE table; its consumer is the guard that checks every "
+    + "row has a proof, and no product code reads its own table",
+  MODERATION_OBSERVABLE_IDS: "the moderation table's ids, read by its completeness guard only",
+  NODE_OBSERVABLE_IDS: "the node table's ids, read by its completeness guard only",
 
   // Internal steps exported so a property can be checked on the step rather than only on the
   // whole. Each is used inside its own file by the function that ships.
@@ -92,9 +109,9 @@ const REACHED_ONLY_BY_TESTS: Record<string, string> = {
 
   // The anchor write path, deliberately unwired: `hydra record` prints the felts and refuses to
   // write, because which account pays is exactly the link the record creates.
-  writeRecordCalldata: "the record write path; the client deliberately does not write — see the "
-    + "`hydra record` output and decisions/0031",
-  readRecordCall: "same group; used by the live anchor test against a real chain",
+  writeRecordCalldata: "builds calldata for the identity contract's setter; no CLI case calls it "
+    + "— `hydra record` prints the felts and returns without a transaction",
+  readRecordCall: "same group; its only caller outside itself is the live anchor test",
   decodeRecordReply: "same group — decodes what the identity contract returns for a record",
   identityContract: "same group — the deployed contract address per network",
   assertUsableId: "same group — an id guard for the write path",
