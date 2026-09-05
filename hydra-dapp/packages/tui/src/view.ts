@@ -343,6 +343,21 @@ function status(m: Model, size: Size, height: number): string[] {
     `${paint("state    ", "gray")}${STATE_FILE}`,
     `${paint("vault    ", "gray")}${s?.vaultUrl ?? "—"}`,
     `${paint("chain    ", "gray")}${s?.contract || "(unset)"} via ${s?.rpcUrl ?? "—"}`,
+    // **A SLOW CLIENT THAT DOES NOT SAY IT IS SLOW READS AS A BROKEN ONE.** `fromBlock` is 0 with
+    // a contract set exactly when the deployment-block discovery has not succeeded — the node was
+    // unreachable at identity creation, or this file predates the discovery existing. Every read
+    // then scans the chain from genesis: 178 RPC round trips and about 108 seconds, measured.
+    // Derived from the state rather than recorded, so it cannot disagree with it, and it clears
+    // itself the moment a discovery succeeds.
+    // WRAPPED, NOT ONE LONG LINE. The first version of this was a single status row, and the box
+    // truncated it at the terminal edge: the sentence naming the problem survived and the half
+    // naming the remedy did not, which is a worse state than saying nothing. Caught by asserting
+    // the remedy is on the page rather than that the warning is.
+    ...(s?.contract && s.rpcUrl && s.fromBlock === 0
+      ? wrap("reading from block 0 — every read scans the whole chain. the node did not answer; "
+        + "restart to retry, or set it with `hydra init --from-block N`.", size.cols - 4)
+        .map((l) => paint(l, "yellow"))
+      : []),
     `${paint("route    ", "gray")}${s?.controlUrl ? `pool (${s.poolAccount || "alice"})` : "direct from your own account"}`,
     `${paint("invites  ", "gray")}${s?.invites.length ?? 0} left`,
     "",

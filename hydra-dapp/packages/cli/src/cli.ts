@@ -179,7 +179,12 @@ if (locked() || flag("passphrase-file")) await resolvePassphrase();
  * This is now the thin front-end half: ask, and persist if it changed.
  */
 async function repairFromBlock(state: State): Promise<void> {
-  if (!flag("from-block") && await ensureFromBlock(state)) {
+  // NO `--from-block` GUARD HERE, unlike `init`. Only `init` reads that flag; `read` and `send`
+  // ignore it entirely. So a guard on it would not be honouring a choice the caller made — it
+  // would be silently skipping the repair because of a flag the command never looks at, leaving
+  // the file at 0 and every read scanning the chain. `init` keeps its guard because there the
+  // flag genuinely sets the value.
+  if (await ensureFromBlock(state)) {
     save(state);
     console.error(`(reading from block ${state.fromBlock}, where this contract was deployed — this `
       + "state file predates that being recorded, and every read was scanning the whole chain. "

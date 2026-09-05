@@ -42,6 +42,8 @@ const deps = {
   writeFile: (path: string, text: string) => writeFileSync(path, text),
   chain: chainFor,
   fetchImpl: fetch,
+  // One per run of the program, which is what "per session" means here.
+  session: { discoveryFailedFor: null },
   now: Date.now,
 };
 

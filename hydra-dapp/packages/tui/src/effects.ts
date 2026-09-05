@@ -31,6 +31,15 @@ export type Deps = {
   readonly chain: (state: State) => Chain;
   readonly fetchImpl: typeof fetch;
   readonly now: () => number;
+  /**
+   * Scratch that lives as long as one TUI session and is not written anywhere.
+   *
+   * IT WAS A MODULE-LEVEL VARIABLE FIRST, AND A TEST CAUGHT IT. One test drove an unreachable
+   * node, the memo outlived it, and the next test's identity creation silently skipped discovery
+   * and asserted the wrong thing. A process-scoped memo in a module two front ends import is not
+   * session scope, it just looks like it until something else in the process disagrees.
+   */
+  readonly session: { discoveryFailedFor: string | null };
 };
 
 const clock = (t: number) => new Date(t).toISOString().slice(11, 19);
@@ -41,6 +50,39 @@ export async function perform(effect: Effect, state: State | null, deps: Deps): 
   } catch (e) {
     return { t: "error", text: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * The node that would not answer the deployment-block discovery, so this session stops asking.
+ *
+ * **NEVER-FATAL PLUS A LOOP IS A COST PAID FOREVER.** `ensureFromBlock` leaves `fromBlock` at 0
+ * when it fails, so the next send asks again, and the next read after that. A CLI process asks
+ * once and exits; a resident client asks on every action. Where the node is unreachable rather
+ * than refusing — a firewall, a dead port, a laptop that slept — each of those is a full connect
+ * timeout, measured here at 10.5 seconds, in front of an operation that was going to fail anyway.
+ * Before the repair moved into the shared path this surface made no such call at all, so the fix
+ * introduced a cost on a path that had none.
+ *
+ * KEYED ON THE URL, NOT A BARE FLAG. A user who edits the RPC in the setup page has changed the
+ * thing that failed, and should get an attempt rather than a session that has given up. It also
+ * keeps the memo from leaking between tests that stand up different fixtures.
+ *
+ * NOTHING PERSISTED AND NO WINDOW. A timestamp in the state file would need a retry interval, and
+ * any number chosen for one would be invented rather than measured. A restart is the retry, which
+ * is what a user does anyway when the node was down, and `view.ts` puts that sentence on the
+ * status line so it is a stated condition rather than a silent slow client.
+ */
+/** `ensureFromBlock`, at most one attempt per node per session. Returns true when it changed state. */
+async function ensureFromBlockOnce(
+  state: State,
+  deps: Deps,
+  onFail: (e: Error) => void = () => {},
+): Promise<boolean> {
+  if (deps.session.discoveryFailedFor === state.rpcUrl) return false;
+  return ensureFromBlock(state, deps.fetchImpl, (e) => {
+    deps.session.discoveryFailedFor = state.rpcUrl;
+    onFail(e);
+  });
 }
 
 async function run(effect: Effect, state: State | null, deps: Deps): Promise<Event> {
@@ -63,7 +105,7 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
     // `cli.ts` alone would rebuild the asymmetry this file's whole finding was about. A TUI has no
     // stderr to print at, so it goes where a TUI says things: on the line the user just caused.
     let unreached = "";
-    await ensureFromBlock(next, deps.fetchImpl, (e) => {
+    await ensureFromBlockOnce(next, deps, (e) => {
       unreached = ` — but the node did not answer (${e.message}), so this identity starts at block `
         + "0 and every read will scan the whole chain. `hydra init --from-block N` sets it.";
     });
@@ -76,7 +118,7 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
 
   switch (effect.t) {
     case "send": {
-      if (await ensureFromBlock(state, deps.fetchImpl)) deps.save(state);
+      if (await ensureFromBlockOnce(state, deps)) deps.save(state);
       const r = await sendMessage(
         state, deps.chain(state), effect.channel,
         effect.signed ? "signed" : "ephemeral", effect.text, deps.now());
@@ -89,7 +131,7 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
     }
     case "read": {
       // A state file created before the repair existed still says 0. Once, then persisted.
-      if (await ensureFromBlock(state, deps.fetchImpl)) deps.save(state);
+      if (await ensureFromBlockOnce(state, deps)) deps.save(state);
       const messages = await readChannel(state, deps.chain(state), effect.channel, deps.fetchImpl);
       return {
         t: "messages", channel: effect.channel, messages,

@@ -73,6 +73,8 @@ function harness(url: string, invites: string[], chain = memoryChain()) {
     // do, which is where the last version of this comment was wrong.
     fetchImpl: loopbackOnly(),
     now: () => now,
+    // Its own, so a session that gave up on a node cannot make the next test skip discovery.
+    session: { discoveryFailedFor: null },
   };
   return { deps, files, chain, invites, url, at: (t: number) => { now = t; } };
 }
@@ -120,6 +122,56 @@ async function created(h: ReturnType<typeof harness>, extra: Partial<Record<stri
 }
 
 // ---------------------------------------------------------------------------
+
+test("A CLIENT READING FROM BLOCK 0 SAYS SO ON THE STATUS PAGE", async () => {
+  // The remedy for "one attempt per node per session" is a restart, and a remedy nobody is told
+  // about is not a remedy. `fromBlock` at 0 with a contract set is exactly the failed-discovery
+  // condition, so the line is derived from the state and cannot disagree with it.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    const m = await created(h);
+    const good = prose({ ...m, page: "status" as const });
+    assert.ok(!/reading from block 0/.test(good),
+      "a client that discovered its deployment block is being warned that it did not");
+
+    const stuck = { ...m, page: "status" as const, state: { ...m.state!, fromBlock: 0 } };
+    const said = prose(stuck);
+    assert.match(said, /reading from block 0/,
+      "the status page does not say the client is reading from block 0, so a user whose node was "
+      + "down at identity creation sees a client that is permanently slow and is told nothing");
+    assert.match(said, /--from-block/,
+      "the warning names no remedy, so the only thing a user can do with it is worry");
+    assert.match(said, /restart/,
+      "the warning does not say a restart retries, which is the whole point of not retrying "
+      + "inside the session");
+  } finally { server.close(); }
+});
+
+test("ONE ATTEMPT PER NODE PER SESSION — a dead node does not tax every send and read", async () => {
+  // Option 3 of the retry question. The alternative is a full connect timeout, measured at 10.5
+  // seconds here, in front of every action for as long as the node is down — on the surface that
+  // is resident by design. A restart is the retry; `view.ts` says so on the status line.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    const m = await created(h);
+    let asked = 0;
+    const dead: typeof fetch = (async (i: any, ini: any) => {
+      const target = typeof i === "string" ? i : (i as Request).url;
+      if (target === NODE.url) { asked++; throw new Error("connect ECONNREFUSED (simulated)"); }
+      return fetch(i, ini);
+    }) as typeof fetch;
+    const deps = { ...h.deps, fetchImpl: dead };
+    const state = { ...m.state!, fromBlock: 0 };
+
+    for (let i = 0; i < 4; i++) await perform({ t: "read", channel: "nobody" }, state, deps);
+    assert.equal(asked, 1,
+      `the client asked an unreachable node ${asked} times across four reads. Each of those is a `
+      + "connect timeout in front of an operation that was going to fail anyway, and the state "
+      + "never records the answer, so it repeats for as long as the node is down");
+  } finally { server.close(); }
+});
 
 test("A TUI-CREATED IDENTITY STARTS AT THE DEPLOYMENT BLOCK, not at 0", async () => {
   // The behavioural half of `front-end-parity.test.ts`. That file asserts against source text,
