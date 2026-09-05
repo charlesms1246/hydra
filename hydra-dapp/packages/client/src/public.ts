@@ -32,6 +32,7 @@
 import { PUBLIC_ENDPOINT, openPublic, publish, wireBytes, uploadPathFor }
   from "../../vault-client/src/blobs.ts";
 import type { PublicBlob, PublishIntent } from "../../vault-client/src/blobs.ts";
+import { vaultSaid, vaultJson } from "../../vault-client/src/errors.ts";
 
 /**
  * Put a public object on a vault.
@@ -55,8 +56,10 @@ export async function postPublic(
     headers: { "x-hydra-invite": invite },
     body: wireBytes(blob) as unknown as Uint8Array,
   });
+  // A POST IS A PUBLIC OBJECT, so the status is worth naming precisely — 413 is the operator's
+  // size limit and 401 is a spent invite, and the raw body used to be pasted here whatever it was.
   if (res.status !== 201) {
-    throw new Error(`the vault refused the post (${res.status}): ${await res.text()}`);
+    throw new Error(vaultSaid(vaultUrl, res.status, await res.text(), "post"));
   }
   return blob;
 }
@@ -81,8 +84,8 @@ export async function fetchPublic(
     method: "POST",
     body: JSON.stringify(ids),
   });
-  if (!res.ok) throw new Error(`the vault refused the read (${res.status})`);
-  const body = await res.json() as { found?: Record<string, string> };
+  if (!res.ok) throw new Error(vaultSaid(vaultUrl, res.status, await res.text(), "read"));
+  const body = await vaultJson<{ found?: Record<string, string> }>(res, vaultUrl, "read");
   const found = new Map<string, Uint8Array>();
   const substituted: string[] = [];
   for (const [id, b64] of Object.entries(body.found ?? {})) {
