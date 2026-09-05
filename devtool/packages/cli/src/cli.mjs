@@ -127,7 +127,7 @@ if (cmd === undefined || cmd === "tui") {
     process.exit(2);
   }
   if (args.length === 0) {
-    console.error("  usage: hydra-dev lint <file-or-dir>... [--json]");
+    console.error("  usage: hydra-dev lint <file-or-dir>... [--json] [--fail-on-unknown]");
     process.exit(2);
   }
   // Hand the linter's own entry point the argv it expects. Reusing it rather
