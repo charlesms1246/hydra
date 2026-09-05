@@ -111,11 +111,50 @@ export const accuracyAgainst = (crowd: number): number => 1 / (1 + crowd);
  *
  * Accounts with too few events to say return `Infinity`, meaning "not evidently automated". The
  * conservative direction for a REGULARITY score is high, because low is what gets pruned.
+ *
+ * **IT RETURNED `Infinity` FOR 100 TRANSACTIONS IN ONE BLOCK — the clearest automation signature a
+ * chain has, kept in the crowd.** The documented gate is `times.length < 4`, "too few events to
+ * say". It was not the gate that decided: gaps were filtered to `g > 0` and then gated again on
+ * `gaps.length < 3`, so **the effective gate was fewer than four DISTINCT timestamps, not fewer
+ * than four events**.
+ *
+ * That is live rather than theoretical. `chain.ts` stamps every transaction with its block's
+ * timestamp, so every transaction in one block carries an identical time, and `commands.ts` groups
+ * them per account without deduplicating before pruning. Measured by calling this directly:
+ *
+ *     9 blocks x 1 =   9 events   ->          0   pruned
+ *     9 blocks x 5 =  45 events   ->          0   pruned
+ *     3 blocks x 2 =   6 events   ->   Infinity   KEPT
+ *     1 block x 100 = 100 events  ->   Infinity   KEPT
+ *
+ * **THE RULE FAILED HARDEST ON ITS INTENDED TARGETS** — batchers, MEV, exchanges — and the failure
+ * direction is the one this file forbids. Not pruned means more candidates, a larger crowd, a
+ * LOWER reported operator accuracy, and a user told they are harder to identify than they are.
+ * The header's Rule 2 is that the pruned figure *"cannot tell a user they are safer than they
+ * are"*, and this was that rule broken by its own predicate.
+ *
+ * **The set-theoretic argument does not cover it, which is worth saying because it reads as though
+ * it does.** "Pruning only ever removes, so the crowd is a lower bound" is a claim about the
+ * FILTER. The failure was in the PREDICATE, and a predicate that fails to fire leaves a member in
+ * the set the bound was supposed to be conservative about.
+ *
+ * **BATCHING IS ITSELF THE SIGNAL, so it scores 0 rather than being excluded from scoring.** More
+ * events than distinct times means a single block carried several — which a person does not do and
+ * a script does by construction. Erring here costs a pruned human, which shrinks the crowd and
+ * over-states risk; erring the other way inflates it and over-states safety, and only one of those
+ * is allowed. **[U] How much the crowd actually inflated on a real chain is unmeasured** — that
+ * bounds how bad this was, not whether it was wrong.
+ *
+ * DISTINCT AND SORTED, which also retires an undocumented precondition: this required `times`
+ * ascending and said so nowhere, and shuffling the same six timestamps moved it from 0 to
+ * `Infinity` — the same account, twice the claimed safety. Not reachable through `publishers()`,
+ * which iterates blocks in order, but a precondition nobody wrote down is one nobody can keep.
  */
 export function regularity(times: readonly number[]): number {
-  if (times.length < 4) return Infinity;
-  const gaps = times.slice(1).map((t, i) => t - times[i]).filter((g) => g > 0);
-  if (gaps.length < 3) return Infinity;
+  const distinct = [...new Set(times)].sort((a, b) => a - b);
+  if (times.length >= 2 && distinct.length < times.length) return 0;
+  if (distinct.length < 4) return Infinity;
+  const gaps = distinct.slice(1).map((t, i) => t - distinct[i]!);
   const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
   if (mean === 0) return 0;
   const v = gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length;
