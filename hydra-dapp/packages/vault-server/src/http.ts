@@ -247,9 +247,24 @@ export function serve(
 
         return send(405, { error: "method not allowed" });
       } catch (e) {
-        // Deliberately uninformative. An error that echoed the request would put the caller's
-        // own bytes into whatever collects stderr.
-        return send(400, { ok: false, error: String((e as Error).message).slice(0, 80) });
+        // **IT ECHOED THE SERVER'S OWN FILESYSTEM PATHS TO AN ANONYMOUS CALLER.** This truncated
+        // to 80 characters, and the comment reasoned only about not putting the CALLER's bytes
+        // into stderr — the direction nobody considered was outward. What came back over the wire
+        // from a failed store write was:
+        //
+        //     EACCES: permission denied, open '/tmp/…/store/enc:lost.blob'
+        //
+        // an absolute store path and the operator's directory layout, unauthenticated, from a
+        // product whose argument is that the operator-view disclosure table is exhaustive. The
+        // truncation saved nothing: that string is 72 characters. On a deeper path it would have
+        // cut mid-directory, which is arbitrary rather than safe — a limit is not a filter.
+        //
+        // NOTHING IS LOST BY THIS. Every deliberate refusal returns `{ ok: false, error }` and is
+        // sent at line 184 with its own sentence; only an unexpected throw reaches here, and an
+        // unexpected throw has nothing a caller can act on. The operator gets the real one.
+        console.error(`[vault] ${req.method} ${req.url} failed: ${
+          e instanceof Error ? e.message : String(e)}`);
+        return send(400, { ok: false, error: "the vault could not complete this request" });
       }
     })();
   };

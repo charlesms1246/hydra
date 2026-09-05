@@ -413,10 +413,13 @@ export class Vault {
       // The v1 write gate. The token is destroyed at redemption and never written down beside
       // the object it admitted — an invite retained and linked to a user is exactly the record
       // that poisons the privacy story.
-      if (!r.invite || !this.#invites.delete(r.invite)) {
+      //
+      // **CHECKED HERE, SPENT AFTER THE WRITE — and it used to be spent here.** See the note on
+      // the persist below: this was `!this.#invites.delete(...)`, so the code was destroyed
+      // before the only step that can fail.
+      if (!r.invite || !this.#invites.has(r.invite)) {
         return { ok: false, error: "invite required" };
       }
-      this.#invitesRedeemed++;
       // **A SPENT INVITE CAME BACK ON RESTART.** `#invites` is rebuilt from `--invites-file` at
       // startup and redemption only deleted from the in-memory set, so a deploy, a crash or a
       // reboot silently re-opened every code ever issued. Measured: reuse in-process is refused
@@ -437,8 +440,50 @@ export class Vault {
       expiresAt,
       bytes: Uint8Array.from(r.body),
     };
+    // **THE DISK FIRST, AND NOTHING IRREVERSIBLE BEFORE IT.** `#persist` is the only step here
+    // that can fail, and it used to be the LAST — after the invite was spent and after the object
+    // was in `#objects`. Driven against a real vault with the store made unwritable:
+    //
+    //     PUT enc:lost (valid invite)  -> 400 "EACCES: …/store/enc:lost.blob"
+    //     retry, same code             -> 400 "invite required"
+    //     POST fetch                   -> served enc:lost, which is on no disk
+    //     restart, POST fetch          -> gone
+    //
+    // Four failures compounding: the uploader is told it failed while readers can fetch it, the
+    // object is in no operator record and vanishes on restart, and **the invite is gone** — single
+    // use, operator-issued, and the client is told only "invite required", so it must go back to
+    // the organisation and ask for another. That approach is the row `observations.ts` calls the
+    // one that can undo every other row.
+    //
+    // The sharpest part is that the fix which made spends survive a restart is what makes the loss
+    // permanent: the spend is durable and the object is not.
+    //
+    // The prefix and bucket checks were moved ahead of the spend at some point. Nothing moved the
+    // write, which is the only step after it.
+    try {
+      this.#persist(stored);
+    } catch (e) {
+      // The operator needs the real reason; the caller must not have it — see `http.ts`, which
+      // used to put this string on the wire, absolute store path and all.
+      console.error(`a write to the store failed and the upload was refused: ${
+        e instanceof Error ? e.message : String(e)}`);
+      return { ok: false, error: `the vault could not store ${r.id}` };
+    }
     this.#objects.set(r.id, stored);
-    this.#persist(stored);
+    if (encrypted && r.invite) {
+      this.#invites.delete(r.invite);
+      this.#invitesRedeemed++;
+      // **AFTER THE OBJECT IS ON DISK.** If THIS write fails the upload has genuinely happened, so
+      // reporting failure would be the same lie in the other direction. The cost is a code that
+      // stays spendable once more, which is bounded and recoverable; the cost of the old order was
+      // a credential destroyed for nothing.
+      try {
+        this.#spend(r.invite);
+      } catch (e) {
+        console.error(`${r.id} was stored but its invite could not be recorded as spent, so that `
+          + `code will be accepted again after a restart: ${e instanceof Error ? e.message : e}`);
+      }
+    }
     return { ok: true, op: "upload", id: r.id, expiresAt };
   }
 
