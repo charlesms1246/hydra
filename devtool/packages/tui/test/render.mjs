@@ -46,7 +46,7 @@ import { RUN_FIELDS, runFields } from "../src/runflow.mjs";
 import { UNKNOWN as UNKNOWN_WORD } from "../../leak/src/facts.mjs";
 import { advance, PASTE, TYPE, fieldValue } from "../src/forms.mjs";
 import { whyNotRunnable, validate } from "../../core/src/flows.mjs";
-import { mcpTools } from "../../core/src/services.mjs";
+import { mcpManifest } from "../../core/src/services.mjs";
 import { fullAddr } from "../src/wallets.mjs";
 import { discoverOperations } from "../../core/src/toolchain.mjs";
 
@@ -1176,11 +1176,18 @@ check_("a flow says which of two different reasons stops it running", () => {
 });
 
 {
-  const tools = await mcpTools();
+  const manifest = await mcpManifest();
   check_("the MCP tool surface is readable without starting the server", () => {
     // packages/mcp is gitignored, so a clone can genuinely lack it. That is a skip,
     // not a failure — but where it IS present the names have to be data.
-    if (!tools) return { skip: "packages/mcp/src/manifest.mjs is not present here" };
+    //
+    // ABSENT IS A SKIP; PRESENT-BUT-UNREADABLE IS A FAILURE — the same split the skills
+    // check above draws, which named this check as the one reporting a skip and did not
+    // give it the distinction. A renamed export or a manifest that throws on import used
+    // to arrive here as the same `null` as an absent file, and be reported as absence.
+    if (!manifest.present) return { skip: "packages/mcp is withheld from this distribution" };
+    if (manifest.problem) throw new Error(manifest.problem);
+    const tools = manifest.tools;
     if (tools.length !== 9) throw new Error(`${tools.length} tools, expected 9`);
     const effects = tools.filter((t) => t.effects);
     if (effects.length !== 3) throw new Error(`${effects.length} side-effecting, expected 3`);

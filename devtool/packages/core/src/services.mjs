@@ -75,17 +75,32 @@ export function agentStatus() {
  *
  * The dynamic import is cached by the loader after the first call, so the 2-second
  * status poll pays for it once.
+ *
+ * **ABSENT AND BROKEN ARE DIFFERENT, AND THE OLD SHAPE COULD NOT SAY WHICH.** One `null` meant
+ * the file was not there, or the import threw, or `TOOLS` had been renamed — and the guard over
+ * this reported all three as *"packages/mcp/src/manifest.mjs is not present here"*, a message
+ * asserting a cause this function cannot distinguish. `render.mjs`'s skills check draws exactly
+ * this line ten lines of comment long — *"ABSENT IS A SKIP; PRESENT-BUT-EMPTY IS STILL A
+ * FAILURE"* — and points at this check as the one that reports a skip. It never got the same
+ * split.
+ *
+ * `mcpTools()` keeps the tolerant contract because `status()` polls it every two seconds and a
+ * throw there takes the TUI down; the caller that needs the distinction asks for it.
  */
-export async function mcpTools() {
+export async function mcpManifest() {
   const f = join(REPO, "packages", "mcp", "src", "manifest.mjs");
-  if (!existsSync(f)) return null;
+  if (!existsSync(f)) return { present: false, tools: null, problem: null };
   try {
     const m = await import(pathToFileURL(f).href);
-    return Array.isArray(m.TOOLS) ? m.TOOLS : null;
-  } catch {
-    return null;
+    return Array.isArray(m.TOOLS)
+      ? { present: true, tools: m.TOOLS, problem: null }
+      : { present: true, tools: null, problem: `${f} exports no TOOLS array` };
+  } catch (e) {
+    return { present: true, tools: null, problem: `${f} did not load: ${e.message}` };
   }
 }
+
+export const mcpTools = async () => (await mcpManifest()).tools;
 
 export async function status() {
   const st = await readState();
