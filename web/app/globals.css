@@ -1585,3 +1585,198 @@ html[data-build="public"] .wordmark {
     opacity: 1 !important;
   }
 }
+
+/* --------------------------------------------------------------------------------------------
+ * The pitch deck. See `components/Deck.tsx`.
+ *
+ * ⛔ The advancement is THIS CSS, not the script. The component adds the rail, the counter and
+ * the keys; the track, the snap points and the slide sizing are here, so a reader with scripting
+ * off still reaches every slide. What that reader does NOT get is a horizontal-scroll affordance
+ * they can find — hence the `scripting: none` block at the end, which unwinds the whole thing
+ * into a vertical page. Decided before the component was written, not discovered afterwards.
+ * ------------------------------------------------------------------------------------------ */
+
+.deck {
+  display: flex;
+  height: 100svh;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+}
+
+/*
+ * Mandatory, where a vertical deck would want proximity. That reasoning is about height — a slide
+ * taller than the viewport traps a reader who cannot reach its bottom. Horizontally every slide is
+ * exactly one viewport wide, so the trap does not exist and half a slide either side of the fold
+ * is simply a broken frame.
+ */
+.slide {
+  position: relative;
+  flex: 0 0 100vw;
+  width: 100vw;
+  height: 100%;
+  overflow-y: auto;
+  scroll-snap-align: start;
+  padding-inline: var(--gutter);
+}
+
+/*
+ * ⛔ Two elements, and neither is optional — see `Deck.tsx`. `justify-content: center` applied
+ * directly to `.slide` overflows in both directions once the content is tall, and the overflow
+ * above the start edge cannot be scrolled to. The copy would begin part-way through, on small
+ * screens only.
+ */
+.slide-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+  max-width: var(--measure);
+  margin-inline: auto;
+  padding-block: clamp(5rem, 12vh, 8rem) clamp(3rem, 8vh, 5rem);
+}
+
+.slide-tick {
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.2em;
+  color: var(--g-48);
+  margin-bottom: 1.5rem;
+}
+
+.slide h2 {
+  font-family: var(--sans);
+  font-weight: 200;
+  font-size: clamp(1.75rem, 4.5vw, 3.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.5rem;
+  max-width: 20ch;
+}
+
+.slide p {
+  font-family: var(--serif);
+  font-size: var(--t-lede);
+  line-height: 1.35;
+  color: var(--g-80);
+  max-width: 46ch;
+  margin: 0 0 1rem;
+}
+
+.slide .accent {
+  color: var(--accent);
+}
+
+.deck-rail {
+  position: fixed;
+  right: clamp(0.75rem, 1.5vw, 1.5rem);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.deck-dot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.deck-dot-label {
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.2em;
+  color: var(--g-48);
+  opacity: 0;
+  transition: opacity 200ms;
+}
+
+.deck-dot:hover .deck-dot-label,
+.deck-dot:focus-visible .deck-dot-label,
+.deck-dot.is-active .deck-dot-label {
+  opacity: 1;
+}
+
+.deck-dot.is-active .deck-dot-label {
+  color: var(--accent);
+}
+
+.deck-dot-line {
+  display: block;
+  height: 1px;
+  width: 1rem;
+  background: var(--g-32);
+  transition: width 200ms, background 200ms;
+}
+
+.deck-dot:hover .deck-dot-line {
+  width: 1.5rem;
+}
+
+.deck-dot.is-active .deck-dot-line {
+  width: 2rem;
+  background: var(--accent);
+}
+
+.deck-count {
+  position: fixed;
+  /* Clear of the frame's corner letter, which sits at the frame inset in the same corner. */
+  bottom: clamp(3rem, 7vh, 4.5rem);
+  right: clamp(0.75rem, 1.5vw, 1.5rem);
+  z-index: 20;
+  display: none;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2em;
+  color: var(--g-48);
+}
+
+@media (min-width: 64rem) {
+  .deck-rail { display: flex; }
+  .deck-count { display: block; }
+}
+
+/*
+ * ⛔ NO SCRIPT: the deck becomes a vertical page.
+ *
+ * Every slide is reachable without this — the track is CSS — but only by horizontal scrolling,
+ * which on a desktop is shift-wheel and is not discoverable. A deck that hides five of six slides
+ * behind an affordance nobody finds is a deck that shows one slide, on the page carrying the
+ * argument. So it stops being a deck: an ordinary stack needs no affordance at all.
+ *
+ * ⛔ The rail and the counter are HIDDEN HERE, not absent. They are server-rendered markup — a
+ * client component still prerenders — so without the script they are visible controls that do
+ * nothing when clicked. I wrote "already absent, because they are the script's" in this comment
+ * and it was false; the probe found six rail buttons in the no-script render. **A dead navigation
+ * control is worse than no control**, and a comment asserting a fallback is not the fallback.
+ */
+@media (scripting: none) {
+  .deck-rail,
+  .deck-count {
+    display: none;
+  }
+
+  .deck {
+    display: block;
+    height: auto;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+
+  .slide {
+    width: auto;
+    height: auto;
+    min-height: 100svh;
+    overflow: visible;
+    border-bottom: 1px solid var(--g-12);
+  }
+}

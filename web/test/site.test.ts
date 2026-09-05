@@ -710,6 +710,10 @@ test("no hand-written sentence asserts a number the code did not produce", () =>
 
   const prose = [
     ...SITE.what, ...SITE.notYet, ...SITE.doesNotClaim, ...SITE.beforeYouUse,
+    // ⛔ Every prose key belongs in this list. A key that is missing is copy this guard does not
+    // read, and it fails open — the sentence ships with an unmeasured number in it and the suite
+    // stays green. When copy is added, add it here in the same commit.
+    ...SITE.pitch.whatItIs.body, ...SITE.pitch.whatYouDo.body,
     ...SITE.pitch.problem.body, ...SITE.pitch.mechanism.body,
     ...SITE.pitch.worseAt.body, ...SITE.pitch.why.body,
     SITE.pitch.lede, SITE.install.lede, SITE.install.supplyChain, SITE.about.lede,

@@ -3,38 +3,56 @@ import type { Metadata } from "next";
 import { SITE } from "../../content.ts";
 import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
-import { Section } from "../../components/Section.tsx";
+import { Deck, Slide } from "../../components/Deck.tsx";
 import { Auditor } from "../../components/Auditor.tsx";
 import { MessagePath } from "../../components/viz/MessagePath.tsx";
 import { AnonymitySet } from "../../components/viz/AnonymitySet.tsx";
-import { AsciiPanel } from "../../components/viz/AsciiPanel.tsx";
-import { Footer } from "../../components/Footer.tsx";
 
 /**
- * The pitch, and the highest-risk page on this site.
+ * The pitch: six slides, and the highest-risk page on this site.
  *
- * Four of its five sections are hand-written persuasive copy about a privacy product, which is
- * the exact shape the forbidden-word check exists to police. That guard is load-bearing here in
- * a way it is nowhere else: `content.ts` holds the rule these sections are written to — say what
- * the project DOES, never what the reader GETS.
+ * Most of it is hand-written persuasive copy about a privacy product, which is the exact shape
+ * the forbidden-word check exists to police. That guard is load-bearing here in a way it is
+ * nowhere else: `content.ts` holds the rule these slides are written to — say what the project
+ * DOES, never what the reader GETS.
  *
- * **Section 03 is generated, and that is the point of the page.** The auditor can see the
+ * **Slides, because of who reads this.** A judge, watching a presenter, once. They cannot scroll
+ * back and they will not read a paragraph. One screen, one claim, and every slide has to survive
+ * being read out loud.
+ *
+ * **Slide 04 is generated, and that is the point of the page.** The auditor can see the
  * communication graph. That is a fact about Hydra rather than a comparison, so hand-writing it
  * would be an asserted privacy claim and the check would refuse it — correctly. It is therefore
- * generated-on-the-page or absent-from-the-page, and absent is not an option: burying it here
- * while the page sells around it is precisely the move the whole mechanism exists to prevent.
+ * generated-on-the-slide or absent-from-the-page, and absent is not an option: burying it while
+ * the deck sells around it is precisely the move the whole mechanism exists to prevent. It
+ * renders the same `Auditor` component as `/about/disclosure`, so the two cannot drift.
  *
- * It renders the same `Auditor` component as `/about/disclosure`, so there is one implementation
- * and the two pages cannot drift.
+ * ## ⛔ The order is the argument, and it was wrong
  *
- * **The order is the argument.** 03 is the worst fact, at the largest type on the page. 04 is the
- * honest comparison, immediately after it. 05 makes the case only once both have been read. A
- * pitch that put 05 first would be selling around the other two.
+ * The deck used to open on `pitch.lede` — *"this one publishes the measurements"* — and then
+ * spend two slides on mechanism before ever saying what the product was. **That sells a method to
+ * somebody who came for a messenger.** Slides 01 and 03 are new and they are the fix: what it is,
+ * then what you do with it, before any argument about why the claims are believable.
+ *
+ * `pitch.lede` now closes. 04 is the worst fact, 05 is the honest comparison immediately after
+ * it, and 06 makes the case only once both have been read. A deck that put 06 first would be
+ * selling around the other two.
  */
 export const metadata: Metadata = {
   title: `Pitch — ${SITE.name}`,
   description: SITE.pitch.lede,
 };
+
+
+/** One per slide, in order. The rail reads these, and so does each slide's accessible name. */
+const LABELS = [
+  "WHAT IT IS",
+  "THE PROBLEM",
+  "IN PRACTICE",
+  "WHO CAN SEE YOU",
+  "THE COMPARISON",
+  "THE ARGUMENT",
+] as const;
 
 export default function Pitch() {
   const p = SITE.pitch;
@@ -43,106 +61,53 @@ export default function Pitch() {
       <PageFrame word={SITE.name.toUpperCase()} />
       <Nav current="pitch" />
 
-      <main className="page">
-        <header className="doc-head">
-          <h1>Why this exists</h1>
-          <p className="tagline">{p.lede}</p>
-        </header>
-
-        <Section n="01" id="problem" title="CONTENT IS THE EASY HALF">
-          <div className="prose">
-            <p>{p.problem.body[0]}</p>
-            <p className="labelled">
-              <span className="prose-label">{p.problem.label}</span>
-              {p.problem.body[1]}
-            </p>
-          </div>
-        </Section>
-
-        {/*
-          The reference's dominant page shape: two dense fields, full-bleed to the gutter, with a
-          tag chip and a captioned row beneath. It is what carries those pages visually, and
-          without an equivalent this one is a document with rules drawn on it.
-        */}
-        <div className="panels">
-          <div>
-            <AsciiPanel cols={92} rows={44} blur={1.9} gain={1.5} tag="ON CHAIN" />
-            <div className="panel-note">
-              <h3>What everyone sees</h3>
-              <p>
-                A pointer, and the account that wrote it. Permanent, public, and readable by
-                anyone who has not yet thought of a reason to look.
-              </p>
-            </div>
-          </div>
-          <div>
-            {/* A tighter crop at lower gain, so the second panel reads as a different object
-                rather than as the first one turned up — the reference's two fields are two
-                images, and two exposures of one drawing has to work as hard to look like two. */}
-            <AsciiPanel
-              cols={92}
-              rows={44}
-              blur={2.2}
-              gain={1.15}
-              rotate={0.42}
-              crop={{ x: 0.3, y: 0.24, w: 0.42, h: 0.52 }}
-              tag="IN THE VAULT"
-            />
-            <div className="panel-note">
-              <h3>What the server holds</h3>
-              <p>
-                Sealed bytes in one of five size bands, arriving with four decoys, minutes after
-                you pressed send.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <Section n="02" id="mechanism" title="WHAT IT ACTUALLY DOES">
-          <div className="prose">
-            <p>{p.mechanism.body[0]}</p>
-            <p className="labelled">
-              <span className="prose-label">{p.mechanism.label}</span>
-              {p.mechanism.body[1]}
-            </p>
-          </div>
+      <Deck labels={LABELS}>
+        <Slide n="01" label={LABELS[0]}>
+          <h2>{p.whatItIs.title}</h2>
+          <p>{p.whatItIs.body[0]}</p>
           <MessagePath />
-        </Section>
+        </Slide>
+
+        <Slide n="02" label={LABELS[1]}>
+          <h2>{p.problem.title}</h2>
+          <p>{p.problem.body[0]}</p>
+          <p>{p.problem.body[1]}</p>
+        </Slide>
+
+        {/* The verb table, and the only place on the site it is explained. See `content.ts`. */}
+        <Slide n="03" label={LABELS[2]}>
+          <h2>{p.whatYouDo.title}</h2>
+          <p>{p.whatYouDo.body[0]}</p>
+          <p>{p.whatYouDo.body[1]}</p>
+        </Slide>
 
         {/*
-          Generated. See the header — this is the one fact on the page that cannot be written by
-          hand, and the one the page would be dishonest without.
+          Generated. The mechanism paragraph is folded in as the setup rather than getting a slide
+          of its own before anyone knows what the product is.
         */}
-        <Section n="03" id="auditor" title="WHO CAN SEE YOU TALKING">
+        <Slide n="04" label={LABELS[3]}>
+          <h2>Who can see you talking</h2>
+          <p>{p.mechanism.body[0]}</p>
           <Auditor />
-        </Section>
+        </Slide>
 
-        <Section n="04" id="worse" title="WHAT THIS IS WORSE AT">
-          <div className="prose">
-            <p>{p.worseAt.body[0]}</p>
-            <p className="labelled">
-              <span className="prose-label">{p.worseAt.label}</span>
-              {p.worseAt.body[1]}
-            </p>
-          </div>
-        </Section>
+        <Slide n="05" label={LABELS[4]}>
+          <h2>{p.worseAt.title}</h2>
+          <p>{p.worseAt.body[0]}</p>
+          <p>{p.worseAt.body[1]}</p>
+        </Slide>
 
-        <Section n="05" id="argument" title="WHY IT MIGHT STILL BE WORTH IT">
-          <div className="prose">
-            <p>{p.why.body[0]}</p>
-            <p className="labelled">
-              <span className="prose-label">{p.why.label}</span>
-              {p.why.body[1]}
-            </p>
-          </div>
+        <Slide n="06" label={LABELS[5]}>
+          <h2>{p.why.title}</h2>
+          <p>{p.why.body[0]}</p>
           <AnonymitySet />
+          {/* The closing line. See `content.ts` — this is the sentence the deck used to open on. */}
+          <p className="accent">{p.lede}</p>
           <p className="cta">
             <a href="/about/disclosure/">Read what every party can see &rarr;</a>
           </p>
-        </Section>
-      </main>
-
-      <Footer />
+        </Slide>
+      </Deck>
     </>
   );
 }

@@ -189,8 +189,50 @@ export const SITE = {
    * that way it is because the thing you want to say has not been measured yet.
    */
   pitch: {
+    /**
+     * ⛔ **This is the LAST slide, not the first.** As a closing line it is the strongest sentence
+     * on the site. As an opening line it is a thesis about epistemology, delivered to somebody who
+     * does not yet know what the product is — which is the whole reason the deck used to sell a
+     * method to people who wanted a messenger.
+     */
     lede: "Most privacy products ask you to believe a sentence somebody wrote. This one publishes "
       + "the measurements, including the ones that are not flattering.",
+
+    /**
+     * Slide 01. The missing slide, and its absence is why the deck opened on a method.
+     *
+     * ⛔ The three verbs are exact and are not interchangeable — see `whatYouDo` below.
+     */
+    whatItIs: {
+      label: "WHAT IT IS",
+      title: "A messaging client on Starknet",
+      body: [
+        "Contents go to a server that cannot read them. Every message is either signed — provably "
+        + "yours, permanently — or deniable, where neither of you can prove who wrote it.",
+      ],
+    },
+
+    /**
+     * Slide 03. The verb table, and **this is the only place on the site it is explained.**
+     *
+     * ⛔ `send` is deniable, `publish` is signed and STILL PRIVATE to the conversation, and `post`
+     * is the public one. `cli.ts:448` records that this exact collision is why the public feature
+     * shipped with no client path and nobody noticed. Do not smooth these three into synonyms
+     * for rhythm; the distinction is the paragraph's only job.
+     */
+    whatYouDo: {
+      label: "IN PRACTICE",
+      title: "What you actually do with it",
+      body: [
+        "Someone invites you and you accept. That handshake happens once, and it is the only way "
+        + "a conversation starts. After it, a message you send carries no signature, so either of "
+        + "you could have written it. When you want a message to be provably yours you publish it "
+        + "instead, and that attribution is permanent. Both stay inside the conversation.",
+        "Making something readable by strangers is a different verb. You post it, deliberately, "
+        + "one message at a time — and posting permanently joins your messaging identity to a "
+        + "Starknet address.",
+      ],
+    },
     problem: {
       label: "THE PROBLEM",
       title: "Content is the easy half",
