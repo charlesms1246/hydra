@@ -275,8 +275,18 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
       deps.save(state);
       return {
         t: "ok", state,
-        text: `${effect.channel}'s signing key is published at ${at} and matches the handshake — `
-          + "which does not say the address is the person you mean",
+        // **THE CAVEAT LEADS, BECAUSE IT IS THE HALF THAT WAS BEING LOST.** This read
+        // "<channel>'s signing key is published at <64 hex chars> and matches the handshake —
+        // which does not say the address is the person you mean". A full Starknet address is 66
+        // characters, so the qualification began past column 110 and NEVER appeared at any real
+        // width — driven at 100 columns, the reader got the positive claim and nothing else.
+        //
+        // An attribution claim that loses its qualification does not read as broken. It reads as
+        // a stronger check than the code performed, which is the one direction this must not fail
+        // in. The CLI says the same thing in four lines of prose because it has room; a TUI log is
+        // one row, so the order has to do the work instead. Both names are on the page already.
+        text: `key matches the handshake — who owns the address is still unproven — `
+          + `${effect.channel} at ${effect.address.slice(0, 12)}…`,
       };
     }
     default:

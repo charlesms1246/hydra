@@ -43,6 +43,7 @@ import {
   derive, rootSeed, entropyFrom, fromOsRandom, fromStoredSeed, fromChannelWrap, subKey, expose,
   VAULT_DOMAIN,
 } from "../../identity/src/domains.ts";
+import { vaultSaid } from "../../vault-client/src/errors.ts";
 import { STATE_FILE as WHERE } from "./state.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 import type { Chain } from "./chain.ts";
@@ -847,7 +848,14 @@ export async function flush(
           + "the cover rate plus one, so a vault tuned for bare messages refuses the clients "
           + "doing the timing defence correctly. nothing was lost — run `hydra flush` again.");
       }
-      if (!res.ok) throw new Error(`the vault refused ${p.id.slice(0, 12)}…: ${await res.text()}`);
+      // The status rather than the body: this pasted whatever arrived — an nginx error page,
+      // or nothing at all for the commoner empty-bodied 5xx — into a one-row log line.
+      // 429 keeps its own message above, because "cover multiplies your request rate" is
+      // more useful here than anything a status code can say.
+      if (!res.ok) {
+        throw new Error(`${vaultSaid(state.vaultUrl, res.status, await res.text(), "upload")}`
+          + ` (${p.id.slice(0, 12)}…)`);
+      }
         state.invites.shift();
         uploaded.push(p.id);
       }

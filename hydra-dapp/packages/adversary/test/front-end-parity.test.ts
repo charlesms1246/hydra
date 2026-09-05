@@ -116,6 +116,54 @@ test("BOTH FRONT ENDS SAY SO WHEN DISCOVERY FAILS — the diagnostic the refacto
   }
 });
 
+test("NEITHER FRONT END REPORTS AN ANCHOR MATCH WITHOUT SAYING WHAT IT DOES NOT PROVE", () => {
+  // Driven on Record (4) against a really published record. At 100 columns the TUI showed:
+  //
+  //   from-9c8e3079b19a's signing key is published at 0x2afa2039a4173a1c327f6bb87d49bac815c5c…
+  //
+  // and the qualification that followed — "which does not say the address is the person you
+  // mean" — started past column 110, because a Starknet address is 66 characters. **It appeared
+  // at no width.** The reader got a positive attribution claim and none of its limit.
+  //
+  // The CLI has always said it, in four lines of prose, because it has room. So this is not "one
+  // surface is missing a sentence" — it is the same claim rendered on two surfaces where only one
+  // has the space, and the TUI has to buy it with word order instead.
+  for (const { name, file } of FRONT_ENDS) {
+    const code = codeOf(readFileSync(file, "utf8"));
+    const anchor = code.slice(code.indexOf('"anchor"'));
+    assert.match(anchor.slice(0, 1200), /unproven|does not say|is still a fingerprint/,
+      `${name} reports that a signing key matches a published record and never says what that `
+      + "does not establish — who owns the address. A qualification the reader never sees makes "
+      + "the check read as stronger than it is, which is the one direction this must not fail in");
+  }
+});
+
+test("AND THE TUI PUTS THAT LIMIT BEFORE THE 66-CHARACTER ADDRESS", () => {
+  // The ordering IS the fix, not the wording: the log is one row and truncation eats the tail, so
+  // an address interpolated ahead of the caveat guarantees the caveat is never read. Asserted as
+  // an order rather than a length, because the length that matters is the terminal's, not ours.
+  // SCOPED TO THE MESSAGE, NOT THE CASE BODY. The first version searched the whole `case "anchor"`
+  // block and found the `BigInt(effect.address)` on the line that does the verification, which
+  // precedes the message and has nothing to do with what the reader sees. It failed against code
+  // that was already correct — a search whose scope was wider than the property it was asserting,
+  // for the third time today.
+  const tui = codeOf(readFileSync(FRONT_ENDS[1]!.file, "utf8"));
+  // Anchored to `anchorPeer(` — the verification call — because the success message is the only
+  // `text:` after it. Slicing from `case "anchor"` found the FELT-COUNT ERROR message instead,
+  // which is the second wrong scope this one assertion has had: a search that lands on something
+  // real is not a search that landed on the thing you meant.
+  const from = tui.indexOf("anchorPeer(");
+  const body = tui.slice(from, from + 1500);
+  const message = body.slice(body.indexOf("text:"), body.indexOf("};", body.indexOf("text:")));
+  const limit = message.search(/unproven/);
+  const address = message.search(/effect\.address/);
+  assert.ok(limit >= 0 && address >= 0,
+    `the anchor message no longer has both parts to order:\n  ${message}`);
+  assert.ok(limit < address,
+    "the TUI interpolates the address before the qualification, so at any real terminal width "
+    + `the reader keeps the claim and loses the limit:\n  ${message}`);
+});
+
 test("THE TUI INJECTS ITS FETCH — a front end that reaches the real network in tests", () => {
   // Caught by the suite going from seconds to minutes. `ensureFromBlock(next)` without
   // `deps.fetchImpl` used the global `fetch`, so the TUI's own tests started bisecting a live

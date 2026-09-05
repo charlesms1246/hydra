@@ -43,7 +43,12 @@ const failsAfter = (ok: number): typeof fetch => {
 
 test("A PARTIAL FLUSH KEEPS ITS BOOKS: spent invites and delivered objects agree", async () => {
   const state = stateWith(6);
-  await assert.rejects(() => flush(state, 0, failsAfter(3), Infinity), /refused/);
+  // THE STATUS, NOT THE WORD "refused". This matched /refused/ until the upload message began
+  // distinguishing a vault that is FAILING (5xx — it accepted the request and broke) from one
+  // that is REFUSING (4xx — it read the request and said no), which is a distinction worth
+  // having and made the old word wrong for a 500. What this test is actually about is the
+  // accounting below; the rejection just has to name which vault and what it answered.
+  await assert.rejects(() => flush(state, 0, failsAfter(3), Infinity), /500/);
 
   // Three uploads succeeded, so three invites are gone and three objects have left the queue.
   // Before the fix, `pending` still held all six while three invites had been shifted — the two
