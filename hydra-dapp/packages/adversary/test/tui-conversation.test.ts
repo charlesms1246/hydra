@@ -123,6 +123,49 @@ async function created(h: ReturnType<typeof harness>, extra: Partial<Record<stri
 
 // ---------------------------------------------------------------------------
 
+test("`fetch failed` IS NOT AN ERROR MESSAGE — name the host and what to do", async () => {
+  // Driving the real interface through a pty with nothing else running — a first-time user's
+  // machine — pressing `c` on Connect waited ten seconds and logged exactly "fetch failed". No
+  // host, no port, no suggestion. That is a product that is not set up reading as one that is
+  // broken, and only one of those gets reported.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    const m = await created(h);
+    const refuse: typeof fetch = (async () => {
+      const e = new TypeError("fetch failed");
+      (e as { cause?: unknown }).cause = { code: "ECONNREFUSED" };
+      throw e;
+    }) as typeof fetch;
+
+    const ev = await perform({ t: "collect" }, { ...m.state!, vaultUrl: "http://127.0.0.1:8080" },
+      { ...h.deps, fetchImpl: refuse });
+    const said = (ev as { text?: string }).text ?? "";
+    assert.notEqual(said, "fetch failed", "the raw transport error reaches the user unchanged");
+    assert.match(said, /127\.0\.0\.1:8080/, "the message does not name the host that did not "
+      + "answer, so the user cannot tell a wrong address from a stopped service");
+    assert.match(said, /ECONNREFUSED/, "the cause is dropped, and it is the only part that "
+      + "distinguishes refused from timed out from unresolvable");
+    assert.match(said, /running/, "the message names no remedy");
+  } finally { server.close(); }
+});
+
+test("AND IT LEAVES EVERY OTHER ERROR ALONE", async () => {
+  // The handler must not reword errors this codebase wrote on purpose. A missing bundle file
+  // already names its path, and replacing that with a guess about the vault would be worse than
+  // the bug being fixed.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    const m = await created(h);
+    const ev = await perform({ t: "invite", name: "bob", path: "/tmp/definitely-not-here.json" },
+      m.state!, h.deps);
+    const said = (ev as { text?: string }).text ?? "";
+    assert.match(said, /definitely-not-here\.json/,
+      "an error that named its own path was replaced by one about the vault");
+  } finally { server.close(); }
+});
+
 test("THE LOG LINE IS ONE ROW, so what it says has to survive being truncated", async () => {
   // Found by driving the real thing through a pty rather than by reading it. At 100 columns the
   // identity-creation warning rendered as "…but the node did not answer (fetc…" — the problem

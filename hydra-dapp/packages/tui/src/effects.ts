@@ -44,11 +44,35 @@ export type Deps = {
 
 const clock = (t: number) => new Date(t).toISOString().slice(11, 19);
 
+/**
+ * What to show when an effect throws, which for a network failure is not what it threw.
+ *
+ * **`c` AGAINST A VAULT THAT IS NOT RUNNING WAITED TEN SECONDS AND SAID `fetch failed`.** Found by
+ * driving the real interface through a pty on a machine with nothing else running — which is the
+ * state a first-time user is in, and the one no test was in. Two words, after a long stall, naming
+ * neither the host that did not answer nor the thing to do about it.
+ *
+ * That is the difference between a product that is not set up and a product that is broken, and
+ * only one of those gets reported. `fetch failed` is undici's message for every transport failure
+ * there is; the useful part is on `cause`, and the address is in the state file.
+ *
+ * ONLY THE BARE STRING IS REPLACED. Every other error here was written by this codebase for a
+ * reader — a missing bundle file already names its path — and a handler that reworded those would
+ * be substituting a guess for a sentence somebody chose.
+ */
+function describeFailure(e: unknown, state: State | null): string {
+  const message = e instanceof Error ? e.message : String(e);
+  if (message !== "fetch failed") return message;
+  const code = (e as { cause?: { code?: string } }).cause?.code;
+  return `${state?.vaultUrl ?? "the vault"} did not answer${code ? ` (${code})` : ""}`
+    + " — is it running? the address is on Status (6).";
+}
+
 export async function perform(effect: Effect, state: State | null, deps: Deps): Promise<Event> {
   try {
     return await run(effect, state, deps);
   } catch (e) {
-    return { t: "error", text: e instanceof Error ? e.message : String(e) };
+    return { t: "error", text: describeFailure(e, state) };
   }
 }
 
