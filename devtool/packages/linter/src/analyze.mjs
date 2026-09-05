@@ -84,10 +84,62 @@ function addressOf(node) {
   }
 }
 
+/** The three SDK names every rule below is about. */
+const TARGETS = new Set(["createPrivateTransfers", "IndexerDiscoveryProvider", "ContractDiscoveryProvider"]);
+
+/**
+ * What an expression in call position actually NAMES, resolved within this file.
+ *
+ * Both matchers used to require a bare identifier, so `import * as sdk` followed by
+ * `sdk.createPrivateTransfers(…)` matched nothing — no error, no warn, **not even HYD000** —
+ * and the file exited 0. That is the opposite of what this module's header promises, which is
+ * that indirection degrades to UNKNOWN rather than passing silently.
+ *
+ * The widening is deliberately narrow, because over-reporting on a disclosure linter is not a
+ * smaller failure than under-reporting: it is the failure that gets the tool switched off,
+ * after which it reports nothing at all. So a property access qualifies ONLY when its base is a
+ * namespace binding introduced by an `import * as` in this same file. `notSdk.createPrivateTransfers`
+ * on an object literal is not that, and must not fire — `false-positive-bait.ts` holds it to it.
+ *
+ * A named import may be renamed, so the imported name counts too. The local name is preferred
+ * when it is already a target, which keeps every case that matched before matching now: this is
+ * a widening, and it must not quietly narrow anything.
+ */
+function importIndex(sf) {
+  const namespaces = new Set();
+  const aliases = new Map();
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !st.importClause) continue;
+    const b = st.importClause.namedBindings;
+    if (b && ts.isNamespaceImport(b)) namespaces.add(b.name.text);
+    else if (b && ts.isNamedImports(b)) {
+      for (const el of b.elements) aliases.set(el.name.text, (el.propertyName ?? el.name).text);
+    }
+  }
+  return { namespaces, aliases };
+}
+
+function calleeName(expr, idx) {
+  if (ts.isIdentifier(expr)) {
+    if (TARGETS.has(expr.text)) return expr.text;
+    return idx.aliases.get(expr.text) ?? expr.text;
+  }
+  if (
+    ts.isPropertyAccessExpression(expr) &&
+    ts.isIdentifier(expr.expression) &&
+    idx.namespaces.has(expr.expression.text) &&
+    ts.isIdentifier(expr.name)
+  ) {
+    return expr.name.text;
+  }
+  return null;
+}
+
 export function analyzeSource(fileName, sourceText) {
   const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
   const findings = [];
   const poolsSeen = new Set();
+  const imports = importIndex(sf);
   let usesPool = false;
 
   const at = (node) => {
@@ -120,11 +172,7 @@ export function analyzeSource(fileName, sourceText) {
     }
 
     // createPrivateTransfers({ ... })
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "createPrivateTransfers"
-    ) {
+    if (ts.isCallExpression(node) && calleeName(node.expression, imports) === "createPrivateTransfers") {
       usesPool = true;
       const arg = node.arguments[0];
       const dp = propValue(arg, "discoveryProvider");
@@ -143,8 +191,8 @@ export function analyzeSource(fileName, sourceText) {
       }
     }
 
-    if (ts.isNewExpression(node) && ts.isIdentifier(node.expression)) {
-      const ctor = node.expression.text;
+    if (ts.isNewExpression(node)) {
+      const ctor = calleeName(node.expression, imports);
 
       if (ctor === "IndexerDiscoveryProvider") {
         usesPool = true;

@@ -23,6 +23,8 @@ const CASES = [
   // readable from this file". The first line is the syntax HYD001's own detail quotes, and it
   // used to produce no error and exit 0.
   ["shorthand.ts", ["HYD001", "HYD000", "HYD000", "HYD000", "HYD000", "HYD007"]],
+  // `import * as sdk` and a renamed named import. Both were invisible: zero findings, exit 0.
+  ["namespace.ts", ["HYD001", "HYD003", "HYD008", "HYD001", "HYD007"]],
   ["false-positive-bait.ts", []],
 ];
 
