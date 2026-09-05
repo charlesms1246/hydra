@@ -71,15 +71,18 @@ if (findings.length === 0) {
   process.exit(0);
 }
 
+/** Both `detail` and `fix` are prose and both can be long; one wrapper, so they cannot diverge. */
+const wrap = (text) => String(text).replace(/(.{1,92})(\s|$)/g, "$1\n        ").trimEnd();
+
 findings.sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || a.file.localeCompare(b.file));
 
 for (const f of findings) {
   const loc = `${relative(process.cwd(), f.file)}:${f.line}:${f.col}`;
   console.log(`${MARK[f.severity]} ${f.rule}  ${loc}`);
   console.log(`        ${f.title}`);
-  console.log(`        ${f.detail.replace(/(.{1,92})(\s|$)/g, "$1\n        ").trimEnd()}`);
+  console.log(`        ${wrap(f.detail)}`);
   if (f.evidence) console.log(`        evidence: ${f.evidence}`);
-  console.log(`        fix: ${f.fix}`);
+  console.log(`        fix: ${wrap(f.fix)}`);
   console.log(`        source: ${citeLabel(f.finding)}\n`);
 }
 
