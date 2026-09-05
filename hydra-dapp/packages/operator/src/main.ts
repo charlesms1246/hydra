@@ -48,14 +48,64 @@ const queuePath = flag("queue", "./moderation-queue.json");
 const spoolPath = flag("spool", "./reports.spool");
 const now = () => Date.now();
 
-/** The month a report covers, as a half-open range. `2026-09` means September, not 30 days. */
+/**
+ * The month a report covers, as a half-open range. `2026-09` means September, not 30 days.
+ *
+ * **IT VALIDATED THE SHAPE AND NOT THE VALUE, AND THE OUTPUT IS PUBLISHED.** `/^\d{4}-\d{2}$/`
+ * accepts any two digits and `Date.UTC` rolls silently:
+ *
+ *     report 2026-00  ->  2025-12-01 to 2026-01-01   the previous YEAR
+ *     report 2026-13  ->  2027-01-01 to 2027-02-01   the next year
+ *     report 2026-99  ->  2034-03-01 to 2034-04-01   eight years out
+ *     report 0000-01  ->  1900-01-01 to 1900-02-01   `Date.UTC` maps years 0-99 to 1900-1999
+ *
+ * It then prints *"No decisions were made in this period"* — a sentence that gets **published**.
+ * A script looping over months with an off-by-one or an unpadded value gets a plausible report for
+ * the wrong year, and the only thing between that and a silently wrong public artifact is that the
+ * period is echoed as a statement of fact rather than as a correction of what was asked.
+ *
+ * **CHECKED BY ROUND TRIP RATHER THAN BY RANGE**, deliberately. A range check enumerates the
+ * rollovers somebody thought of; asking whether `Date.UTC` gave back the year and month it was
+ * handed catches every one of them, including the 0-99 mapping that no month check would have
+ * caught. The property is "this date is the month that was asked for", and that is checkable
+ * directly.
+ */
 function monthOf(spec: string): Period {
-  if (!/^\d{4}-\d{2}$/.test(spec)) throw new Error(`a period is YYYY-MM, not "${spec}"`);
-  const [y, m] = spec.split("-").map(Number);
-  return { from: Date.UTC(y, m - 1, 1), to: Date.UTC(y, m, 1) };
+  const parsed = /^(\d{4})-(\d{2})$/.exec(spec);
+  if (!parsed) throw new Error(`a period is YYYY-MM, not "${spec}"`);
+  const year = Number(parsed[1]);
+  const month = Number(parsed[2]);
+  const from = Date.UTC(year, month - 1, 1);
+  const got = new Date(from);
+  if (got.getUTCFullYear() !== year || got.getUTCMonth() !== month - 1) {
+    throw new Error(`"${spec}" is not a real month — it would have covered `
+      + `${got.toISOString().slice(0, 10)}, which is not what you asked for. `
+      + "A period is YYYY-MM with a month between 01 and 12.");
+  }
+  return { from, to: Date.UTC(year, month, 1) };
 }
 
 const out = (...lines: string[]) => console.log(lines.join("\n"));
+
+/**
+ * A message, not a stack — the operator surface had no top-level handler at all.
+ *
+ * **EVERY ARGUMENT ERROR HERE DUMPED RAW NODE INTERNALS AT A MODERATOR**, with absolute paths and
+ * five frames, burying messages that are otherwise good and do name their condition and remedy.
+ * The user client has had `die()` since it existed; I8 keeps operator and user surfaces off one
+ * dependency path, and this is one of the things the split quietly cost — a rule that lives on one
+ * surface and not the other, which is the class this repository has spent the week on.
+ *
+ * `--debug` prints the stack as well, the same spelling the user client uses, because a moderator
+ * debugging this should not have to learn a second convention.
+ */
+const die = (e: unknown): never => {
+  console.error(`\n  ${e instanceof Error ? e.message : String(e)}\n`);
+  if (args.includes("--debug")) console.error(e);
+  process.exit(1);
+};
+process.on("uncaughtException", die);
+process.on("unhandledRejection", die);
 
 switch (command) {
   case "queue": {
@@ -74,6 +124,11 @@ switch (command) {
 
   case "show": {
     const q = load(queuePath);
+    // NAMED BEFORE IT IS LOOKED UP. With no id this reported `No open review for undefined.`,
+    // which describes a search nobody asked for rather than an argument nobody gave.
+    if (!rest[0]) {
+      throw new Error("`show` needs the id of a review. `operator queue` lists the open ones.");
+    }
     const review = q.pending().find((r) => r.blobId === rest[0]);
     if (!review) { out(`No open review for ${rest[0]}.`); process.exitCode = 1; break; }
     // `summarise` carries the count-is-not-a-person-count caveat in the same breath as the count.
