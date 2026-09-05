@@ -1,4 +1,4 @@
-# Publish the marketing site to GitHub Pages.
+# The marketing site's gates. This builds and checks; the host deploys.
 #
 # ⛔ THIS BUILDS `build:public`, NEVER `build`, AND THE DIFFERENCE IS A LICENSING ONE.
 #
@@ -13,46 +13,38 @@
 # so a CI checkout does not have them — which makes CI the natural place for this build and is why
 # the workflow can assert rather than hope.
 #
+#
 # This comment lives here as well as in `web/README.md` because the workflow is what somebody edits
 # when a build fails, and `npm run build` is the obvious thing to reach for.
-# ⛔ PRECONDITION THIS FILE CANNOT SATISFY: Pages must be enabled on the repository, with its
-# source set to **GitHub Actions** rather than to a branch.
+# ⛔ THIS DOES NOT DEPLOY, AND THE GATES STILL MATTER.
 #
-# Checked 2026-09-05 on `charlesms1246/hydra`: `has_pages: false`, and `repos/.../pages` is a hard
-# 404. Until somebody with admin changes that setting, `deploy-pages` fails however clean the build
-# is — and it fails with an API error about a missing Pages site, which reads like a token problem
-# and is not one. The account CI runs as has `push` and `admin: false`, so this is a person
-# clicking Settings → Pages, not something a workflow can arrange for itself. **Do not add a
-# workaround here**; a workflow-level fix for a missing repository setting is the wrong kind of
-# clever, and it would hide the one instruction that resolves this.
+# The site is hosted on Vercel, so the deploy job that used to live here is gone — it targeted
+# GitHub Pages, which was never enabled on this repository and now never will be. **What is left
+# is not decoration.** Vercel will happily build and publish the wrong thing: the licensing
+# exposure below is a property of `next build` copying `public/`, not of any particular host.
 #
-# The `build` job is independently useful in the meantime: on a pull request it runs every gate
-# below and publishes nothing.
-name: pages
+# So the same assertions run in two places, deliberately. Here, on every pull request and push, so
+# a defect is caught with a red check rather than a live page. And in `vercel.json`'s build
+# command, so a deploy that never passed through this workflow still cannot ship a restricted
+# asset. `scripts/assert-public.ts` is the single implementation both call.
+#
+# The one gate that runs HERE ONLY is `check:figures`, because it needs a browser and the host's
+# build container is not guaranteed to have one. That is a division of labour, not a skip: it
+# refuses to skip where it runs, and where it does not run nothing pretends it did.
+name: web
 
 on:
   workflow_dispatch:
-  # ⛔ A PULL REQUEST BUILDS BUT DOES NOT DEPLOY, and that is the point of it being here.
-  #
-  # Every gate below — typecheck, the public-build assertion, the tests, the figure measurement —
-  # had never executed on a runner. Without this trigger their first run would be the push that
-  # makes the site live, which is the user's to make and close to a deadline. A guard that
-  # correctly refuses to skip is exactly the guard that turns a missing binary into a failed
-  # deploy, so it must be exercised somewhere cheaper first. The `deploy` job is gated on the
-  # event below so a pull request cannot publish.
   pull_request:
-    paths: ["web/**", ".github/workflows/pages.yml"]
+    paths: ["web/**", ".github/workflows/web.yml"]
   push:
-    branches: [main]
-    paths: ["web/**", ".github/workflows/pages.yml"]
+    paths: ["web/**", ".github/workflows/web.yml"]
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: web-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -129,18 +121,8 @@ jobs:
       - run: npm run build:public
 
       # ⛔ ASSERT THE MODE, because a workflow that silently falls back to `build` is the exposure
-      # with an automation in front of it. The public build stamps `data-build="public"` on the
-      # document; its absence means something other than `build:public` produced this directory.
-      - name: Assert the published build is the public one
-        run: |
-          grep -q 'data-build="public"' out/index.html || {
-            echo "::error::out/ was not produced by build:public — refusing to publish."
-            exit 1
-          }
-          for f in $(find out -iname '*NON-Natural*' -o -iname 'hydra.svg' -o -iname 'icon.svg'); do
-            echo "::error::$f reached out/ — refusing to publish a restricted asset."
-            exit 1
-          done
+      # with an automation in front of it. Shared with the host's build command — see the header.
+      - run: node scripts/assert-public.ts
 
       # The tests read the built artefact, so they run against exactly what is about to ship.
       - run: node --test test/*.test.ts
@@ -161,19 +143,3 @@ jobs:
       # red and somebody sets CHROME_PATH — that is the intended outcome, not an inconvenience.
       - name: Measure the rendered figures
         run: npm run check:figures
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: web/out
-
-  deploy:
-    needs: build
-    # A pull request runs every gate above and publishes nothing.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4

@@ -109,8 +109,31 @@ licensing exposure that is invisible, because the page looks correct either way.
 substitution actually happened rather than the build having quietly broken.
 
 **To publish:** move the two restricted files out of the tree, run `npm run build:public`, serve
-`out/`. It is a plain directory tree — `trailingSlash: true` means any static host serves it,
-GitHub Pages included.
+`out/`. It is a plain directory tree — `trailingSlash: true` means any static host serves it.
+
+### The host: Vercel, and two project settings this repository cannot set
+
+`vercel.json` pins the parts that live in the repository: `build:public` as the build command,
+`scripts/assert-public.ts` immediately after it, and an install command that also installs
+`hydra-dapp/packages/channel` and `identity`.
+
+Two things must be set in the Vercel project itself and are **not** in any file here:
+
+- **Root Directory: `web`.**
+- **"Include files outside the root directory": ON.** Without it the build has no `../hydra-dapp`,
+  and `/demo/hydra/` fails — it captures the CLI's real help output at build time and refuses to
+  render output it cannot recognise as the command list. The error names the demo page and says
+  nothing about installs, so it is worth knowing in advance.
+
+**The build command must stay `build:public`.** A host that runs `npm run build` publishes the
+licensed face and the trademarked mark, successfully and silently. `assert-public.ts` is there to
+turn that into a failed deploy, and it runs in both the host's build and the GitHub check —
+`.github/workflows/web.yml` — from one implementation, so the two cannot drift.
+
+**One gate runs in the GitHub check only:** `npm run check:figures`, which renders every route in
+a real browser and fails on a label that leaves its own box or prints over another. It needs Chrome
+and the host's build container is not guaranteed to have one. That is a division of labour rather
+than a skip: where it runs it refuses to skip, and where it does not run nothing claims it did.
 
 ## The mark
 
