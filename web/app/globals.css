@@ -164,6 +164,8 @@ html {
 }
 
 body {
+  /* The containing block for `.field`, which is absolutely positioned at the top of the page. */
+  position: relative;
   margin: 0;
   background: var(--black);
   color: var(--white);
@@ -271,9 +273,31 @@ body.has-canvas .field {
   display: none;
 }
 
+/*
+ * ⛔ THE STATIC FIELD BELONGS TO THE TOP OF THE PAGE AND SCROLLS AWAY. It was `position: fixed`.
+ *
+ * This is Gestalt's `data-backdrop-fade`, which retires its field at section 02 with the reason
+ * spelled out: *"from this point the page is columns of small type, and a sharp glyph background
+ * behind small type is the one case where figure and ground cannot be told apart — the artwork's
+ * characters are the same size and weight as the paragraph's."*
+ *
+ * **Our version of that defect was worse, because it lived exactly where nothing could fade it.**
+ * `.solids` fades against scroll and is gone inside about half a viewport, so a reader with WebGL
+ * was fine. `.field` is the fallback for a reader without WebGL, without script, or asking for
+ * reduced motion — and it is `display: none` only when the canvas runs. For everyone else it sat
+ * fixed at `opacity: 0.32` behind every paragraph of every page, permanently, with its glyphs at
+ * 12px against 16px body text.
+ *
+ * `absolute` rather than a marker and a scroll handler, deliberately: the readers who see this
+ * layer are the ones who may have no script, so the fix cannot need one. The field is one screen
+ * tall at the top of the document and the page scrolls off it.
+ */
 .field {
-  position: fixed;
-  inset: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100svh;
   z-index: 0;
   margin: 0;
   display: flex;
@@ -417,14 +441,27 @@ body.has-canvas .field {
   text-align: center;
 }
 
-.statement p,
+/*
+ * Sized to the LONGEST AUTHORED LINE, not to the reference's number.
+ *
+ * Gestalt sets this at `9vw` because its longest line is eleven characters. Ours is thirty, and at
+ * 9vw a thirty-character line is about 3900px on a 1440px screen — it would simply run off. The
+ * device is "one statement filling the screen", so the size follows the copy: roughly `2 / chars`
+ * of the viewport, which is 6.5vw here. **If the statement is reworded, this number moves with
+ * it** — that is the device working, not a magic constant.
+ */
 .statement div {
   font-family: var(--serif);
-  font-size: clamp(2.25rem, 9vw, 7rem);
-  line-height: 0.94;
+  font-size: clamp(1.75rem, 6.5vw, 5.5rem);
+  line-height: 1.02;
   letter-spacing: -0.01em;
   color: var(--white);
   margin: 0;
+}
+
+/* Each authored line is its own block — see `WriteOn`, which emits `.write-on-line` per `\n`. */
+.statement .write-on-line {
+  display: block;
 }
 
 .section-head {

@@ -417,6 +417,19 @@ export const SITE = {
     ],
   },
 
+  /**
+   * The page's hinge, between sections 01 and 02 — see `app/page.tsx`.
+   *
+   * ⛔ **The line breaks are load-bearing and are not wrapping.** The reference authors them
+   * (`ONE ORDER / THAT QUOTES / EVERY PRICE`) so the statement breaks where the sense breaks. Left
+   * to the viewport it re-breaks at every width and reads as a big paragraph rather than as three
+   * lines. Edit the words if you must; keep the breaks deliberate.
+   *
+   * It is the tagline, which is the sentence that did not belong under the wordmark: as a summary
+   * of a site nobody has read yet it is a thesis, and at the turn it is the turn.
+   */
+  statement: "Private messaging on Starknet,\nwhere what leaks is computed\nrather than promised.",
+
   /** The session page. Copy only — every claim on that page comes from the local API. */
   session: {
     lede: "A page that drives the client already running on your machine. Nothing here is "

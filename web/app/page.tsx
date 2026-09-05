@@ -69,6 +69,23 @@ export default function Home() {
           </div>
         </Section>
 
+        {/*
+          The page's hinge: one statement, alone on a screen, between sections 01 and 02.
+
+          ⛔ **The position is the device.** The reference puts this immediately after its first
+          section and before its second — the turn happens once the reader knows what the thing is
+          and before the argument for it begins. It was between 02 and 03 here, which is a beat
+          too late: by then the reader has already been given the reasons, and a statement after
+          the reasons is a summary rather than a turn.
+
+          `WriteOn` drives it, and the line breaks are AUTHORED in the string rather than left to
+          wrapping — a statement broken where the sense breaks reads as three lines; one broken by
+          the viewport reads as a paragraph that happens to be big.
+        */}
+        <section className="statement">
+          <WriteOn as="div" text={SITE.statement} />
+        </section>
+
         <Section n="02" id="why" title="WHY IT IS DIFFERENT">
           <div className="why">
             {SITE.why.map((w) => (
@@ -80,19 +97,6 @@ export default function Home() {
             ))}
           </div>
         </Section>
-
-        {/*
-          The page's hinge: one oversized line, alone on a screen, where the argument turns.
-
-          The reference gives this a full viewport and nothing else, and it is what makes the
-          sections either side read as separate movements rather than as continuous scroll. The
-          line is `SITE.tagline` — which is exactly the sentence that did not belong under the
-          wordmark. It is not a summary here; it is the turn, arriving after the reader knows
-          what the product is and before they are told what to be careful about.
-        */}
-        <section className="statement" aria-hidden={false}>
-          <p>{SITE.tagline}</p>
-        </section>
 
         {/* One wide field, full-bleed, between the argument and the warning — the reference
             breaks its pages with an image at exactly this point, and a page of rules and prose
