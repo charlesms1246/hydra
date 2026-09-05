@@ -139,6 +139,25 @@ switch (command) {
 
   case "decide": {
     const [blobId, outcome, category] = rest;
+    // **IT VALIDATED NOTHING, AND THE TRANSPARENCY REPORT THEN DENIED WHAT IT RECORDED.**
+    // `decide oops-typo removed harassment` recorded cleanly and printed a decision id; the report
+    // counts only `pub:` ids, so the entry landed in `#decided` and in no figure anywhere, and the
+    // report said "No decisions were made in this period" with two removals on file.
+    //
+    // **ONLY `pub:`, AND THE REASON IS NOT TIDINESS.** A decision is a judgement about content,
+    // and this operator cannot read an encrypted object — that is the whole of the class split.
+    // So there is no such thing as a moderation decision about an `enc:` id, and the path that
+    // does reach one, compelled removal under legal process, is a different command with its own
+    // authority and its own banded cell. An id with no class at all is a typo.
+    //
+    // The same binary already validates the decision id before accepting an appeal and refuses an
+    // appeal for a decision that was never filed. Identifier validation existed here; it was on
+    // the appeal path and absent from the path that writes the published record.
+    if (!blobId?.startsWith("pub:")) {
+      throw new Error(`a decision is about a public object, so its id begins "pub:" — "${blobId}" `
+        + "does not. This tool cannot read an encrypted object, so it cannot judge one; a removal "
+        + "under legal process is `remove` and is counted separately.");
+    }
     if (outcome !== "removed" && outcome !== "kept") {
       throw new Error(`an outcome is "removed" or "kept", not "${outcome}"`);
     }

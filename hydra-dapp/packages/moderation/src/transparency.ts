@@ -105,6 +105,12 @@ export function report(
   const inPeriod = decisions.filter((d) => d.at >= period.from && d.at < period.to);
   const publicOnly = inPeriod.filter((d) => d.blobId.startsWith("pub:"));
   const removed = publicOnly.filter((d) => d.outcome === "removed");
+  // **EVERY DECIDED ENTRY IS ACCOUNTED FOR OR THE REPORT SAYS IT CANNOT BE.** Anything that is not
+  // `pub:` used to fall out of the counts, the named list and the text alike — no cell, no
+  // counter, no acknowledgement — so two recorded removals produced "No decisions were made in
+  // this period." `decide` refuses these at the door now, but a queue written before that fix can
+  // still hold them, and a report that silently drops them is the same lie with a smaller cause.
+  const unaccounted = inPeriod.filter((d) => !d.blobId.startsWith("pub:"));
 
   // One cell per (category, outcome). The finest partition, and the only one published.
   const cells = new Map<string, number>();
@@ -184,6 +190,9 @@ export function report(
   const compelledInPeriod =
     compelled.filter((c) => c.at >= period.from && c.at < period.to).length;
   if (compelledInPeriod > 0) cells.set("encrypted objects removed under legal process", compelledInPeriod);
+  // Banded like every other figure, and it is a defect indicator rather than a category: these
+  // are decisions on record that name no object class this report knows how to account for.
+  if (unaccounted.length > 0) cells.set("decisions this report cannot account for", unaccounted.length);
 
   const figures = [...cells].sort(([a], [b]) => a.localeCompare(b))
     .map(([label, n]) => ({ label, shown: band(n) }));
@@ -197,7 +206,26 @@ export function report(
     lines: [
       `Period ${stamp(period.from)} to ${stamp(period.to)}.`,
       ...figures.map((f) => `${f.label}: ${f.shown}.`),
-      ...(cells.size === 0 ? ["No decisions were made in this period."] : []),
+      // **THE ONE SENTENCE HERE THAT MEANS "NONE", AND IT USED TO BE ABLE TO BE FALSE.** It was
+      // conditioned on `cells.size === 0` — no itemised cells — rather than on there being no
+      // decisions, so a period with decisions that no cell counted printed a flat denial. Every
+      // other cell in this document degrades to "we are not telling you"; the preamble below is
+      // scrupulous that a band "INCLUDES ZERO. It does not mean none." This one degraded to a lie,
+      // and it is the sentence an operator publishes in a month they believe was quiet.
+      //
+      // **THE ROW ABOVE IS WHAT ACTUALLY FIXES IT; THIS CONDITION IS DEFENCE IN DEPTH, and that is
+      // worth saying rather than implying both are load-bearing.** Mutating this back to
+      // `cells.size === 0` changes nothing today, because an unaccounted decision now always
+      // produces a cell — the two conditions are equivalent in every reachable state, which is why
+      // no test distinguishes them. It is written this way so the sentence means what it says
+      // independently of whether some future cell happens to exist.
+      ...(inPeriod.length === 0 && compelledInPeriod === 0
+        ? ["No decisions were made in this period."] : []),
+      ...(unaccounted.length > 0
+        ? ["", "Some decisions on record name no object class this report can account for. They",
+           "are counted above and are itemised nowhere, because there is no category to put them",
+           "in. That is a fault in the record rather than a kind of decision."]
+        : []),
       "",
       `Any figure shown as "fewer than ${FLOOR}" is banded, and the band INCLUDES ZERO. It does`,
       "not mean none. Small numbers would identify the item they refer to — this service has a",
