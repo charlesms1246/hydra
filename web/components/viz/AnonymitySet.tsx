@@ -20,7 +20,13 @@ export function AnonymitySet() {
 
   /* Radius tracks set size rather than being uniform: the point of the pair is that one crowd is
      seven times the other, and two rings of equal size would say the opposite of the numbers
-     underneath them. */
+     underneath them.
+
+     ⛔ **The labels sit at y=120 because the larger ring reaches y=105 and they used to sit at
+     104.** `cy 58 + r 44 + dot 3` is arithmetic anyone can redo, and the bottom arc was printing
+     straight through `3% IDENTIFIED` at every width. Shrinking the ring instead would have been
+     the wrong repair: the radius is the claim — one crowd is seven times the other — and the box
+     is not. If the radius grows again, move the labels, not the circle. */
   const dot = (n: number, cx: number, cy: number, r: number, marked: boolean) =>
     Array.from({ length: n }, (_, i) => {
       const a = (i / n) * Math.PI * 2 - Math.PI / 2;
@@ -37,7 +43,12 @@ export function AnonymitySet() {
 
   return (
     <Figure
-      viewBox="0 0 320 128"
+      /*
+       * 330 rather than 320 for the same reason `MessagePath` is 380: the right-hand caption is
+       * centred at x=232 and, at the 8-unit tick size used below 48rem, reaches 324. Ten units of
+       * box is cheaper than moving a label that is correctly centred under the thing it counts.
+       */
+      viewBox="0 0 330 138"
       label={
         `Sent alone, a message hides among its ${MEASURED.coverRate} decoys — a set of `
         + `${isolated}, identified about ${pct(MEASURED.isolatedMessageIdentified)} of the time. `
@@ -53,20 +64,20 @@ export function AnonymitySet() {
     >
       <g>
         {dot(isolated, 62, 58, 20, true)}
-        <Tick x={62} y={104} anchor="middle" fill={INK.accent}>
+        <Tick x={62} y={120} anchor="middle" fill={INK.accent}>
           {`${pct(MEASURED.isolatedMessageIdentified)} IDENTIFIED`}
         </Tick>
-        <Tick x={62} y={116} anchor="middle" fill={INK.g48}>
+        <Tick x={62} y={132} anchor="middle" fill={INK.g48}>
           {`sent alone · set of ${isolated}`}
         </Tick>
       </g>
 
       <g>
         {dot(clustered, 232, 58, 44, true)}
-        <Tick x={232} y={104} anchor="middle" fill={INK.g64}>
+        <Tick x={232} y={120} anchor="middle" fill={INK.g64}>
           {`${pct(MEASURED.clusteredMessageIdentified)} IDENTIFIED`}
         </Tick>
-        <Tick x={232} y={116} anchor="middle" fill={INK.g48}>
+        <Tick x={232} y={132} anchor="middle" fill={INK.g48}>
           {`in quick succession · set of ~${clustered}`}
         </Tick>
       </g>

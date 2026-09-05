@@ -18,7 +18,20 @@ export function MessagePath() {
 
   return (
     <Figure
-      viewBox="0 0 320 150"
+      /*
+       * ⛔ **380 wide, not 320, and the right-hand labels are why.**
+       *
+       * `sealed, size-padded` is 19 monospace characters starting at x=266. At the 7-unit tick
+       * size that ends at 362; at the 8-unit size `.fig-tick` switches to below 48rem it ends at
+       * 375 — so at 320 the label ran past its own viewBox at every width, and below 1024px the
+       * page margin stopped absorbing it and the screen edge cut it to `sealed, size…`, losing
+       * exactly the word that distinguishes this leg from the public one.
+       *
+       * Widening rather than moving the labels: end-anchoring them at the right edge pulls the
+       * long one back over the leader line at y=116, and shortening the string spends the
+       * qualification to save the layout. The box was the thing that was wrong.
+       */
+      viewBox="0 0 380 150"
       label={
         `A message splits in two: ${MEASURED.noteFelts} values go on chain as a pointer, and the `
         + `body goes to a storage server as a sealed blob padded to one of `
@@ -74,13 +87,20 @@ export function MessagePath() {
       <Tick x={266} y={113} fill={INK.g64}>TO THE VAULT</Tick>
       <Tick x={266} y={124} fill={INK.g32}>sealed, size-padded</Tick>
 
-      <Tick x={118} y={98} fill={INK.g48}>
+      {/* ⛔ These two are two units apart on y and both start inside the same span on x, which is
+          how `YOURS` came to be printed through `DECOYS` in accent red at every width — a
+          viewBox-unit collision, so no viewport escaped it. The caption sits above the row and
+          `YOURS` sits between it and the rects, centred on the one it names.
+
+          Space below is not available: y=142 is `padded to one of N sizes` and the rects occupy
+          104-128. */}
+      <Tick x={118} y={86} fill={INK.g48}>
         {`1 + ${decoys} DECOYS · ≤${MEASURED.jitterBlocks} BLOCKS LATE`}
       </Tick>
       <Tick x={118} y={142} fill={INK.g32}>
         {`padded to one of ${MEASURED.buckets.length} sizes`}
       </Tick>
-      <Tick x={144} y={100} fill={INK.accent}>YOURS</Tick>
+      <Tick x={149} y={99} anchor="middle" fill={INK.accent}>YOURS</Tick>
     </Figure>
   );
 }
