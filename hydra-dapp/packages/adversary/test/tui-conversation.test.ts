@@ -241,6 +241,35 @@ test("`fetch failed` IS NOT AN ERROR MESSAGE — name the host and what to do", 
   } finally { server.close(); dead.server.close(); }
 });
 
+test("EVERY EFFECT THAT TOUCHES THE VAULT GETS THE SAME SENTENCE, not just the one I drove",
+  async () => {
+    // The defect found this morning was a repair that reached the surface its author was looking
+    // at. `describeFailure` was written while driving `collect`, so this checks it did not stop
+    // there. `perform` has one catch and every effect goes through it, but that is an argument;
+    // this is a measurement over more than one effect.
+    const { url, server, invites } = await vault();
+    const dead = await hangUpNode();
+    try {
+      const h = harness(url, invites);
+      const m = await created(h);
+      // A real bundle to invite with, so `invite` fails at the vault rather than at the file.
+      await perform({ t: "export", path: "mine.json" }, m.state!, h.deps);
+      const state = { ...m.state!, vaultUrl: dead.url };
+
+      for (const effect of [
+        { t: "collect" as const },
+        { t: "invite" as const, name: "someone", path: "mine.json" },
+      ]) {
+        const ev = await perform(effect, state, h.deps);
+        const said = (ev as { text?: string }).text ?? "";
+        assert.ok(said.includes(dead.url),
+          `\`${effect.t}\` against an unreachable vault says "${said}" — it does not name the `
+          + "host, so the fix reached one effect and not the handler they share");
+        assert.match(said, /running/, `\`${effect.t}\` names no remedy`);
+      }
+    } finally { server.close(); dead.server.close(); }
+  });
+
 test("AND IT LEAVES EVERY OTHER ERROR ALONE", async () => {
   // The handler must not reword errors this codebase wrote on purpose. A missing bundle file
   // already names its path, and replacing that with a guess about the vault would be worse than
