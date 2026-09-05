@@ -96,7 +96,15 @@ export async function status() {
   ]);
   const agents = agentStatus();
   return {
-    stack: st ? { startedAt: st.startedAt, poolAddress: st.poolAddress } : null,
+    // Gated on `poolAddress` being DECLARED, not on `st` being truthy — the same correction
+    // E-DEV15 made for `prover` three lines down, which this line was left out of. `--rpc`
+    // synthesises a state with a URL and nothing else (state.mjs:44), so `st ? …` produced
+    // `{startedAt: undefined, poolAddress: undefined}` for a machine running nothing, and the
+    // CLI printed `pool undefined` on the first command the submission points a judge at. Worse,
+    // that object is truthy, so `if (!s.stack)` never fired and the `hydra-dev up` hint — written
+    // for exactly the reader who has no stack — was unreachable on the `--rpc` path.
+    // `up` always writes poolAddress (up.mjs:140), so a real stack always declares it.
+    stack: st?.poolAddress ? { startedAt: st.startedAt, poolAddress: st.poolAddress } : null,
     devnet: { ...devnet, pid: st?.devnetPid ?? null, pidAlive: pidAlive(st?.devnetPid),
       rpcOverride: st?.rpcOverride ?? null },
     indexer: { ...indexer, pid: st?.indexerPid ?? null, pidAlive: pidAlive(st?.indexerPid) },
