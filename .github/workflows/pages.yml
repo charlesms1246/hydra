@@ -59,6 +59,22 @@ jobs:
       # from the one tested is a different site.
       - run: npm ci
 
+      # ⛔ THE SITE'S BUILD RUNS THE CLI, SO THE CLI'S DEPENDENCIES ARE THIS JOB'S DEPENDENCIES.
+      #
+      # `/demo/hydra/` captures `hydra`'s real help output at build time and **refuses to render if
+      # what it captured is not recognisably the command list** — a demo of a command surface that
+      # might not be the real one is worse than no demo. In a clean checkout the dapp's packages
+      # have no `node_modules`, so the capture dies on `Cannot find package '@scure/starknet'`, the
+      # guard fires exactly as designed, and `build:public` exits 1.
+      #
+      # Found by running this whole workflow by hand against a fresh clone before it had ever run
+      # on a runner. It has nothing to do with the figure gate; it would have failed the first
+      # deploy on its own.
+      - name: Install the dapp packages the site's build captures output from
+        run: |
+          npm ci --prefix ../hydra-dapp/packages/channel
+          npm ci --prefix ../hydra-dapp/packages/identity
+
       # ⛔ NAME THE BROWSER RATHER THAN INHERITING IT.
       #
       # `check:figures` renders the site, and it refuses to skip when no browser is present — the
