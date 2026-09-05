@@ -703,6 +703,17 @@ async function narrowCrowd(
  *
  * THERE IS NO WAY TO GET THE RAW CROWD FROM HERE. `prune` has already run, and the count is a
  * lower bound on how many accounts could have produced this channel's uploads.
+ *
+ * **"PRUNE HAS ALREADY RUN" IS TRUE AND SAYS MORE THAN IT SHOULD.** At the window this client
+ * asks for, the coefficient-of-variation rule cannot fire — 4 distinct block timestamps are needed
+ * inside 9 blocks, and `crowd.ts` itself says most crowd members appear in under 5% of them.
+ * Measured across 20 Sepolia and 15 mainnet windows: it fired once in 276 account-appearances and
+ * zero times in 216. Every prune came from the duplicate-timestamp rule.
+ *
+ * So the count is a lower bound because pruning only ever removes — which is a claim about the
+ * FILTER and holds — while the automation discount a reader infers from "prune has already run"
+ * is not being applied in the way `DEFAULT_PRUNING` describes. See `crowd.ts`, where the gate is,
+ * and `crowd-window.test.ts`, which holds the two constants in relation.
  */
 /**
  * Put a public object on the vault, and read one back.

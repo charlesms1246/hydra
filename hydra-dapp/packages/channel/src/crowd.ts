@@ -289,6 +289,27 @@ export function linkability(
  *      A user who sees a number recover after a quiet-chain send has been told something false
  *      about a message already on the chain.
  */
+/**
+ * Said because it is NOT true that the figure is discounted, and a reader assumes otherwise.
+ *
+ * The count comes from accounts publishing in the same window with obvious automation removed —
+ * except that at the window this client asks for, the rule that removes automation almost never
+ * fires. Measured across 20 Sepolia and 15 mainnet windows: once in 276 account-appearances, and
+ * zero times in 216. A figure that is not discounted, presented without saying so, is one a reader
+ * takes to be better than it is — and it errs toward telling somebody they are safer.
+ *
+ * **IN BOTH BRANCHES, AND A TEST INSISTED ON THAT.** It went into the comfortable case first,
+ * which made the zero case shorter by comparison — and `crowd.test.ts` holds that zero must not be
+ * told in fewer lines than the comfortable answer, because a zero that reads as an afterthought
+ * makes this a reassurance meter with a bug. The guard was right: a caveat that only appears when
+ * the number looks good is a caveat attached to the wrong half.
+ */
+const NOT_DISCOUNTED = [
+  "This count is not discounted for automated accounts. The rule that would remove them needs",
+  "more activity than the window this client reads, so batchers and bots publishing alongside",
+  "you are counted as people.",
+] as const;
+
 export function describe(l: { known: boolean; crowd: number }): string[] {
   if (!l.known) {
     return [
@@ -303,6 +324,7 @@ export function describe(l: { known: boolean; crowd: number }): string[] {
       "Whoever runs the storage server, reading the public chain alongside it, can name your",
       "account as the sender of every message here. Not sometimes — every time.",
       "This is the usual answer on a quiet chain.",
+      ...NOT_DISCOUNTED,
     ];
   }
   const one = l.crowd === 1;
@@ -312,5 +334,6 @@ export function describe(l: { known: boolean; crowd: number }): string[] {
     `you out of ${l.crowd + 1} — right about ${Math.round(accuracyAgainst(l.crowd) * 100)}% of the time.`,
     "It only goes down. Sending while the chain is quiet takes it toward zero, and nothing you",
     "do later puts it back.",
+    ...NOT_DISCOUNTED,
   ];
 }
