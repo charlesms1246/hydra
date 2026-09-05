@@ -1234,6 +1234,19 @@ check_("the activity depth field is the n of latestBlocks(n)", () => {
   return "field refused and named · valid depth accepted · env still the fallback";
 });
 
+// ---------------------------------------------------------------------------------------
+// THE TALLY. EVERY check_ AND draw MUST BE REGISTERED ABOVE THIS LINE.
+//
+// This suite collects into `results` and counts here; a check pushed below this loop is never
+// printed and cannot fail the run. That happened: a check appended at the bottom of the file
+// passed, the count went 75 to 76, and the mutation that should have failed it produced silence
+// instead. `check_` is careful enough to report SKIP rather than PASS for an unmet precondition,
+// and none of that care reaches a check that runs after the count — the safety was in the wrong
+// layer for that failure.
+//
+// It is the only suite with this shape. The other eight count inline as each check runs, so
+// position cannot silence one. If you are adding a check, add it above.
+// ---------------------------------------------------------------------------------------
 let skipped = 0;
 for (const r of results) {
   const gap = r.name.includes(known);
