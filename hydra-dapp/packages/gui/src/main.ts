@@ -24,7 +24,8 @@ import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 
 import { guiServer, type StateSource } from "./server.ts";
-import { load, locked, resolvePassphrase, STATE_FILE } from "../../cli/src/state.ts";
+import { load, locked, currentPassphrase, resolvePassphrase, STATE_FILE }
+  from "../../cli/src/state.ts";
 
 const args = process.argv.slice(2);
 const flag = (name: string, fallback = ""): string => {
@@ -35,7 +36,11 @@ const flag = (name: string, fallback = ""): string => {
 // **THE SAME PASSPHRASE PATH AS THE OTHER TWO FRONT ENDS**, and it is shared rather than repeated
 // for the reason `FRONT-END-PARITY-INVENTORY.md` gives: a locked state handled in `cli.ts` and not
 // in `main.ts` is exactly how the TUI came to crash on a file the Identity page told users to make.
-if (locked()) await resolvePassphrase();
+// **AND NOT TWICE.** Reached as `hydra gui`, `cli.ts` has already resolved the passphrase before
+// dispatching — `locked()` still reports true, because it reads the FILE rather than whether this
+// process can open it, so prompting on that alone asks the same user for the same phrase again.
+// `currentPassphrase()` is the question actually being asked: do we have one yet.
+if (locked() && !currentPassphrase()) await resolvePassphrase();
 
 /**
  * Read the state fresh on every request.

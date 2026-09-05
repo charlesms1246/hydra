@@ -40,6 +40,7 @@
  *
  *   --debug on any command prints the stack behind a failure as well as its message.
  *
+ *     hydra gui [--port N]                        a loopback API a browser interface drives
  *     hydra-tui                                   the same client as a terminal interface
  *
  * `send` and `flush` are separate because the upload has to come later than the chain event —
@@ -226,6 +227,18 @@ switch (command) {
     console.log(`identity written to ${STATE_FILE}`);
     console.log(`fingerprint ${fingerprint(publishBundle(state))}`);
     console.log("\nthat file holds your root key in the clear. it is mode 0600 and that is all.");
+    break;
+  }
+
+  case "gui": {
+    // **IT DOCUMENTED ITSELF AS A COMMAND AND WAS NOT ONE.** `packages/gui/src/main.ts` names
+    // `hydra gui` three times in its header and its startup banner prints it, so a user read the
+    // command off the thing they had just started, typed it, and got this file's usage text. Two
+    // independent true-sounding sources, neither of them the dispatcher.
+    //
+    // Delegated rather than reimplemented, for the reason every other shared path here is: one
+    // copy of the token minting, the loopback bind and the refusal vocabulary.
+    await import("../../gui/src/main.ts");
     break;
   }
 
