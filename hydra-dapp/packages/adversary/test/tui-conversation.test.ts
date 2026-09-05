@@ -20,7 +20,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixtureNode, FIXTURE_DEPLOYED_AT } from "../src/fixture-node.ts";
+import { fixtureNode, hangUpNode, FIXTURE_DEPLOYED_AT } from "../src/fixture-node.ts";
 import { loopbackOnly } from "../src/hermetic.ts";
 
 import { DENIABLE } from "../../claims/src/warnings.ts";
@@ -144,33 +144,37 @@ test("EXPORT SAYS WHERE THE FILE WENT, not just what it was called", async () =>
 test("`fetch failed` IS NOT AN ERROR MESSAGE — name the host and what to do", async () => {
   // Driving the real interface through a pty with nothing else running — a first-time user's
   // machine — pressing `c` on Connect waited ten seconds and logged exactly "fetch failed". No
-  // host, no port, no suggestion. That is a product that is not set up reading as one that is
-  // broken, and only one of those gets reported.
+  // host, no port, no suggestion.
+  //
+  // **A REAL TRANSPORT FAILURE, NOT A CONSTRUCTED ONE.** The first version of this test built
+  // `new TypeError("fetch failed")` and attached a `cause` it invented. That shares its assumption
+  // with the code under test — both believing undici's shape, neither checking it — so it would
+  // have passed forever no matter what Node actually raises, which is the vacuity this repository
+  // keeps finding in other people's fixtures. `hangUpNode` accepts the connection and destroys it,
+  // so `fetch` rejects for real, from the real network stack, in about 60 ms. A Node release that
+  // changed the shape fails HERE, loudly, instead of silently retiring the branch and letting the
+  // product go back to saying two words.
   const { url, server, invites } = await vault();
+  const dead = await hangUpNode();
   try {
     const h = harness(url, invites);
     const m = await created(h);
-    const refuse: typeof fetch = (async () => {
-      const e = new TypeError("fetch failed");
-      (e as { cause?: unknown }).cause = { code: "ECONNREFUSED" };
-      throw e;
-    }) as typeof fetch;
 
-    const ev = await perform({ t: "collect" }, { ...m.state!, vaultUrl: "http://127.0.0.1:8080" },
-      { ...h.deps, fetchImpl: refuse });
+    const ev = await perform({ t: "collect" }, { ...m.state!, vaultUrl: dead.url }, h.deps);
     const said = (ev as { text?: string }).text ?? "";
     assert.notEqual(said, "fetch failed", "the raw transport error reaches the user unchanged");
-    assert.match(said, /127\.0\.0\.1:8080/, "the message does not name the host that did not "
-      + "answer, so the user cannot tell a wrong address from a stopped service");
-    assert.match(said, /ECONNREFUSED/, "the cause is dropped, and it is the only part that "
+    assert.ok(said.includes(dead.url), "the message does not name the host that did not answer, "
+      + `so the user cannot tell a wrong address from a stopped service:\n  ${said}`);
+    assert.match(said, /E[A-Z]+|UND_ERR/, "the cause is dropped, and it is the only part that "
       + "distinguishes refused from timed out from unresolvable");
     assert.match(said, /running/, "the message names no remedy");
+
     const shown = text({ ...m, log: [{ text: said, tone: "warn", at: T0 }] } as any,
       { rows: 24, cols: 80 });
     assert.ok(shown.includes("is it running?"),
       `at 80 columns — the default xterm, the default docker exec — the remedy is truncated off `
       + `the end and the user is left with a host and a code:\n  ${said}`);
-  } finally { server.close(); }
+  } finally { server.close(); dead.server.close(); }
 });
 
 test("AND IT LEAVES EVERY OTHER ERROR ALONE", async () => {

@@ -51,26 +51,32 @@ const clock = (t: number) => new Date(t).toISOString().slice(11, 19);
  * **`c` AGAINST A VAULT THAT IS NOT RUNNING WAITED TEN SECONDS AND SAID `fetch failed`.** Found by
  * driving the real interface through a pty on a machine with nothing else running — which is the
  * state a first-time user is in, and the one no test was in. Two words, after a long stall, naming
- * neither the host that did not answer nor the thing to do about it.
+ * neither the host that did not answer nor the thing to do about it. That is the difference
+ * between a product that is not set up and a product that is broken, and only one of those gets
+ * reported.
  *
- * That is the difference between a product that is not set up and a product that is broken, and
- * only one of those gets reported. `fetch failed` is undici's message for every transport failure
- * there is; the useful part is on `cause`, and the address is in the state file.
+ * **KEYED ON `cause.code`, NOT ON THE STRING `fetch failed`.** The first version matched that
+ * message exactly. It is undici's, not this product's — undocumented, unversioned, and free to
+ * change on a Node bump — so a rename would have made this branch dead, silently, and the product
+ * would have gone back to saying the worst sentence it says to anyone with nothing turning red.
+ * A guard keyed to a string somebody else owns is a guard with an expiry date nobody wrote down.
  *
- * ONLY THE BARE STRING IS REPLACED. Every other error here was written by this codebase for a
- * reader — a missing bundle file already names its path — and a handler that reworded those would
- * be substituting a guess for a sentence somebody chose.
+ * `cause` is where `fetch` puts the underlying system error, and its `code` — `ECONNREFUSED`,
+ * `ECONNRESET`, `ENOTFOUND`, `UND_ERR_CONNECT_TIMEOUT` — is the contractual part and the only part
+ * that distinguishes refused from timed out from unresolvable.
+ *
+ * NOTHING ELSE IS TOUCHED. No error raised in this repository sets a `cause` (checked), and every
+ * one of them was written for a reader — a missing bundle file already names its own path. A
+ * handler that reworded those would substitute a guess for a sentence somebody chose.
  */
 function describeFailure(e: unknown, state: State | null): string {
-  const message = e instanceof Error ? e.message : String(e);
-  if (message !== "fetch failed") return message;
-  const code = (e as { cause?: { code?: string } }).cause?.code;
-  // NO POINTER AT STATUS HERE, unlike the block-0 warning. That one points because the sentence
-  // it needs does not fit on one row; this one NAMES THE ADDRESS, so sending the reader to a page
-  // to look up a string already in front of them would be the padding that pushes the remedy —
-  // "is it running?" — off the right edge at 80 columns. Measured: the two together are 79.
-  return `${state?.vaultUrl ?? "the vault"} did not answer${code ? ` (${code})` : ""}`
-    + " — is it running?";
+  const code = (e as { cause?: { code?: string } })?.cause?.code;
+  if (!code) return e instanceof Error ? e.message : String(e);
+  // NO POINTER AT STATUS HERE, unlike the block-0 warning. That one points because the sentence it
+  // needs does not fit on one row; this one NAMES THE ADDRESS, so sending the reader to a page to
+  // look up a string already in front of them is the padding that pushes the remedy off the right
+  // edge at 80 columns. Measured in a pty: the two together are 79.
+  return `${state?.vaultUrl ?? "the vault"} did not answer (${code}) — is it running?`;
 }
 
 export async function perform(effect: Effect, state: State | null, deps: Deps): Promise<Event> {

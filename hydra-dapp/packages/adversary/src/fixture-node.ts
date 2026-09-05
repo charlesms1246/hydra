@@ -68,3 +68,24 @@ export async function fixtureNode(deployedAt = FIXTURE_DEPLOYED_AT): Promise<Fix
   const { port } = server.address() as { port: number };
   return { url: `http://127.0.0.1:${port}`, server, asked };
 }
+
+/**
+ * A socket that accepts and hangs up, so a test can get a REAL transport failure quickly.
+ *
+ * **THE ALTERNATIVE WAS SYNTHESISING ONE, AND THAT PROVES NOTHING.** A test that constructs
+ * `new TypeError("fetch failed")` with a `cause` it wrote itself shares its assumption with the
+ * code under test: both believe undici's shape, neither checks it, and the test passes forever
+ * whatever Node does. That is the vacuity this repository keeps finding elsewhere.
+ *
+ * A dead PORT would also be real, and on a machine where the connection is not refused it costs a
+ * ten-second connect timeout — which is how the TUI suite came to take three and a half minutes.
+ * Accepting and destroying gives a genuine `fetch` rejection, from the real network stack, with a
+ * real `cause.code`, in about 60 ms.
+ */
+export async function hangUpNode(): Promise<{ url: string; server: import("node:net").Server }> {
+  const { createServer } = await import("node:net");
+  const server = createServer((socket) => socket.destroy());
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const { port } = server.address() as { port: number };
+  return { url: `http://127.0.0.1:${port}`, server };
+}
