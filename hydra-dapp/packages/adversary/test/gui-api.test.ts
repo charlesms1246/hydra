@@ -26,8 +26,8 @@ import { codeOf } from "../src/prose.ts";
 import { randomBytes } from "node:crypto";
 
 import { guiServer, type StateSource } from "../../gui/src/server.ts";
-import { init, publishBundle, open, accept, sendMessage, readChannel, flush }
-  from "../../cli/src/commands.ts";
+import { init, publishBundle, open, accept, sendMessage, readChannel, flush,
+  SIGNED_MARK, UNVERIFIABLE_MARK } from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import type { State } from "../../cli/src/state.ts";
@@ -197,6 +197,71 @@ test("MESSAGES CARRY THEIR ATTRIBUTION — I7 on a third surface", async () => {
       + "signature backs this name");
     assert.equal(m!.mine, false);
   } finally { api.close(); closeVault(); }
+});
+
+test("THE CLAIM IS THREE-VALUED AND THE MARK IS TWO — every message carries its basis", async () => {
+  // **THE DEFECT THIS EXISTS FOR: the API sent `attribution` and nothing else.** That has two
+  // values; `attributionLabel` returns THREE bases, because a signature under a key nobody
+  // published proves the author is whoever answered the handshake and not who they say they are.
+  // Its own comment: "a real guarantee and a weaker one than a reader assumes when a tick is all
+  // they are shown". A page drawing a tick from `attribution` alone showed the strongest reading
+  // of a claim that might be the weaker one — the same failure as a caveat truncated off a line.
+  //
+  // Driven over all three, because a two-branch test is what let a three-branch claim collapse.
+  const { alice, bob, close: closeVault } = await conversed();
+  // **`try`/`finally`, NOT A CALL AT THE END.** The first version closed the vault on the last
+  // line, so a FAILING assertion left the server listening and `node --test` never exited —
+  // the suite hung precisely when a test was failing, which is when you most need its output.
+  // Found by mutating this file and watching the harness stop instead of report.
+  try {
+    const chain = memoryChain();
+    // A signed message, so `attribution` is "signed" and the anchor decides which signed it is.
+    const sent = await sendMessage(alice, chain, "with-bob", "signed", "signed and unpublished", T0);
+    await flush(alice, sent.uploadAt + MIN_JITTER_BLOCKS * BLOCK, undefined, Infinity);
+    await readChannel(bob, chain, "with-alice");
+
+    const basesOf = async (state: State) => {
+      const api = await running({ t: "ready", state, file: FILE });
+      try {
+        const body = await (await api.get("/v1/gui/channels/with-alice/messages")).json() as
+          { messages: { attribution: string; basis: string; mark: string }[] };
+        return body.messages;
+      } finally { api.close(); }
+    };
+
+    const unanchored = await basesOf(bob);
+    const signed = unanchored.find((m) => m.attribution === "signed");
+    const deniable = unanchored.find((m) => m.attribution === "unverifiable");
+
+    assert.ok(deniable, "no deniable message to compare against");
+    assert.match(deniable!.basis, /either of you could have written it/,
+      "a deniable message does not say what makes it deniable");
+
+    assert.ok(signed, "no signed message — the fixture did not produce the case under test");
+    assert.match(signed!.basis, /not published/,
+      `a signature under a key nobody published reads as "${signed!.basis}", which does not say the `
+      + "key is unpublished — so a reader takes it for a stronger check than it is");
+
+    // The third branch: the same message, once the peer's record is anchored.
+    const anchored = { ...bob, channels: { ...bob.channels,
+      "with-alice": { ...bob.channels["with-alice"]!, anchor: "0xabc123" } } } as State;
+    const after = (await basesOf(anchored)).find((m) => m.attribution === "signed")!;
+    assert.match(after.basis, /published at 0xabc123/,
+      "an anchored signature does not name where the key is published");
+
+    // AND THE THREE ARE DISTINGUISHABLE, which is the property rather than the wording.
+    assert.equal(new Set([deniable!.basis, signed!.basis, after.basis]).size, 3,
+      "two of the three cases render the same sentence, so a page cannot tell them apart");
+
+    // AND THE MARK COMES FROM HERE, so no page types a `✓` of its own. Two-valued on purpose: it is
+    // an indicator, and the basis is the claim. A copy in another repository drifts silently, and
+    // `commands.ts` is explicit that a surface showing the same glyph for both is one where a
+    // forgery reads like a signature.
+    assert.equal(deniable!.mark, UNVERIFIABLE_MARK);
+    assert.equal(signed!.mark, SIGNED_MARK);
+    assert.equal(after.mark, SIGNED_MARK);
+    assert.notEqual(SIGNED_MARK, UNVERIFIABLE_MARK, "the two marks are the same character");
+  } finally { closeVault(); }
 });
 
 test("A GET DOES NO NETWORK — the read-only surface cannot become a 106-second read", async () => {

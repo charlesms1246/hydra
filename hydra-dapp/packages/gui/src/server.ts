@@ -32,7 +32,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 
-import { fingerprint, publishBundle } from "../../cli/src/commands.ts";
+import { anchorOf, attributionLabel, fingerprint, publishBundle }
+  from "../../cli/src/commands.ts";
 import { oneTimeRemaining } from "../../handshake/src/prekeys.ts";
 import type { State } from "../../cli/src/state.ts";
 
@@ -169,8 +170,48 @@ function messages(state: State, name: string): unknown | Fail {
       seq: m.seq,
       at: m.at,
       mine: m.mine,
-      // I7: never a name without what backs it. The page must render the difference.
+      // **TWO-VALUED, AND THE CLAIM IS THREE-VALUED.** Kept because a page wants a compact
+      // indicator, and it is the right signal for one — but it is NOT enough to state the claim,
+      // which is why `basis` is below. Shipping this alone was a defect: see the note there.
       attribution: m.attribution,
+      /**
+       * **THE QUALIFICATION, GENERATED — and shipping without it was an I7 defect of mine.**
+       *
+       * `attributionLabel` returns THREE bases where the mark has two values: unverifiable,
+       * signed under a published key, and signed under a key that is NOT published. Its own
+       * comment says why the third matters — the signature proves the author is whoever answered
+       * the handshake, *"a real guarantee and a weaker one than a reader assumes when a tick is
+       * all they are shown"*. An API that sent only `attribution` handed a page the tick and
+       * withheld what qualifies it, so a correct page drew the strongest reading of a claim that
+       * might be the weaker one. That is the same defect as an attribution claim truncated before
+       * its caveat, one surface over.
+       *
+       * GENERATED, NOT INVENTED, and that is the second reason it is here. A page that renders
+       * attribution IS a front end, and `no-invented-claims.test.ts` holds that no front end makes
+       * a privacy claim in its own words — because a hand-written sentence drifts and four of them
+       * have already been false. Without this field the page would have to write one.
+       *
+       * **`mark` TRAVELS WITH IT, WHICH REVERSES WHAT THIS COMMENT FIRST SAID.** The first version
+       * withheld the glyph on the grounds that a page's indicator is its own design, and that
+       * sending it invites a page to use the mark INSTEAD of the basis. The argument that changed
+       * it is hydra-18's and it is better: a `✓` typed into their file is a copy that drifts from
+       * this one silently, and `commands.ts` says why that is not cosmetic — *"a surface that
+       * showed the same glyph for both, or none at all, would be a surface where a forgery reads
+       * exactly like a signature."*
+       *
+       * They cannot import it. `web/` DOES import from `hydra-dapp` — `claims/src/statement.ts`,
+       * which `next.config.ts` is configured for — so the obstacle is not the repository boundary
+       * but this module: importing `commands.ts` would pull the client's state handling and crypto
+       * into a marketing bundle, which is the import-graph hazard the web lane already tests for.
+       * So sending it is the only route that neither drifts nor bundles.
+       *
+       * The under-use risk is real and is answered on their side rather than by withholding: their
+       * spec requires the qualification in RENDERED TEXT, and their geometry checker fails on a
+       * clipped one. A control that works is better than a field withheld in the hope it forces
+       * one.
+       */
+      mark: attributionLabel(m, name, anchorOf(state, name)).mark,
+      basis: attributionLabel(m, name, anchorOf(state, name)).basis,
       text: m.text,
     })),
   };
