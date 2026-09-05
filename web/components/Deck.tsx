@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { InDeck } from "./DeckContext.tsx";
+import { Reveal } from "./Reveal.tsx";
 
 /**
  * A horizontal slide deck: a snap-scrolling track, a progress rail, a counter and keyboard nav.
@@ -198,12 +199,21 @@ export function Slide({
   return (
     <section className="slide" data-slide aria-label={label}>
       <div className={aside ? "slide-inner is-split" : "slide-inner"}>
-        <div className="slide-copy">
+        {/*
+          ⛔ A FADE, not a write-on, and the deck is why.
+
+          `WriteOn` drives its head from `window.scrollY`, which does not move in a horizontal
+          scroller — that is what `InDeck` exists to prevent. But the instruction is that every
+          slide's text animates, so the answer is a motion that depends on ARRIVAL rather than on
+          offset. `Reveal` already works that way and already observes the deck as its root, so a
+          slide's copy fades in when the slide reaches the reader and not before.
+        */}
+        <Reveal className="slide-copy">
           <span className="slide-tick" aria-hidden>
             {n} — {label}
           </span>
           {children}
-        </div>
+        </Reveal>
         {aside && <div className="slide-aside">{aside}</div>}
       </div>
     </section>

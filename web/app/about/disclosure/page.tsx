@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { statement } from "../../../../hydra-dapp/packages/claims/src/statement.ts";
 import { SITE } from "../../../content.ts";
 import { Nav } from "../../../components/Nav.tsx";
+import { Reveal } from "../../../components/Reveal.tsx";
 import { Code } from "../../../components/Code.tsx";
 import { Section } from "../../../components/Section.tsx";
 import { ClaimList } from "../../../components/ClaimList.tsx";
@@ -42,11 +43,13 @@ export default function Disclosures() {
 
       <main className="page">
         <header className="doc-head">
+          <Reveal>
           <h1>Disclosures</h1>
           <p className="tagline">
             Generated from the disclosure tables and the measured schedules. Every line cites the
             file that makes it true.
           </p>
+          </Reveal>
         </header>
 
         <div className="fig-map">

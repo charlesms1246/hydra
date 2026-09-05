@@ -81,14 +81,23 @@ type Solid = {
  * dodecahedron and an icosahedron is exactly the kind of detail the character grid is good at
  * suggesting without ever quite resolving.
  */
+/*
+ * ⛔ FIVE SOLIDS, AND THE SET IS SPECIFIED: one donut, two cubes, two spheres.
+ *
+ * It was nine, cycling through six platonic solids. The instruction is this exact cast, so the
+ * list is a list rather than a `switch` on an index — a reader checking whether the field matches
+ * what was asked should be able to count the entries, not derive them from a modulo.
+ *
+ * A sphere in an ASCII field is the one shape with no facets, which is why two of them balance
+ * the two cubes: the cubes give the grid edges to resolve and the spheres give it a gradient.
+ */
+const SHAPES = ["torus", "box", "box", "sphere", "sphere"] as const;
+
 function geometryFor(i: number): THREE.BufferGeometry {
-  switch (i % 6) {
-    case 0: return new THREE.BoxGeometry(1.5, 1.5, 1.5);
-    case 1: return new THREE.TetrahedronGeometry(1.1);
-    case 2: return new THREE.OctahedronGeometry(1.1);
-    case 3: return new THREE.IcosahedronGeometry(1.05);
-    case 4: return new THREE.DodecahedronGeometry(1.05);
-    default: return new THREE.TorusGeometry(0.8, 0.34, 10, 18);
+  switch (SHAPES[i % SHAPES.length]) {
+    case "box": return new THREE.BoxGeometry(1.5, 1.5, 1.5);
+    case "sphere": return new THREE.SphereGeometry(1.05, 20, 14);
+    default: return new THREE.TorusGeometry(0.85, 0.36, 12, 22);
   }
 }
 
@@ -102,7 +111,7 @@ function geometryFor(i: number): THREE.BufferGeometry {
  * tenth. The palette allows exactly one accent and spending it on more than this stops it being
  * an accent at all.
  */
-const COUNT = 9;
+const COUNT = SHAPES.length;
 const ACCENTED = 1;
 
 /**
@@ -262,7 +271,7 @@ export function Solids() {
        *
        * Each solid aims at the corner furthest from it, so the whole arrangement crosses the
        * MIDDLE of the frame on the way out. That is the effect, and it is also precisely where
-       * the prose is. Geometry alone would park nine lit shapes behind section 01 at the moment
+       * the prose is. Geometry alone would park five lit shapes behind section 01 at the moment
        * somebody is trying to read it. Fading against the same progress value means they are
        * already well dimmed by the time they cross, and gone before the section ends.
        */

@@ -43,7 +43,9 @@ export default function Home() {
           removed from the page, not from the site.
         */}
         <header className="hero">
-          <h1 className="wordmark">{SITE.name.toUpperCase()}</h1>
+          <Reveal>
+            <h1 className="wordmark">{SITE.name.toUpperCase()}</h1>
+          </Reveal>
         </header>
 
         {/*
@@ -134,9 +136,6 @@ export default function Home() {
             </Reveal>
           </div>
 
-          <p className="cta">
-            <a href="/about/disclosure/">Read what every party can see &rarr;</a>
-          </p>
         </Section>
       </main>
 

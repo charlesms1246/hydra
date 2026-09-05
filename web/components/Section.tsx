@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Reveal } from "./Reveal.tsx";
+
 /**
  * A numbered section: accent number over a large grotesk title, straddling a full-bleed hairline
  * rule, with the section's tick pinned to the rule at the far left.
@@ -22,7 +24,10 @@ export function Section({
 }) {
   return (
     <section className="section" id={id} aria-labelledby={`${id}-title`}>
-      <div className="section-head">
+      {/* The head animates too. It is outside `.section-body`, which is exactly the kind of gap a
+          "wrap the container" fix leaves behind — found by walking the rendered page for text not
+          inside an animated wrapper, rather than by looking. */}
+      <Reveal className="section-head">
         <span className="section-number" aria-hidden>
           {n}
         </span>
@@ -45,7 +50,7 @@ export function Section({
             {title}
           </h2>
         </div>
-      </div>
+      </Reveal>
       {/*
         ⛔ The section's content sits in ONE column, and the head is the only thing that leaves it.
 
@@ -59,7 +64,15 @@ export function Section({
         band and the full-bleed panels break out deliberately. One column, and exceptions that
         look like exceptions.
       */}
-      <div className="section-body">{children}</div>
+      {/*
+        ⛔ Every section's content animates, without each page having to remember.
+
+        The instruction is that all text on the site is animated with no exceptions, and the way
+        to have no exceptions is not to wrap things one at a time — it is for the container that
+        every section's content already passes through to do it. A page that forgets is not
+        possible, because there is nothing to forget.
+      */}
+      <Reveal className="section-body">{children}</Reveal>
     </section>
   );
 }

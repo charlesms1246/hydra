@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
+import { Reveal } from "../../components/Reveal.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
 import { Close } from "../../components/Close.tsx";
@@ -35,8 +36,10 @@ export default function SessionPage() {
 
       <main className="page">
         <header className="doc-head">
+          <Reveal>
           <h1>Your session</h1>
           <p className="tagline">{SITE.session.lede}</p>
+          </Reveal>
         </header>
 
         <Section n="01" id="connect" title="ON YOUR MACHINE">

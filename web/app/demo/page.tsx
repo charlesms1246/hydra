@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
+import { Reveal } from "../../components/Reveal.tsx";
 import { Footer } from "../../components/Footer.tsx";
 
 /**
@@ -29,12 +30,12 @@ export default function Demo() {
           between them to read first — the fastest arrangement for a decision that has two answers.
         */}
         <section className="lander">
-          <div className="lander-head">
+          <Reveal className="lander-head">
             <h1>See it run</h1>
             <p className="tagline">{SITE.demo.lede}</p>
-          </div>
+          </Reveal>
 
-          <div className="lander-choices">
+          <Reveal className="lander-choices">
             {SITE.demo.tools.map((t) => (
               <a className="choice" key={t.id} href={t.href}>
                 <span className="label">{t.who}</span>
@@ -43,7 +44,7 @@ export default function Demo() {
                 <span className="choice-go" aria-hidden>&rarr;</span>
               </a>
             ))}
-          </div>
+          </Reveal>
         </section>
       </main>
 

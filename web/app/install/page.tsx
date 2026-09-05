@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
+import { Reveal } from "../../components/Reveal.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Code } from "../../components/Code.tsx";
 import { Footer } from "../../components/Footer.tsx";
@@ -55,8 +56,10 @@ export default function Install() {
 
       <main className="page">
         <header className="doc-head">
+          <Reveal>
           <h1>Run it</h1>
           <p className="tagline">{SITE.install.lede}</p>
+          </Reveal>
         </header>
 
         <Section n="01" id="steps" title="FROM A CHECKOUT">
@@ -80,9 +83,6 @@ export default function Install() {
               <li key={w}><Code>{w}</Code></li>
             ))}
           </ul>
-          <p className="cta">
-            <a href="/about/disclosure/">What every party can see &rarr;</a>
-          </p>
         </Section>
 
         <Section n="03" id="supply-chain" title="WHAT STANDS BEHIND THIS PAGE">

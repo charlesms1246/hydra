@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
+import { Reveal } from "../../components/Reveal.tsx";
 import { Section } from "../../components/Section.tsx";
 import { WriteOn } from "../../components/WriteOn.tsx";
 import { Footer } from "../../components/Footer.tsx";
@@ -26,8 +27,10 @@ export default function About() {
 
       <main className="page">
         <header className="doc-head">
+          <Reveal>
           <h1>About</h1>
           <p className="tagline">{SITE.about.lede}</p>
+          </Reveal>
         </header>
 
 
@@ -42,9 +45,6 @@ export default function About() {
             <p className="col-9 prose-body">{SITE.about.body[1]}</p>
           </div>
 
-          <p className="cta">
-            <a href="/about/disclosure/">The disclosure statement &rarr;</a>
-          </p>
         </Section>
 
         {/*

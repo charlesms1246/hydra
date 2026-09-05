@@ -154,7 +154,10 @@ const PROBE = `(() => {
        * overshoot that cannot be seen. The tolerance is exactly that space, read from the element
        * rather than guessed, so it stays correct if the tracking changes.
        */
-      const slack = parseFloat(getComputedStyle(t).letterSpacing) || 0;
+      // ⛔ ABSOLUTE. Letter-spacing can be NEGATIVE — tightened display type — and a negative
+      // tolerance narrows the box instead of widening it, so a label sitting exactly on the left
+      // edge is reported as escaping. Caught on the disclosure map's counts, tracked at -0.02em.
+      const slack = Math.abs(parseFloat(getComputedStyle(t).letterSpacing) || 0);
 
       if (a.r > vx + vw + slack || a.l < vx - slack || a.b > vy + vh + slack || a.t < vy - slack) {
         violations.push(
@@ -374,7 +377,25 @@ for (const width of DECK_WIDTHS) {
       width, height, deviceScaleFactor: 1, mobile: false,
     }, sessionId);
     await cdp.send("Page.navigate", { url: `${site.origin}/pitch/` }, sessionId);
-    await new Promise((r) => setTimeout(r, 260));
+
+    /*
+     * ⛔ Wait for the slides to EXIST, not for a duration.
+     *
+     * A fixed 260ms produced two phantom failures — "found 0 slides" at one viewport out of
+     * seventy, on a page whose markup demonstrably has six. That is worse than a slow gate: a
+     * check that fails at random teaches people to re-run it, and a check people re-run is a
+     * check they eventually stop believing. Poll for the condition instead.
+     */
+    for (let tries = 0; tries < 40; tries++) {
+      const { result: ready } = await cdp.send("Runtime.evaluate", {
+        expression: `document.querySelectorAll("[data-slide]").length`,
+        returnByValue: true,
+      }, sessionId);
+      if ((ready.value as number) >= 6) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // Layout settles after the elements exist; the measurement is of boxes, not of presence.
+    await new Promise((r) => setTimeout(r, 120));
 
     const { result } = await cdp.send("Runtime.evaluate", {
       expression: `(() => {

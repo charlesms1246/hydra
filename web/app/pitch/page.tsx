@@ -119,9 +119,6 @@ export default function Pitch() {
               figure moved beside the copy — see `Slide`. They are the last thing a judge reads
               and they were the two things the layout was eating. */}
           <p className="accent">{p.lede}</p>
-          <p className="cta">
-            <a href="/about/disclosure/">Read what every party can see &rarr;</a>
-          </p>
         </Slide>
       </Deck>
     </>
