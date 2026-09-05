@@ -678,18 +678,31 @@ body.has-canvas .field {
   color: var(--accent);
 }
 
+/*
+ * Aligned to the COLUMNS above it, not to the page measure.
+ *
+ * It was `max-width: 62rem` centred while `.footer-cols` is 90rem on the gutter, so the closing
+ * statement started 166px to the right of the link lists — the same two-container-models defect
+ * as the four left edges on the pages, reproduced inside one footer. The paragraph keeps its own
+ * `52ch` reading measure; what moved is where the block starts.
+ */
 .footer-note {
-  max-width: 62rem;
+  max-width: 90rem;
   margin: clamp(3rem, 8vh, 5rem) auto 0;
   border-top: 1px solid var(--g-12);
   padding-top: 2rem;
 }
 
+/*
+ * The footer's one large moment. The reference closes on a serif statement at display scale, and
+ * a footer that ends on the same size as its link labels has no close at all.
+ */
 .footer-note p {
   font-family: var(--serif);
-  font-size: clamp(1.125rem, 1.8vw, 1.5rem);
-  line-height: 1.35;
-  color: var(--g-64);
+  font-size: clamp(1.25rem, 2.2vw, 1.875rem);
+  line-height: 1.3;
+  color: var(--g-80);
+  max-width: 52ch;
   margin: 0;
 }
 
@@ -1489,16 +1502,31 @@ html[data-build="public"] .wordmark {
  * `scripts/provenance.ts`.
  * ------------------------------------------------------------------------------------------ */
 
+/*
+ * Both margins. `writing-mode: vertical-rl` rather than a rotate transform, so the glyphs stay on
+ * their baselines and the box reserves the right width in flow instead of overlapping what is
+ * beside it.
+ *
+ * `user-select: all` because the right-hand one is a commit somebody may want to paste.
+ */
 .footer-edge {
   position: absolute;
   top: clamp(2rem, 6vh, 5rem);
-  right: clamp(0.75rem, 1.5vw, 1.5rem);
   writing-mode: vertical-rl;
   font-family: var(--mono);
   font-size: 0.625rem;
   letter-spacing: 0.22em;
   color: var(--g-32);
   user-select: all;
+}
+
+.footer-edge-r {
+  right: clamp(0.75rem, 1.5vw, 1.5rem);
+}
+
+/* Upright rather than inverted, so both margins read top-to-bottom rather than mirroring. */
+.footer-edge-l {
+  left: clamp(0.75rem, 1.5vw, 1.5rem);
 }
 
 /*
@@ -1527,13 +1555,28 @@ html[data-build="public"] .wordmark {
  */
 @media (min-width: 64rem) {
   .footer-cols {
-    grid-template-columns: 1fr 1fr minmax(15rem, 20rem);
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(15rem, 18rem);
+    gap: clamp(1.5rem, 3vw, 3rem);
   }
 
   .footer-mark {
-    grid-column: 3;
+    grid-column: 4;
     width: 100%;
     margin: 0 0 0 auto;
+  }
+}
+
+/* Three link columns before the mark drops to its own row. */
+@media (min-width: 48rem) and (max-width: 63.999rem) {
+  .footer-cols {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 48rem) {
+  /* Both margins are where the content is at this width, and both are ornament. */
+  .footer-edge {
+    display: none;
   }
 }
 
@@ -1542,12 +1585,7 @@ html[data-build="public"] .wordmark {
   border: none;
 }
 
-@media (max-width: 48rem) {
-  /* The edge text sits where the content does at this width, and it is an ornament. */
-  .footer-edge {
-    display: none;
-  }
-}
+
 
 /* --------------------------------------------------------------------------------------------
  * Write-on text. See `components/WriteOn.tsx` — the mechanism is scroll position, not a trigger.

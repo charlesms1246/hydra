@@ -1,39 +1,76 @@
 import { SITE } from "../content.ts";
 import { provenance } from "../scripts/provenance.ts";
+import { isPublicBuild } from "../scripts/build-mode.ts";
 import { AsciiPanel } from "./viz/AsciiPanel.tsx";
 
 /**
  * The footer.
  *
  * The reference's footer is mostly a company's legal furniture — terms, disclosures, a copyright
- * line, an address, a press kit. **There is no company.** So the columns hold what is true:
- * where the code is, and where the generated statement is. No canary, no contact, no entity, no
+ * line, an address, a press kit. **There is no company.** So the columns hold what is true: where
+ * to read, what the two tools are, and where the code is. No canary, no contact, no entity, no
  * copyright line — each of those would imply a legal person that does not exist, and
  * `test/site.test.ts` fails if one appears.
+ *
+ * ## Both margins, and why they carry these two facts
+ *
+ * The reference runs rotated mono up both edges: network metadata on one side, a copyright on the
+ * other. There is no copyright to assert and no network fact worth a spine. **What belongs there
+ * is the pair of facts that make this page checkable: which commit it was built from, and which
+ * of the two builds produced it.** A reader who has just been told the claims are verifiable can
+ * verify the artefact itself from its own margins.
+ *
+ * They are not decoration standing in for information. The build mode is the same fact
+ * `data-build` puts on the document and the Pages check asserts; the commit is `git rev-parse`.
+ * Both fail soft — see `scripts/provenance.ts` — because a footer ornament is not worth failing a
+ * build over, and an absent one is honest where a placeholder would not be.
  */
 export function Footer() {
+  const commit = provenance();
   return (
     <footer className="footer">
-      {/* Where the reference puts a copyright. There is no entity to assert one, and a project
-          arguing that its claims are checkable has something better for that slot: the commit this
-          page was built from. See `scripts/provenance.ts`. */}
-      {provenance() && (
-        <span className="footer-edge" aria-hidden>
-          {provenance()}
+      {/*
+        Where the reference puts network metadata and a copyright. See the header: these are the
+        two facts about the artefact a reader is looking at, one per margin.
+      */}
+      <span className="footer-edge footer-edge-l" aria-hidden>
+        {isPublicBuild() ? "PUBLIC BUILD" : "LOCAL BUILD"}
+      </span>
+      {commit && (
+        <span className="footer-edge footer-edge-r" aria-hidden>
+          {commit}
         </span>
       )}
+
       <div className="footer-cols">
         <div className="footer-col">
           <h2>Read</h2>
           <ul>
             <li><a href="/">Home</a></li>
             <li><a href="/pitch/">Why this exists</a></li>
-            <li><a href="/demo/">See it run</a></li>
             <li><a href="/install/">Run it</a></li>
             <li><a href="/about/">About</a></li>
             <li><a href="/about/disclosure/">Disclosures</a></li>
           </ul>
         </div>
+
+        {/*
+          The two tools, named separately.
+
+          They were reachable only through `/demo/`, one click in, which is the wrong place for
+          the distinction this site spends a whole page making — the client and the devtool are
+          for different people, and a reader who wants one of them should not have to open a
+          routing page to find out which.
+        */}
+        <div className="footer-col">
+          <h2>Run</h2>
+          <ul>
+            <li><a href="/demo/">See it run</a></li>
+            <li><a href="/demo/hydra/">The client</a></li>
+            <li><a href="/demo/hydra-dev/">The devtool</a></li>
+          </ul>
+        </div>
+
         <div className="footer-col">
           <h2>Source</h2>
           <ul>
@@ -48,12 +85,10 @@ export function Footer() {
         {/* The reference sets an ASCII mark in its footer. This is the same drawing the rest of
             the site uses, small and faint — a printer's device rather than a logo.
 
-            **It is a grid child, not a sibling below the grid**, because `SITE.links` has two
-            entries and "Read" has six: as a centred block underneath, it left the right-hand
-            column empty from its second row down and put 75px of nothing above itself. In the
-            grid it fills that column at wide widths and falls back to a full-width row when
-            there is no third column to sit in. The dead space was the finding; this is the
-            drawing occupying it rather than a smaller gap. */}
+            Its own column at wide widths, so it occupies the space three uneven link lists leave
+            rather than sitting under them with a gap above it. `.panel-art` floors its glyph at
+            6px and crops below that, so a 64-column field needs 230px before it is sliced: the
+            minimum width is set accordingly and is not a taste value. */}
         <div className="footer-mark" aria-hidden>
           <AsciiPanel cols={64} rows={26} blur={2.2} gain={1.1} />
         </div>
