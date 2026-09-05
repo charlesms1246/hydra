@@ -101,10 +101,24 @@
   --display: "NON Natural Grotesk", "Geist", ui-sans-serif, sans-serif;
 
   /* The page gutter, matched to the frame inset so the rules line up with the corner marks. */
-  --gutter: clamp(1rem, 4vw, 4rem);
+  --gutter: clamp(1.5rem, 3vw, 3rem);
 
-  /* The measure. One column for every content block on the site — see `Section.tsx`. */
-  --measure: 62rem;
+  /*
+   * ⛔ THE CONTAINER IS 86rem, NOT A READING MEASURE, AND THAT IS THE REFERENCE'S SYSTEM.
+   *
+   * This was `62rem` — a single centred reading column that every block sat inside. That is a
+   * *document's* layout, and it is why the pages read as "fancy developer docs": one column,
+   * one width, everything stacked in it. The reference is a wide container with a **12-column
+   * grid** inside it, and blocks take different spans and offsets so the page steps rather than
+   * stacks. Measure is then a property of a block's span, not a global cap.
+   *
+   * Copying the container width without the grid would only make the lines too long. The two go
+   * together — see `.grid-12` below.
+   */
+  --measure: 86rem;
+
+  /* The reference's gutter: 1.5rem, doubling at the desk breakpoint. */
+  --gutter-inline: clamp(1.5rem, 3vw, 3rem);
 
   /*
    * ── The type scale ──────────────────────────────────────────────────────────────────────────
@@ -288,6 +302,17 @@ body.has-canvas .field {
   padding: 0 var(--gutter) 0;
 }
 
+/*
+ * ⛔ THE HERO IS THE WORDMARK AND NOTHING ELSE. Do not put a sentence back under it.
+ *
+ * The reference's own note on this is the argument: a subtitle and two calls to action turn the
+ * page into an ordinary SaaS landing page and throw away the only thing that made it worth
+ * copying. The page opens on a held breath and the first content arrives when you scroll.
+ *
+ * Nothing is lost by leaving it out — the nav is fixed on every page and reaches every route,
+ * and the tagline still serves the `<title>` and the meta description, where a sentence
+ * summarising the site is what a search result and a link preview need.
+ */
 .hero {
   min-height: 100svh;
   display: flex;
@@ -295,7 +320,6 @@ body.has-canvas .field {
   justify-content: center;
   align-items: center;
   text-align: center;
-  gap: 1.5rem;
 }
 
 /*
@@ -308,8 +332,9 @@ body.has-canvas .field {
 .wordmark {
   font-family: var(--display);
   font-weight: 400;
-  font-size: clamp(3.5rem, 15vw, 15rem);
-  line-height: 0.85;
+  /* The reference sets its wordmark at 19vw — it is the page, not a heading on it. */
+  font-size: clamp(3.5rem, 19vw, 20rem);
+  line-height: 0.82;
   letter-spacing: -0.01em;
   color: var(--accent);
   margin: 0;
@@ -336,6 +361,70 @@ body.has-canvas .field {
 .section-body {
   max-width: var(--measure);
   margin-inline: auto;
+}
+
+/*
+ * The reference's twelve columns.
+ *
+ * **A staircase, not two equal columns.** The reference sets an opening statement flush left at
+ * about seven columns, then drops the next block down and *inward* — a label right-aligned in
+ * columns 1–3 sitting immediately off the paragraph's left edge, the paragraph running 4–12 out
+ * to the right margin. The blocks overlap horizontally without sharing a column edge, so the eye
+ * steps diagonally down the page. Two equal columns sit them side by side and lose it entirely.
+ *
+ * Below the breakpoint it is one column and the offsets collapse, which is the whole reason the
+ * spans are declared rather than the widths.
+ */
+.grid-12 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 48rem) {
+  .grid-12 {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1.5rem;
+  }
+
+  .col-3 { grid-column: span 3; }
+  .col-6 { grid-column: span 6; }
+  .col-7 { grid-column: span 7; }
+  .col-9 { grid-column: span 9; }
+
+  /* The margin note: right-aligned in its own columns, so the label sits immediately off the
+     paragraph's left edge rather than as a heading above it. */
+  .col-note {
+    grid-column: span 3;
+    text-align: right;
+    padding-top: 0.4rem;
+  }
+}
+
+/*
+ * The page's hinge: one oversized serif statement, alone, between sections.
+ *
+ * The reference gives this a full screen of its own. It is not a pull-quote — it is the beat
+ * where the argument turns, and giving it the whole viewport is what makes the sections either
+ * side read as separate movements rather than as a continuous scroll.
+ */
+.statement {
+  min-height: 80svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(4rem, 12vh, 8rem) 0;
+  text-align: center;
+}
+
+.statement p,
+.statement div {
+  font-family: var(--serif);
+  font-size: clamp(2.25rem, 9vw, 7rem);
+  line-height: 0.94;
+  letter-spacing: -0.01em;
+  color: var(--white);
+  margin: 0;
 }
 
 .section-head {
@@ -445,7 +534,16 @@ body.has-canvas .field {
     margin-left: 25%;
     position: relative;
   }
-  .prose-label {
+  /*
+   * ⛔ Scoped to `.prose .labelled`, and the scope is the point.
+   *
+   * This hangs the label in the margin by absolute positioning, which was the right answer when
+   * there was no grid. There is one now, and `.col-note` expresses the same margin-note by span
+   * and alignment — the reference's way. Unscoped, this rule captured every `.prose-label`
+   * including grid items, and took them **out of the grid and off the left of the page** at
+   * x = -88. Nothing failed; the label was simply not there.
+   */
+  .prose .labelled .prose-label {
     position: absolute;
     left: -5.5rem;
     top: 0.75em;
@@ -1865,12 +1963,17 @@ html[data-build="public"] .wordmark {
  *
  * **Two predicates, one implementation, because they are the same judgement.** A deck works when
  * one screen can hold one claim. Without a script it cannot be advanced discoverably; below about
- * 512x576 it cannot hold the claim at all — measured, at 360x560 the generated auditor claim is
+ * 512x720 it cannot hold the claim at all — measured, at 360x560 the generated auditor claim is
  * 194px of a 500px box before its setup, and standing rule 5 forbids shrinking that to a
  * footnote. Both times the answer is the same: stop pretending to be a deck.
  *
  * A comma-separated media query rather than two blocks, so the fallback cannot drift into two
  * different fallbacks.
+ *
+ * **The height bound moved from 36rem to 45rem when the gutter widened to the reference's** —
+ * 24px at narrow widths, up from 16px. That is 16px less slide at 360px, enough to push the
+ * auditor over at 640 and 700. The geometry gate caught it on a change that touched a global
+ * token and no deck file, which is the case a per-component check cannot see.
  *
  * The original note follows.
  *
@@ -1885,7 +1988,7 @@ html[data-build="public"] .wordmark {
  * and it was false; the probe found six rail buttons in the no-script render. **A dead navigation
  * control is worse than no control**, and a comment asserting a fallback is not the fallback.
  */
-@media (scripting: none), (max-height: 36rem) and (max-width: 32rem) {
+@media (scripting: none), (max-width: 32rem) and (max-height: 45rem) {
   .deck-rail,
   .deck-count {
     display: none;
@@ -1932,4 +2035,39 @@ html[data-build="public"] .wordmark {
   .slide-aside .fig svg {
     max-height: 22vh;
   }
+}
+
+/*
+ * The section's opening statement: large serif, flush left, held to about seven columns.
+ *
+ * This is the reference's "one oversized serif statement per section" — distinct from `.statement`
+ * above, which is a whole screen. It replaces the old `.prose > p:first-of-type` lede: that rule
+ * made the first paragraph of every block a lede whether or not it opened anything, and it was
+ * still trapped in a 62rem column.
+ */
+.statement-lead {
+  display: block;
+  /* The reference holds its opening statement to about 70% of the container — not a grid item,
+     so a span would do nothing here. Measured: it was running the full 1354px. */
+  max-width: 70%;
+  font-family: var(--serif);
+  font-size: clamp(1.5rem, 3.4vw, 2.75rem);
+  line-height: 1.15;
+  color: var(--white);
+  margin: clamp(2rem, 5vh, 3.5rem) 0 0;
+}
+
+/* The step: down, and inward. The second block of a staircase never starts where the first did. */
+.step {
+  margin-top: clamp(2.5rem, 6vh, 4rem);
+}
+
+.prose-body {
+  font-family: var(--serif);
+  /* Held to the reference's ratio against `.statement-lead` — roughly 1.6:1, not 2.3:1. A body
+     that small under a lead that large reads as a caption rather than as the paragraph. */
+  font-size: clamp(1.125rem, 1.95vw, 1.75rem);
+  line-height: 1.4;
+  color: var(--g-80);
+  margin: 0;
 }

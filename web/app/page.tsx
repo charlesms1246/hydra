@@ -30,30 +30,43 @@ export default function Home() {
       <Nav current="home" />
 
       <main className="page">
+        {/*
+          ⛔ The wordmark, and nothing else. Do not add a sentence, a button or an eyebrow.
+
+          `SITE.tagline` used to sit under it. The reference's hero is one word over the field,
+          and its own note says why: a value proposition and two calls to action underneath make
+          this an ordinary SaaS landing page and throw away the thing worth copying. The page
+          opens on a held breath; the first content arrives when you scroll.
+
+          The tagline is not deleted — it still serves `<title>` and the meta description in
+          `layout.tsx`, which is where a one-sentence summary of a site actually does work. It is
+          removed from the page, not from the site.
+        */}
         <header className="hero">
           <h1 className="wordmark">{SITE.name.toUpperCase()}</h1>
-          <p className="tagline">{SITE.tagline}</p>
         </header>
 
+        {/*
+          The staircase, which is the reference's content flow and not a two-column grid.
+
+          The opening statement runs flush left at seven columns. The next block drops down AND
+          inward: a right-aligned label in columns 1–3 sitting immediately off the paragraph's
+          left edge, the paragraph itself running 4–12 out to the right margin. The two blocks
+          overlap horizontally without sharing a column edge, so the eye steps diagonally down
+          the page — the same movement the write-on performs.
+
+          This used to be one 62rem column with both paragraphs stacked in it, which is a
+          document's layout and is why the page read as developer docs.
+
+          The write-on text crosses the server/client boundary as a STRING, not a module: this is
+          a server component, so `content.ts` and `MEASURED` behind it stay on the build machine.
+        */}
         <Section n="01" id="what" title="WHAT THIS IS">
-          <div className="prose">
-            {/*
-              The lede writes itself on as the reader scrolls to it — see `WriteOn.tsx`.
+          <WriteOn text={SITE.what[0]} className="statement-lead col-7" />
 
-              Only the lede. The effect is a function of scroll position, so applying it to a
-              whole section means a reader who has arrived is still waiting, and the paragraph
-              becomes an obstacle rather than an entrance. One paragraph per page, the first one,
-              is the whole budget.
-
-              The text crosses the server/client boundary as a STRING, not as a module: this is a
-              server component, so `content.ts` — and `MEASURED` behind it — stays on the build
-              machine. Passing `SITE.what[0]` here does not bundle the file it came from.
-            */}
-            <WriteOn text={SITE.what[0]} />
-            <p className="labelled">
-              <span className="prose-label">METHOD</span>
-              {SITE.what[1]}
-            </p>
+          <div className="grid-12 step">
+            <span className="col-note prose-label">METHOD</span>
+            <p className="col-9 prose-body">{SITE.what[1]}</p>
           </div>
         </Section>
 
@@ -68,6 +81,19 @@ export default function Home() {
             ))}
           </div>
         </Section>
+
+        {/*
+          The page's hinge: one oversized line, alone on a screen, where the argument turns.
+
+          The reference gives this a full viewport and nothing else, and it is what makes the
+          sections either side read as separate movements rather than as continuous scroll. The
+          line is `SITE.tagline` — which is exactly the sentence that did not belong under the
+          wordmark. It is not a summary here; it is the turn, arriving after the reader knows
+          what the product is and before they are told what to be careful about.
+        */}
+        <section className="statement" aria-hidden={false}>
+          <p>{SITE.tagline}</p>
+        </section>
 
         {/* One wide field, full-bleed, between the argument and the warning — the reference
             breaks its pages with an image at exactly this point, and a page of rules and prose
