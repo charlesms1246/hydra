@@ -429,6 +429,40 @@ test("no key material or key-derivation code reaches the exported site", () => {
     "rootSeed",
     "randomEntropy",
   ];
+
+  /*
+   * ⛔ THE POSITIVE CONTROL. Do not delete it to make a rename pass.
+   *
+   * `files.length > 0` proves this is looking at files. It proves nothing about whether the
+   * markers can match anything — **typo one, or rename it upstream, and this test passes forever
+   * while checking nothing** — and this is the only I6 check that inspects the shipped artifact
+   * rather than the import graph. So the list is run against a file that certainly contains
+   * key-derivation code, and every marker must match there.
+   *
+   * All five live in `identity/src/domains.ts` today: the module holding `POOL_DOMAIN`,
+   * `VAULT_DOMAIN` and `derive()`, which is the derivation for both keys I6 names. If one stops
+   * matching, this fails on the day the marker goes stale rather than on the day something leaks.
+   *
+   * **What this control does NOT prove, stated because the difference matters.** It shows each
+   * marker is live upstream, not that each would survive into a bundle. The client JS in `out/`
+   * is minified: the two domain strings are string literals and survive any minifier intact,
+   * while `hkdfSync`, `rootSeed` and `randomEntropy` are identifiers that may be mangled to
+   * single letters if they are ever bundled as locals. **The two literals are the load-bearing
+   * markers and the three identifiers are extra reach.** Keep at least one literal — a list of
+   * only identifiers is a check that cannot fire against a minified artifact.
+   */
+  const derivation = join(ROOT, "hydra-dapp/packages/identity/src/domains.ts");
+  assert.ok(existsSync(derivation), `${derivation} is gone — this check's control has no subject`);
+  const control = readFileSync(derivation, "utf8");
+  for (const m of markers) {
+    assert.ok(
+      control.includes(m),
+      `"${m}" no longer appears in identity/src/domains.ts. It is a marker this test scans the `
+      + "shipped site for, so it now matches nothing and this test has stopped being a test. "
+      + "Find what it was renamed to and update it; do not drop it",
+    );
+  }
+
   for (const f of files) {
     const body = readFileSync(f, "utf8");
     for (const m of markers) {
