@@ -20,6 +20,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { fixtureNode, FIXTURE_DEPLOYED_AT } from "../src/fixture-node.ts";
+import { loopbackOnly } from "../src/hermetic.ts";
 
 import { DENIABLE } from "../../claims/src/warnings.ts";
 import { decode } from "../../tui/src/keys.ts";
@@ -35,6 +37,17 @@ import { Vault } from "../../vault-server/src/server.ts";
 import { serve } from "../../vault-server/src/http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
+
+/**
+ * ONE RPC FIXTURE FOR THE FILE, because the setup page has an `rpc` field and it has a default.
+ *
+ * The default is the devnet's port, nothing listens on it during a test run, and `ensureFromBlock`
+ * now calls it at three points in the effect path. `unref` so an open socket cannot be the reason
+ * the runner does not exit — a fixture that holds the process open turns a passing suite into a
+ * hang, which is a worse failure than the one it was fixing.
+ */
+const NODE = await fixtureNode();
+NODE.server.unref();
 
 const BLOCK = 30_000;
 const T0 = 1_800_000_000_000;
@@ -53,7 +66,12 @@ function harness(url: string, invites: string[], chain = memoryChain()) {
     },
     writeFile: (p, text) => { files.set(p, text); },
     chain: () => chain,
-    fetchImpl: fetch,
+    // A REAL FETCH, AT FIXTURES THIS FILE STARTED. The vault is a real socket on purpose, and
+    // since `ensureFromBlock` joined the effect path the chain RPC is one too — see `NODE`. The
+    // wrapper is what makes "this file's fixtures" checkable rather than intended: it costs
+    // nothing here and refuses anything off this machine. See `hermetic.ts` for what it does NOT
+    // do, which is where the last version of this comment was wrong.
+    fetchImpl: loopbackOnly(),
     now: () => now,
   };
   return { deps, files, chain, invites, url, at: (t: number) => { now = t; } };
@@ -95,13 +113,31 @@ async function vault(n = 400) {
 async function created(h: ReturnType<typeof harness>, extra: Partial<Record<string, string>> = {}): Promise<Model> {
   let m = start(null, T0);
   assert.equal(m.page, "setup");
-  m = { ...m, fields: { ...m.fields, vault: h.url, contract: "0x1", invites: h.invites.join(","), ...extra } };
+  m = { ...m, fields: { ...m.fields, vault: h.url, rpc: NODE.url, contract: "0x1", invites: h.invites.join(","), ...extra } };
   m = await step(m, h.deps, { t: "key", key: { t: "enter" } });
   assert.equal(m.page, "chats", "creating an identity did not leave the first-run page");
   return { ...m, state: { ...m.state!, blockMs: BLOCK } };
 }
 
 // ---------------------------------------------------------------------------
+
+test("A TUI-CREATED IDENTITY STARTS AT THE DEPLOYMENT BLOCK, not at 0", async () => {
+  // The behavioural half of `front-end-parity.test.ts`. That file asserts against source text,
+  // because the original failure was a call nobody wrote and no behavioural test can assert the
+  // absence of an omission it does not know about. This one asserts the consequence now that the
+  // omission is named: drive the setup page, and read what the state file came out saying.
+  //
+  // It is also what makes `NODE` a fixture rather than a way of being fast. An address that
+  // merely failed quickly would leave this unwriteable.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    const m = await created(h);
+    assert.equal(m.state!.fromBlock, FIXTURE_DEPLOYED_AT,
+      "an identity created through the resident client reads from block 0, so every read scans "
+      + "the whole chain — 178 RPC round trips and about 108 seconds against a real one");
+  } finally { server.close(); }
+});
 
 test("every page renders inside its terminal, at a width where it does not fit", async () => {
   const { url, server, invites } = await vault();
