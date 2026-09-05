@@ -17,7 +17,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { Reports } from "../../moderation/src/reports.ts";
-import { report } from "../../moderation/src/transparency.ts";
+import { report, commitmentNote } from "../../moderation/src/transparency.ts";
 
 const SEP = Date.UTC(2026, 8, 15);
 const OCT = Date.UTC(2026, 9, 15);
@@ -116,4 +116,32 @@ test("the store survives a restart with its published periods intact", () => {
   const old = Reports.restore(v1 as never);
   assert.deepEqual(old.published(), []);
   assert.equal(old.expire(Date.UTC(2031, 0, 1)), 0);
+});
+
+test("THE REPORT TELLS AN OPERATOR WHO ASKED FOR A COMMITMENT APART FROM ONE WHO DID NOT", () => {
+  // The bug: `--vault URL` given, the vault unreachable, and the report answered "run with
+  // `--vault URL`". An operator reads that and checks their command line instead of their vault,
+  // and the two facts it conflates are not equivalent — only one of them is a reason to stop and
+  // republish before the period is treated as attested.
+  const got = commitmentNote("0xroot", true);
+  assert.match(got, /0xroot/);
+  assert.match(got, /auditable rather than self-reported/,
+    "a report WITH a commitment does not say what the commitment buys");
+
+  const failed = commitmentNote("", true, "fetch failed");
+  assert.match(failed, /REQUESTED AND NOT OBTAINED/);
+  assert.match(failed, /fetch failed/, "the reason the vault gave is dropped, so the operator "
+    + "cannot tell a wrong URL from a vault that is down");
+  assert.ok(!/run with `--vault URL`/.test(failed),
+    "the report tells an operator who passed --vault to pass --vault, which sends them to check "
+    + "the one thing that was not wrong");
+
+  const never = commitmentNote("", false);
+  assert.match(never, /run with `--vault URL`/);
+  assert.ok(!/NOT OBTAINED/.test(never),
+    "an operator who never asked is told their vault failed, which is a fault report about a "
+    + "request nobody made");
+
+  // The three are distinguishable, which is the whole property.
+  assert.equal(new Set([got, failed, never]).size, 3);
 });

@@ -26,10 +26,10 @@ import { dirname } from "node:path";
 import { Reports, summarise, type Snapshot, type Decision, type Review }
   from "../../moderation/src/reports.ts";
 import { appealDigest, type Appeal } from "../../moderation/src/appeals.ts";
-import { report as transparencyReport, type Period } from "../../moderation/src/transparency.ts";
+import { report as transparencyReport, commitmentNote, type Period } from "../../moderation/src/transparency.ts";
 
 export type { Decision, Review, Period, Appeal };
-export { summarise, transparencyReport, appealDigest, Reports };
+export { summarise, transparencyReport, commitmentNote, appealDigest, Reports };
 export { compelledAuthorityFromFile } from "../../vault-server/src/compelled.ts";
 export type { CompelledRemoval } from "../../vault-server/src/compelled.ts";
 

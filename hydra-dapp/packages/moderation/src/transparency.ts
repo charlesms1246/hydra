@@ -245,3 +245,43 @@ export function report(
     ],
   };
 }
+
+/**
+ * The paragraph about the corpus commitment, and the three states it can be in.
+ *
+ * **THERE WERE TWO STATES AND THREE CASES.** The report printed either the root, or *"NO CORPUS
+ * COMMITMENT WAS PUBLISHED with this report — run with `--vault URL`"*. That second sentence is
+ * right for an operator who did not ask and wrong for one who did: the flag was given, the vault
+ * did not answer, and the report told them to do the thing they had just done. An operator reading
+ * it goes and checks their command line rather than their vault.
+ *
+ * **THE DISTINCTION IS NOT COSMETIC.** *"I did not ask for a commitment"* and *"I asked and could
+ * not get one"* are different facts about the same report, and only the second is a reason to
+ * stop and republish. Collapsing them means a vault that was down during the monthly report
+ * produces a self-reported list that looks exactly like a deliberate choice not to commit — which
+ * is the shape `decisions/0039` exists to prevent, one level up.
+ *
+ * A FUNCTION HERE RATHER THAN A BRANCH IN `main.ts`, because `main.ts` runs on import and cannot
+ * be driven from a test. The wording of the thing that says a report is unverifiable should not be
+ * the part of this pipeline with no coverage.
+ */
+export function commitmentNote(root: string, asked: boolean, failure = ""): string {
+  if (root) {
+    return `Public corpus commitment for this period:\n  ${root}\n\n`
+      + "Every public object this vault held is in the tree behind that root, padded to a fixed\n"
+      + "size so it discloses no count. Ask the vault for a proof of any id you hold: an id in\n"
+      + "last period's root and absent from this one was removed, and you can check that without\n"
+      + "our cooperation. That is what makes the list above auditable rather than self-reported.";
+  }
+  if (asked) {
+    return "A CORPUS COMMITMENT WAS REQUESTED AND NOT OBTAINED — the vault did not answer"
+      + (failure ? ` (${failure})` : "") + ".\n"
+      + "This is NOT the same as publishing without one on purpose. The removals listed above are\n"
+      + "self-reported for this period: you can check that an id is absent, not that it was ever\n"
+      + "here. Fix the vault and generate this report again before publishing it — the period is\n"
+      + "already recorded as published, so regenerating is the remedy and re-deciding is not.";
+  }
+  return "NO CORPUS COMMITMENT WAS PUBLISHED with this report — run with `--vault URL`. Without it\n"
+    + "the removals listed above are self-reported: you can check that an id is absent, not\n"
+    + "that it was ever here, and a silent drop looks like nothing at all.";
+}
