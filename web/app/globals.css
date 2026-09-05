@@ -2088,6 +2088,17 @@ html[data-build="public"] .wordmark {
 @media (min-width: 64rem) {
   .deck-rail { display: flex; }
   .deck-count { display: block; }
+
+  /*
+   * ⛔ The rail is fixed over the slide, so the slide has to leave room for it.
+   *
+   * Without this a full-width figure runs under the rail and the active slide's label prints on
+   * top of the drawing — caught in a screenshot with `IN PRACTICE` sitting across the STRANGERS
+   * box. The rail only exists at this width, so the reserve only exists here too.
+   */
+  .slide {
+    padding-right: 9rem;
+  }
 }
 
 /*
@@ -2558,5 +2569,36 @@ html[data-build="public"] .wordmark {
 
   .why.two {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/*
+ * The reveal — see `components/Reveal.tsx`. One motion for figures and boxes, where there were
+ * three different ones and no rule about which applied where.
+ *
+ * ⛔ The DEFAULT is revealed. `.is-hidden` is added by the script and removed on arrival, so a
+ * reader with no JavaScript sees every figure rather than none. Same contract as `.write-on-ch`
+ * and `.panel-art span`: the flourish is the animation, the content is not.
+ */
+.reveal {
+  transition: opacity 620ms ease-out, transform 620ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.reveal.is-hidden {
+  opacity: 0;
+  transform: translateY(1.25rem);
+}
+
+.reveal.is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal.is-hidden {
+    opacity: 1;
+    transform: none;
+    transition: none;
   }
 }

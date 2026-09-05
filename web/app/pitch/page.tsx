@@ -3,7 +3,10 @@ import type { Metadata } from "next";
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
 import { Deck, Slide } from "../../components/Deck.tsx";
-import { Auditor } from "../../components/Auditor.tsx";
+import { Reveal } from "../../components/Reveal.tsx";
+import { Verbs } from "../../components/viz/Verbs.tsx";
+import { Halves } from "../../components/viz/Halves.tsx";
+import { DisclosureMap } from "../../components/viz/DisclosureMap.tsx";
 import { MessagePath } from "../../components/viz/MessagePath.tsx";
 import { AnonymitySet } from "../../components/viz/AnonymitySet.tsx";
 
@@ -48,8 +51,8 @@ const LABELS = [
   "WHAT IT IS",
   "THE PROBLEM",
   "IN PRACTICE",
-  "WHO CAN SEE YOU",
-  "THE COMPARISON",
+  "THE DEFENCE",
+  "THE METHOD",
   "THE ARGUMENT",
 ] as const;
 
@@ -60,45 +63,51 @@ export default function Pitch() {
       <Nav current="pitch" />
 
       <Deck labels={LABELS}>
-        <Slide n="01" label={LABELS[0]} aside={<MessagePath />}>
+        <Slide n="01" label={LABELS[0]} aside={<Reveal><MessagePath /></Reveal>}>
           <h2>{p.whatItIs.title}</h2>
           <p>{p.whatItIs.body[0]}</p>
         </Slide>
 
-        <Slide n="02" label={LABELS[1]}>
+        <Slide n="02" label={LABELS[1]} aside={<Reveal><Halves /></Reveal>}>
           <h2>{p.problem.title}</h2>
+          {/* One paragraph. The second is the chain-permanence argument and it is carried by the
+              figure beside this — a drawing of proportion says it without four more sentences. */}
           <p>{p.problem.body[0]}</p>
-          <p>{p.problem.body[1]}</p>
         </Slide>
 
         {/* The verb table, and the only place on the site it is explained. See `content.ts`. */}
-        <Slide n="03" label={LABELS[2]}>
+        <Slide n="03" label={LABELS[2]} aside={<Reveal><Verbs /></Reveal>}>
           <h2>{p.whatYouDo.title}</h2>
           <p>{p.whatYouDo.body[0]}</p>
           <p>{p.whatYouDo.body[1]}</p>
         </Slide>
 
         {/*
-          Generated. The mechanism paragraph is folded in as the setup rather than getting a slide
-          of its own before anyone knows what the product is.
+          ⛔ The generated auditor block moved OFF this slide to `/about/disclosure/`.
+
+          Every disclosure now lives on one page and is named nowhere else, by instruction. The
+          rule it has to respect is standing rule 5 — the auditor line appears in every disclosure
+          statement, always, and never as a footnote — and it still does, on the page that IS the
+          disclosure. What this slide keeps is the mechanism, which is a description of what the
+          system does rather than a claim about what a reader gets.
         */}
-        <Slide n="04" label={LABELS[3]} aside={<Auditor />}>
-          <h2>Who can see you talking</h2>
+        <Slide n="04" label={LABELS[3]} aside={<Reveal><AnonymitySet /></Reveal>}>
+          <h2>What the system does about it</h2>
           <p>{p.mechanism.body[0]}</p>
         </Slide>
 
         {/*
-          The measured identification rates sit beside the concession, not beside the close.
+          ⛔ This slide replaced the Signal comparison, which was the deck's one negative.
 
-          They were on slide 06 and made it five blocks deep — the only slide with more than
-          four — which is what pushed `pitch.lede` and the link out below the fold. They belong
-          here on their own merits: this is the slide that concedes, and a drawing of how often a
-          message IS identified is the same argument the paragraph is making.
+          That comparison is not deleted — it is a disclosure, and every disclosure is on
+          `/about/disclosure/` now and named nowhere else. What stands here instead is the thing
+          the deck is actually for: **the method is the differentiator, and the deck's job is to
+          make a reader want to go and check it.** The figure is the shape of the disclosure — how
+          many things each party can and cannot see — which is an invitation rather than a claim.
         */}
-        <Slide n="05" label={LABELS[4]} aside={<AnonymitySet />}>
-          <h2>{p.worseAt.title}</h2>
-          <p>{p.worseAt.body[0]}</p>
-          <p>{p.worseAt.body[1]}</p>
+        <Slide n="05" label={LABELS[4]} aside={<Reveal><DisclosureMap /></Reveal>}>
+          <h2>Every line of it is generated</h2>
+          <p>{SITE.why[1].body}</p>
         </Slide>
 
         {/* The close, and deliberately the thinnest slide in the deck: the argument, the line
