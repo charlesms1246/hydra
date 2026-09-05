@@ -20,6 +20,7 @@ import {
   fingerprint, nextOneTime, encodeWire, decodeWire, foreignSends, forget,
   myRecord, anchorPeer, recordFelts, ensureFromBlock,
 } from "../../cli/src/commands.ts";
+import { resolve } from "node:path";
 import type { State } from "../../cli/src/state.ts";
 import type { Chain } from "../../cli/src/chain.ts";
 import type { Effect, Event } from "./app.ts";
@@ -64,8 +65,12 @@ function describeFailure(e: unknown, state: State | null): string {
   const message = e instanceof Error ? e.message : String(e);
   if (message !== "fetch failed") return message;
   const code = (e as { cause?: { code?: string } }).cause?.code;
+  // NO POINTER AT STATUS HERE, unlike the block-0 warning. That one points because the sentence
+  // it needs does not fit on one row; this one NAMES THE ADDRESS, so sending the reader to a page
+  // to look up a string already in front of them would be the padding that pushes the remedy —
+  // "is it running?" — off the right edge at 80 columns. Measured: the two together are 79.
   return `${state?.vaultUrl ?? "the vault"} did not answer${code ? ` (${code})` : ""}`
-    + " — is it running? the address is on Status (6).";
+    + " — is it running?";
 }
 
 export async function perform(effect: Effect, state: State | null, deps: Deps): Promise<Event> {
@@ -225,11 +230,17 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
     case "export": {
       const index = nextOneTime(state);
       deps.writeFile(effect.path, encodeWire(publishBundle(state, index)));
+      // **RESOLVED, BECAUSE `wrote bundle.json` DOES NOT SAY WHERE.** The field's default is a
+      // bare relative name, so the file lands in whatever directory the program was started from
+      // — and the same line tells the user to go and give that file to somebody. Driving this
+      // through a pty from a checkout put a stray `bundle.json` in the repository, which is how
+      // it was noticed. A path the reader can act on costs the same number of rows.
+      const where = resolve(effect.path);
       return {
         t: "ok", state,
         text: index === undefined
-          ? `wrote ${effect.path} — WITH NO ONE-TIME PREKEY, so it has no replay resistance; press R`
-          : `wrote ${effect.path} — give it to whoever wants to reach you`,
+          ? `wrote ${where} — WITH NO ONE-TIME PREKEY, so it has no replay resistance; press R`
+          : `wrote ${where} — give it to whoever wants to reach you`,
       };
     }
     case "record": {

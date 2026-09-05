@@ -123,6 +123,24 @@ async function created(h: ReturnType<typeof harness>, extra: Partial<Record<stri
 
 // ---------------------------------------------------------------------------
 
+test("EXPORT SAYS WHERE THE FILE WENT, not just what it was called", async () => {
+  // `wrote bundle.json — give it to whoever wants to reach you`: the same sentence tells a user to
+  // go and hand over a file and does not say which directory it is in. The field's default is a
+  // bare relative name, so it lands wherever the program was started. Driving this through a pty
+  // from the checkout put a stray `bundle.json` in the repository, which is how it was found.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    const m = await created(h);
+    const ev = await perform({ t: "export", path: "bundle.json" }, m.state!, h.deps);
+    const said = (ev as { text?: string }).text ?? "";
+    assert.match(said, /^wrote \//,
+      `the export names a relative path, so the user is told to hand over a file and not where `
+      + `it is:\n  ${said}`);
+    assert.ok(h.files.has("bundle.json"), "the file was written somewhere else than it says");
+  } finally { server.close(); }
+});
+
 test("`fetch failed` IS NOT AN ERROR MESSAGE — name the host and what to do", async () => {
   // Driving the real interface through a pty with nothing else running — a first-time user's
   // machine — pressing `c` on Connect waited ten seconds and logged exactly "fetch failed". No
@@ -147,6 +165,11 @@ test("`fetch failed` IS NOT AN ERROR MESSAGE — name the host and what to do", 
     assert.match(said, /ECONNREFUSED/, "the cause is dropped, and it is the only part that "
       + "distinguishes refused from timed out from unresolvable");
     assert.match(said, /running/, "the message names no remedy");
+    const shown = text({ ...m, log: [{ text: said, tone: "warn", at: T0 }] } as any,
+      { rows: 24, cols: 80 });
+    assert.ok(shown.includes("is it running?"),
+      `at 80 columns — the default xterm, the default docker exec — the remedy is truncated off `
+      + `the end and the user is left with a host and a code:\n  ${said}`);
   } finally { server.close(); }
 });
 
