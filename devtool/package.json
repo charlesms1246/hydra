@@ -29,7 +29,7 @@
     "!packages/*/node_modules"
   ],
   "scripts": {
-    "test": "node scripts/test-preflight.mjs && for t in packages/cli/test/guards.mjs packages/cli/test/up.mjs packages/core/test/blocks.mjs packages/core/test/flows.mjs packages/leak/test/run.mjs packages/linter/test/run.mjs packages/mcp/test/run.mjs packages/tui/test/render.mjs; do if [ -f \"$t\" ]; then echo \"--- $t\"; node \"$t\" || exit 1; fi; done",
+    "test": "node scripts/test-preflight.mjs && for t in packages/cli/test/guards.mjs packages/cli/test/up.mjs packages/core/test/blocks.mjs packages/core/test/flows.mjs packages/leak/test/run.mjs packages/linter/test/run.mjs packages/mcp/test/run.mjs packages/tui/test/fakes.mjs packages/tui/test/render.mjs; do if [ -f \"$t\" ]; then echo \"--- $t\"; node \"$t\" || exit 1; fi; done",
     "prepack": "cp ../README.md ../LICENSE .",
     "postpack": "rm -f README.md LICENSE"
   }

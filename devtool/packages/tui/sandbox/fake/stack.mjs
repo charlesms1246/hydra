@@ -19,12 +19,32 @@ const BOOT = [
   "  STACK UP — nothing here is hosted.",
 ];
 
+/** Devnet fixes its account set at spawn, so a restart is the only way to get more. */
+function grow(w, want) {
+  while (w.accounts.length < want) {
+    const i = w.accounts.length;
+    const address = `0x${(0xacc0 + i).toString(16)}`;
+    w.accounts.push({ name: `account-${i}`, address });
+    w.balances[address] = Object.fromEntries(Object.values(w.tokens).map((t) => [t, 0n]));
+  }
+}
+
 export async function isRunning() {
   return world().running;
 }
 
-export function startStack(onLine = () => {}) {
+/**
+ * `env` is honoured, not merely accepted.
+ *
+ * It was previously not even in the signature, so `app.mjs:711` — the wallets page's `+`,
+ * which restarts with one more devnet account — passed `{ HYDRA_ACCOUNTS: n }` into a double
+ * that dropped it, and the sandbox reported success for a restart that changed nothing. A
+ * fake that cannot disagree with the code cannot test it. `packages/tui/test/fakes.mjs` now
+ * compares this signature against the real one so the next drift fails instead of passing.
+ */
+export function startStack(onLine = () => {}, env = {}) {
   const w = world();
+  const want = Number(env.HYDRA_ACCOUNTS);
   const child = new EventEmitter();
   child.exitCode = null;
   child.signalCode = null;
@@ -34,6 +54,7 @@ export function startStack(onLine = () => {}) {
   const timer = setInterval(() => {
     if (i < BOOT.length) return onLine(BOOT[i++]);
     clearInterval(timer);
+    if (Number.isInteger(want) && want > w.accounts.length) grow(w, want);
     w.running = true;
     w.headAgeSecs = 0;
     w.note("stack up (sandbox)");
