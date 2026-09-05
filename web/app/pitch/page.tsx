@@ -70,7 +70,7 @@ export default function Pitch() {
             <div className="panel-note">
               <h3>What everyone sees</h3>
               <p>
-                A pointer, and the account that published it. Permanent, public, and readable by
+                A pointer, and the account that wrote it. Permanent, public, and readable by
                 anyone who has not yet thought of a reason to look.
               </p>
             </div>

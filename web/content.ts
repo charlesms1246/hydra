@@ -119,7 +119,14 @@ export const SITE = {
     "One client per identity. Two copies of the same key file mint identical cover traffic, "
     + "which is how a storage server tells cover from messages. The client detects the common "
     + "case and says so; it cannot prevent it.",
-    "The chain shows that you published a message and in what order. The timing defence hides "
+    /*
+     * ⛔ "sent", not "published". `publish` is a verb this product owns and it does not mean
+     * this: `send` is deniable, `publish` is a SIGNED message still private to one conversation,
+     * and `post` is the public one. `cli.ts:448` records that this exact collision is why the
+     * public feature shipped with no client path and nobody noticed. A disclosure that borrows
+     * the wrong verb re-creates that bug in the one place a reader is trusting the words.
+     */
+    "The chain shows that you sent a message and in what order. The timing defence hides "
     + "which stored object holds the text; it does not hide that you sent one.",
     "The pool's auditor holds an escrowed viewing key you did not choose and cannot replace. "
     + "It opens the pool, not your messages — see the composition finding in the repository.",
@@ -149,7 +156,7 @@ export const SITE = {
     "A company. There is no legal entity behind this, which is why you will find no address, no "
     + "contact, no terms and no warrant canary — a canary published by nobody, on behalf of "
     + "nothing, would be theatre. The licence holder is a placeholder on purpose.",
-    "That publishing is easy. Making a message readable by strangers is an act you carry out "
+    "That posting is easy. Making a message readable by strangers is an act you carry out "
     + "deliberately, one message at a time, and it permanently joins your messaging identity to "
     + "a Starknet address. It is never a mode you switch on and forget.",
   ],
