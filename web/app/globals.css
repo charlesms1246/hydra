@@ -1398,3 +1398,54 @@ html[data-build="public"] .wordmark {
 .claim-band {
   margin: 0;
 }
+
+/* --------------------------------------------------------------------------------------------
+ * The footer's edge text and mark.
+ *
+ * The reference runs a rotated copyright up the right edge and sets a small ASCII device in the
+ * middle. There is no legal entity here to assert a copyright, so that slot carries the commit the
+ * page was built from instead — a copyright claims ownership; this offers a way to check. See
+ * `scripts/provenance.ts`.
+ * ------------------------------------------------------------------------------------------ */
+
+.footer-edge {
+  position: absolute;
+  top: clamp(2rem, 6vh, 5rem);
+  right: clamp(0.75rem, 1.5vw, 1.5rem);
+  writing-mode: vertical-rl;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.22em;
+  color: var(--g-32);
+  user-select: all;
+}
+
+/*
+ * The mark. A printer's device, not a logo — so it is small, faint, and carries none of the
+ * panel chrome the same component wears when it is page content.
+ */
+.footer-mark {
+  /*
+   * Wide enough that the field is not cropped.
+   *
+   * `.panel-art` floors its glyph size at 6px, and below the floor `overflow: hidden` crops the
+   * drawing instead of shrinking it — right for a full-bleed field on a phone, wrong for a
+   * centred mark, which would lose its right-hand side and read as a rendering fault. Sixty-four
+   * columns need 64 x 0.6 x 6px = 230px before the floor bites, so the minimum is 15rem.
+   */
+  width: clamp(15rem, 24vw, 20rem);
+  margin: clamp(3rem, 8vh, 5rem) auto clamp(1rem, 3vh, 2rem);
+  opacity: 0.5;
+}
+
+.footer-mark .panel {
+  background: none;
+  border: none;
+}
+
+@media (max-width: 48rem) {
+  /* The edge text sits where the content does at this width, and it is an ornament. */
+  .footer-edge {
+    display: none;
+  }
+}

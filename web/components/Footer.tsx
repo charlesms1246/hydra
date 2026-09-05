@@ -1,4 +1,6 @@
 import { SITE } from "../content.ts";
+import { provenance } from "../scripts/provenance.ts";
+import { AsciiPanel } from "./viz/AsciiPanel.tsx";
 
 /**
  * The footer.
@@ -12,12 +14,24 @@ import { SITE } from "../content.ts";
 export function Footer() {
   return (
     <footer className="footer">
+      {/* Where the reference puts a copyright. There is no entity to assert one, and a project
+          arguing that its claims are checkable has something better for that slot: the commit this
+          page was built from. See `scripts/provenance.ts`. */}
+      {provenance() && (
+        <span className="footer-edge" aria-hidden>
+          {provenance()}
+        </span>
+      )}
       <div className="footer-cols">
         <div className="footer-col">
           <h2>Read</h2>
           <ul>
             <li><a href="/">Home</a></li>
-            <li><a href="/disclosures/">Disclosures</a></li>
+            <li><a href="/pitch/">Why this exists</a></li>
+            <li><a href="/demo/">See it run</a></li>
+            <li><a href="/install/">Run it</a></li>
+            <li><a href="/about/">About</a></li>
+            <li><a href="/about/disclosure/">Disclosures</a></li>
           </ul>
         </div>
         <div className="footer-col">
@@ -30,6 +44,12 @@ export function Footer() {
             ))}
           </ul>
         </div>
+      </div>
+
+      {/* The reference sets an ASCII mark in the middle of its footer. This is the same drawing
+          the rest of the site uses, small and faint — a printer's device rather than a logo. */}
+      <div className="footer-mark" aria-hidden>
+        <AsciiPanel cols={64} rows={26} blur={2.2} gain={1.1} />
       </div>
 
       <div className="footer-note">
