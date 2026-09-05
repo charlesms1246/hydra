@@ -27,8 +27,19 @@ export type Chain = {
    * the disclosure table is about exactly that join, so a client that wants to tell a user how
    * linkable sending is right now starts here. See `decisions/0029`.
    *
-   * Both are optional because `memoryChain` has neither a block nor a transaction, and inventing
-   * plausible values for a test double is how a harness ends up measuring itself.
+   * BOTH ARE OPTIONAL, AND THE REASON IS THE REVERSE OF THE ONE THAT USED TO BE WRITTEN HERE.
+   *
+   * This said they were optional *"because `memoryChain` has neither a block nor a transaction,
+   * and inventing plausible values for a test double is how a harness ends up measuring itself."*
+   * That argument lost. `memoryChain` now invents both on purpose — `FIRST_BLOCK`, large and
+   * sparse — precisely because a fixture that omitted them agreed with a client computing
+   * `blockNumber * blockMs`, so the crowd was always empty and the emptiness read as honest.
+   * NOT inventing them was how the harness ended up measuring itself.
+   *
+   * What keeps them optional is the node rather than the fixture: the `starknet_getEvents` reader
+   * below declares `block_number` and `transaction_hash` optional because the client does not
+   * control whether a node fills them, and `commands.ts` filters `undefined` out rather than
+   * trusting the field.
    */
   events(): Promise<{
     readonly data: readonly bigint[];
