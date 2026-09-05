@@ -1,18 +1,22 @@
 # The marketing site's gates. This builds and checks; the host deploys.
 #
-# ⛔ THIS BUILDS `build:public`, NEVER `build`, AND THE DIFFERENCE IS A LICENSING ONE.
+# ⛔ THIS BUILDS `build`, NOT `build:public`, BY A LICENSING DECISION MADE ON 2026-09-05.
 #
-# `next build` copies everything in `public/` into `out/`. On a machine that has them — which is
-# any developer's machine — that includes `NON-Natural-Grotesk-Regular.woff2`, licensed for
-# personal use, and `hydra.svg`, a third party's trademark. **Publishing `out/` redistributes both
-# exactly as committing them would, and the build SUCCEEDS while doing it.** The page looks
-# correct either way; nothing fails, nothing warns.
+# `next build` copies everything in `public/` into `out/`, which includes
+# `NON-Natural-Grotesk-Regular.woff2` (licensed to the author for personal use) and `hydra.svg`
+# (Marvel's HYDRA insignia — a third party's trademark). Publishing `out/` redistributes both, and
+# **the build succeeds while doing it**: the page looks correct either way, nothing fails, nothing
+# warns. `build:public` exists to substitute a fallback face and a plain glyph so a published site
+# carries neither.
 #
-# `build:public` substitutes the wordmark face with Geist and the mark with `>|<`, and its
-# preflight refuses to run at all if either restricted file is present. Those files are gitignored,
-# so a CI checkout does not have them — which makes CI the natural place for this build and is why
-# the workflow can assert rather than hope.
+# The user was told this and decided to ship the real ones anyway — *"will replace once
+# commissioned work returns, currently we need it to verify the UI/UX"*. It is their project and
+# their exposure. **This is a held position, not an oversight.**
 #
+# ⛔ Nothing here was deleted; the two guards INVERTED. The checkout step below now fails when the
+# assets are MISSING, and `assert-public.ts` runs in `HYDRA_ASSETS=restricted` and asserts they
+# reached `out/`. A build that quietly substitutes is still a failure — it is just the other
+# direction. Reverting is listed in one place, at the top of `.gitignore`.
 #
 # This comment lives here as well as in `web/README.md` because the workflow is what somebody edits
 # when a build fails, and `npm run build` is the obvious thing to reach for.
@@ -25,8 +29,8 @@
 #
 # So the same assertions run in two places, deliberately. Here, on every pull request and push, so
 # a defect is caught with a red check rather than a live page. And in `vercel.json`'s build
-# command, so a deploy that never passed through this workflow still cannot ship a restricted
-# asset. `scripts/assert-public.ts` is the single implementation both call.
+# command, so a deploy that never passed through this workflow still cannot ship the wrong
+# artefact. `scripts/assert-public.ts` is the single implementation both call.
 #
 # The one gate that runs HERE ONLY is `check:figures`, because it needs a browser and the host's
 # build container is not guaranteed to have one. That is a division of labour, not a skip: it
@@ -70,7 +74,7 @@ jobs:
       # what it captured is not recognisably the command list** — a demo of a command surface that
       # might not be the real one is worse than no demo. In a clean checkout the dapp's packages
       # have no `node_modules`, so the capture dies on `Cannot find package '@scure/starknet'`, the
-      # guard fires exactly as designed, and `build:public` exits 1.
+      # guard fires exactly as designed, and the build exits 1.
       #
       # Found by running this whole workflow by hand against a fresh clone before it had ever run
       # on a runner. It has nothing to do with the figure gate; it would have failed the first
@@ -101,13 +105,22 @@ jobs:
           echo "::error::must not be skipped. Add a setup step that installs one, or set CHROME_PATH."
           exit 1
 
-      # The restricted assets are gitignored, so a clean checkout must not have them. If one is
-      # present the checkout is not clean, and a public build is not safe to make from it.
-      - name: Refuse to build from a checkout carrying restricted assets
+      # ⛔ THIS STEP INVERTED WITH THE ASSETS, 2026-09-05. It did not stop guarding anything.
+      #
+      # It used to refuse a checkout that CARRIED the restricted assets, because they were
+      # gitignored and their presence meant the checkout was not clean. They are committed now by
+      # the user's decision — see the block at the top of `.gitignore` — so their presence is
+      # expected and their ABSENCE is the failure: a build without them succeeds while quietly
+      # substituting a fallback face and a plain glyph, and the page looks nearly right.
+      #
+      # Kept as a step of its own rather than folded into `assert-public.ts`, because this fails in
+      # thirty seconds on the checkout while that one can only fail after a full build.
+      - name: Refuse to build from a checkout missing the assets it is meant to ship
         run: |
           for f in public/fonts/NON-Natural-Grotesk-Regular.woff2 public/hydra.svg app/icon.svg; do
-            if [ -e "$f" ]; then
-              echo "::error::$f is present in a CI checkout. It is gitignored and must not be here."
+            if [ ! -e "$f" ]; then
+              echo "::error::$f is missing from this checkout. It is committed and expected; a"
+              echo "::error::build without it substitutes a fallback and succeeds. See .gitignore."
               exit 1
             fi
           done
@@ -118,7 +131,7 @@ jobs:
       # are none".
       - run: npm run typecheck
 
-      - run: npm run build:public
+      - run: npm run build
 
       # ⛔ ASSERT THE MODE, because a workflow that silently falls back to `build` is the exposure
       # with an automation in front of it. Shared with the host's build command — see the header.
@@ -126,8 +139,6 @@ jobs:
 
       # The tests read the built artefact, so they run against exactly what is about to ship.
       - run: node --test test/*.test.ts
-        env:
-          HYDRA_PUBLIC: "1"
 
       # ⛔ MEASURE THE PAGE, because everything above this line reads it.
       #

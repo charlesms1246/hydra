@@ -85,7 +85,26 @@ you test has to be the thing a reader gets. Note also that neither `hydra-dapp/p
 `devtool` declares any dependencies — an `npm install` in either is a no-op, and the real one
 belongs in `channel`, a package the reader never stands in.
 
-## Publishing: `npm run build:public`, never `npm run build`
+## Publishing
+
+> ⛔ **POSTURE CHANGE, 2026-09-05. The site now ships the real mark and the real wordmark face.**
+>
+> The user was told that `public/hydra.svg` is Marvel's HYDRA insignia and that
+> `NON-Natural-Grotesk-Regular.woff2` is licensed for personal use, and decided: *"ship it anyway
+> (will replace once commissioned work returns, currently we need it to verify the UI/UX and the
+> rest)."* All three files are committed, `vercel.json` runs `npm run build`, and this is a held
+> position pending commissioned art rather than an oversight.
+>
+> **Nothing was deleted. Two guards inverted**, so a build that quietly substitutes is still a
+> failure — just in the other direction. `scripts/assert-public.ts` runs in
+> `HYDRA_ASSETS=restricted` and asserts the assets *reached* `out/`; the CI step now fails when
+> they are *missing* from the checkout. **The full revert is listed in one place, at the top of
+> `.gitignore`** — three changes that move together or nothing changes.
+>
+> The section below describes the protective posture, which is what `HYDRA_ASSETS=licensed` and
+> `npm run build:public` still do, unchanged and tested.
+
+### The protective posture: `npm run build:public`
 
 **The gitignore protects this repository and does nothing for the deployed artifact.** `next
 build` copies everything in `public/` into `out/`, so **publishing `out/` redistributes the
