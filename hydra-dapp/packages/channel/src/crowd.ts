@@ -152,7 +152,36 @@ export const accuracyAgainst = (crowd: number): number => 1 / (1 + crowd);
  */
 export function regularity(times: readonly number[]): number {
   const distinct = [...new Set(times)].sort((a, b) => a - b);
+  // **THIS RULE IS DOING ALL THE WORK, AND THAT IS NOT A SHORTCUT — see the note on the gate
+  // below.** Measured across 20 Sepolia and 15 mainnet windows: every prune on both chains came
+  // from this line, and the coefficient-of-variation rule underneath fired once in 276
+  // account-appearances on Sepolia and zero times in 216 on mainnet. Do not soften it on the
+  // assumption that the CV rule is the real defence. At the shipped window it is not running.
   if (times.length >= 2 && distinct.length < times.length) return 0;
+  // **AT THE SHIPPED WINDOW THIS GATE IS ALMOST NEVER PASSED, so everything below it is
+  // effectively inert. Stated because the comments above claimed a rule that cannot fire.**
+  //
+  // `commands.ts` asks for `ceil(jitterWindow / blockMs) + 1` = **9 blocks** at the defaults. Four
+  // distinct block timestamps inside nine blocks is **44% of them** — and this file's own
+  // `Pruning` note says *"most crowd members appear in under 5% of blocks"*. The population and
+  // the threshold are incompatible, and both sentences were already in this file.
+  //
+  // **A THRESHOLD CALIBRATED TO ONE SCOPE AND APPLIED TO ANOTHER.** `DEFAULT_PRUNING` calls
+  // `maxRegularity: 1` *"the measured, scale-free rule"* and *"the harsh end of what was actually
+  // measured"* — measured over a BUSY RANGE, wide enough for accounts to accumulate events. The
+  // client asks for nine blocks.
+  //
+  // **THE DIRECTION IS WHY IT IS WORTH SAYING RATHER THAN LEAVING.** Rule 2 rests on the pruned
+  // crowd being a lower bound that *"cannot tell a user they are safer than they are"*. When
+  // pruning is inert the pruned crowd IS the crowd, so the property holds trivially while
+  // delivering none of the conservatism it exists for — a mainnet user sees a crowd of about 14
+  // with essentially no automation discounted.
+  //
+  // **[U] NOT FIXED HERE, DELIBERATELY.** Widening the span is not a parameter change: `commands.ts`
+  // argues the span is what bounds what the node learns from the request shape, every client asking
+  // for the same range being the point. That trades an on-chain observability property for a
+  // crowd-quality one and needs its own argument written down. `crowd-window.test.ts` holds the two
+  // constants together so they cannot drift apart again unnoticed.
   if (distinct.length < 4) return Infinity;
   const gaps = distinct.slice(1).map((t, i) => t - distinct[i]!);
   const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;

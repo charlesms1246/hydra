@@ -19,11 +19,13 @@
  * no top-level error handler at all while the user client has had one since it existed.
  */
 
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const run = promisify(execFile);
 const MAIN = join(import.meta.dirname, "..", "..", "operator", "src", "main.ts");
@@ -38,8 +40,17 @@ async function operator(...argv: string[]): Promise<{ code: number; out: string 
   }
 }
 
-/** A queue path that does not exist, so nothing here can touch a real one. */
-const NOWHERE = ["--queue", join(import.meta.dirname, "no-such-queue.json")];
+/**
+ * A queue path in a throwaway directory.
+ *
+ * **NOT `import.meta.dirname`, which is what this was.** `report` succeeds on an empty queue and
+ * then SAVES it — recording the period as published — so a fixture named "a queue that does not
+ * exist" wrote `no-such-queue.json` into the source tree and it turned up as untracked debris in a
+ * commit. A path that does not exist yet is not a path nothing will be written to.
+ */
+const QUEUE_DIR = mkdtempSync(join(tmpdir(), "hydra-args-"));
+const NOWHERE = ["--queue", join(QUEUE_DIR, "queue.json")];
+after(() => rmSync(QUEUE_DIR, { recursive: true, force: true }));
 
 test("A PERIOD THAT IS NOT A REAL MONTH IS REFUSED, not silently rolled into another year",
   async () => {
