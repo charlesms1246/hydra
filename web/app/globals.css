@@ -103,6 +103,9 @@
   /* The page gutter, matched to the frame inset so the rules line up with the corner marks. */
   --gutter: clamp(1rem, 4vw, 4rem);
 
+  /* The measure. One column for every content block on the site — see `Section.tsx`. */
+  --measure: 62rem;
+
   /*
    * ── The type scale ──────────────────────────────────────────────────────────────────────────
    *
@@ -330,6 +333,11 @@ body.has-canvas .field {
   padding-block: clamp(5rem, 16vh, 13rem) 0;
 }
 
+.section-body {
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
 .section-head {
   position: relative;
   text-align: center;
@@ -455,8 +463,8 @@ body.has-canvas .field {
  * ------------------------------------------------------------------------------------------ */
 
 .auditor {
-  max-width: 68rem;
-  margin-inline: auto;
+  /* Was 68rem centred, which put it on a fourth left edge of its own. */
+  max-width: var(--measure);
 }
 
 /*
@@ -1310,6 +1318,13 @@ html[data-build="public"] .wordmark {
  * immediately.
  */
 .fig-map {
+  /* Sits between the page head and section 01, outside any `<Section>`, so it carries the
+     measure itself rather than inheriting `.section-body`'s. */
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
+.fig-map .fig {
   max-width: 30rem;
 }
 

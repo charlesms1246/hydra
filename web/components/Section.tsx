@@ -46,7 +46,20 @@ export function Section({
           </h2>
         </div>
       </div>
-      {children}
+      {/*
+        ⛔ The section's content sits in ONE column, and the head is the only thing that leaves it.
+
+        Measured across six pages before this existed: content blocks landed on four different
+        left edges — 0 (full bleed), 58 (the gutter), 176 (`.auditor`, centred at its own width)
+        and 224 (the measure). `.deps` was the tell: 992px wide, the same width as the prose above
+        it, and starting 166px to its left. **Two container models on one page is what a reader
+        registers as sloppiness without being able to name it.**
+
+        So blocks inside a section share `--measure` and align to its left edge, while the ruled
+        band and the full-bleed panels break out deliberately. One column, and exceptions that
+        look like exceptions.
+      */}
+      <div className="section-body">{children}</div>
     </section>
   );
 }
