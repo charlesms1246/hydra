@@ -3,14 +3,37 @@
 import { rpc } from "./probe.mjs";
 import { readState } from "./state.mjs";
 
+/**
+ * The last `n` blocks, newest first.
+ *
+ * `n` is VALIDATED rather than trusted, because the loop below reads `top - n` and a bad `n`
+ * fails silently in the worst possible way. `Number("abc")` is NaN, `Math.max(-1, NaN)` is NaN,
+ * `b > NaN` is false — zero iterations, `{ available: true, blocks: [] }`, and `hydra-dev blocks`
+ * prints the empty string and exits 0 against a healthy chain with blocks in it. An empty string
+ * is indistinguishable from a chain that has no blocks. `Number("")` is 0 and does the same, and
+ * `?? 8` does not catch an empty string, so `export HYDRA_BLOCKS=` was enough to trigger it.
+ *
+ * `reason` and `error` both, deliberately: `reason` is what the CLI's renderer and the TUI's
+ * activity pane already print, and `error` is what `cli.mjs:147` turns into a non-zero exit. The
+ * two front ends say the same thing and the exit code is right on the one that has one.
+ *
+ * HYDRA_BLOCKS is named here because it is the only source of this value at both call sites
+ * (`agentcmds.mjs`, `sources.mjs`). Wire the activity page's `depth` field and this message needs
+ * to widen with it.
+ */
 export async function latestBlocks(n = 8) {
+  const count = Number(n);
+  if (!Number.isInteger(count) || count < 1) {
+    const msg = `HYDRA_BLOCKS must be a positive integer — got ${JSON.stringify(String(n))}`;
+    return { available: false, reason: msg, error: msg };
+  }
   const st = await readState();
   if (!st) return { available: false, reason: "no running stack — run `hydra-dev up`" };
   const head = await rpc(st.devnetUrl, "starknet_blockNumber");
   if (!head.ok) return { available: false, reason: head.error };
   const top = head.result;
   const blocks = [];
-  for (let b = top; b > Math.max(-1, top - n); b--) {
+  for (let b = top; b > Math.max(-1, top - count); b--) {
     const r = await rpc(st.devnetUrl, "starknet_getBlockWithTxHashes", [{ block_number: b }]);
     if (!r.ok) continue;
     blocks.push({

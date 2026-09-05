@@ -166,7 +166,7 @@ export const COMMANDS = {
 
   blocks: {
     help: "recent blocks",
-    run: async () => latestBlocks(Number(process.env.HYDRA_BLOCKS ?? 8)),
+    run: async () => latestBlocks(process.env.HYDRA_BLOCKS ?? 8),
     render: (b) => !b.available ? `  ${b.reason}` :
       b.blocks.map((x) => `  #${String(x.number).padEnd(6)} ${x.txCount} tx   ${x.hash.slice(0, 18)}…`).join("\n"),
   },

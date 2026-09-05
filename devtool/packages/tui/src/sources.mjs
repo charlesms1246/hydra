@@ -10,7 +10,7 @@
  * climbing age when a call fails.
  *
  * TUI/CLI parity is auditable by reading this one file: `blocks` takes the same
- * HYDRA_BLOCKS default as agentcmds.mjs:116, which the old app.mjs:82 did not.
+ * HYDRA_BLOCKS default as agentcmds.mjs:169, which the old app.mjs:82 did not.
  */
 
 import { React } from "./ui.mjs";
@@ -33,7 +33,7 @@ const SOURCES = {
     cadenceMs: 3000,
     // The overview shows recent chain activity too, so it needs this as well.
     gate: (ctx) => (ctx.page === "activity" || ctx.page === "overview") && ctx.up,
-    fn: () => latestBlocks(Number(process.env.HYDRA_BLOCKS ?? 8)).catch(() => null),
+    fn: () => latestBlocks(process.env.HYDRA_BLOCKS ?? 8).catch(() => null),
   },
   wallets: {
     // wallets.mjs:39-46 is one awaited RPC per account per token, serially — six
