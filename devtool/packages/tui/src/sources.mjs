@@ -23,7 +23,7 @@ import { history } from "../../core/src/history.mjs";
 
 const { useState, useRef, useEffect, useCallback } = React;
 
-const SOURCES = {
+export const SOURCES = {
   status: {
     cadenceMs: 2000,
     gate: () => true,
@@ -33,7 +33,14 @@ const SOURCES = {
     cadenceMs: 3000,
     // The overview shows recent chain activity too, so it needs this as well.
     gate: (ctx) => (ctx.page === "activity" || ctx.page === "overview") && ctx.up,
-    fn: () => latestBlocks(process.env.HYDRA_BLOCKS ?? 8).catch(() => null),
+    // The activity page's `depth` field, then HYDRA_BLOCKS, then 8. The field used to be wired
+    // to the REFRESH and not to the value: `app.mjs:471` re-fetched when it changed and this
+    // line ignored it, so typing 50 reloaded the page, reset the age counter and returned the
+    // same 8 blocks. A control that visibly does something and changes nothing is worse than
+    // one that does nothing.
+    fn: (ctx) =>
+      latestBlocks(ctx?.depth ?? process.env.HYDRA_BLOCKS ?? 8, ctx?.depth ? "depth" : "HYDRA_BLOCKS")
+        .catch(() => null),
   },
   wallets: {
     // wallets.mjs:39-46 is one awaited RPC per account per token, serially — six
@@ -66,13 +73,16 @@ const SOURCES = {
   },
 };
 
-export function useSources(page) {
+export function useSources(page, opts = {}) {
   const [data, setData] = useState({});
   const [ages, setAges] = useState({});
   const inflight = useRef({});
   const lastRun = useRef({});
-  const ctx = useRef({ page, up: false });
+  const ctx = useRef({ page, up: false, depth: undefined });
   ctx.current.page = page;
+  // Read through a ref rather than passed to each source: a source's `fn` runs from a timer
+  // that closes over nothing, so anything it needs has to be somewhere current at call time.
+  ctx.current.depth = opts.depth;
 
   const run = useCallback(async (name) => {
     const src = SOURCES[name];
@@ -83,7 +93,7 @@ export function useSources(page) {
     // serial RPC round trips; it must not run twice for one keypress.
     lastRun.current[name] = Date.now();
     try {
-      const v = await src.fn();
+      const v = await src.fn(ctx.current);
       setData((d) => ({ ...d, [name]: v }));
       setAges((a) => ({ ...a, [name]: Date.now() }));
       if (name === "status") ctx.current.up = Boolean(v?.devnet?.up);

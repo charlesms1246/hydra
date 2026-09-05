@@ -1194,6 +1194,46 @@ check_("a flow says which of two different reasons stops it running", () => {
   });
 }
 
+// The activity page's `depth` field reaches `latestBlocks`, rather than only triggering a
+// refetch of the same eight blocks. `app.mjs:471` already re-fetched when the field changed and
+// `sources.mjs` ignored the value, so the page visibly reloaded, the age counter reset, and the
+// same 8 blocks came back — a control that does something and changes nothing.
+//
+// Asserted on the REFUSAL path, which returns before `readState`, so this needs no stack and no
+// stub node. `state.mjs` resolves its path once at import, so a test that pointed HYDRA_HOME at
+// a temp directory after these modules had loaded would be reading the real one — the counting
+// itself is covered against a stub in packages/core/test/blocks.mjs. What is unique here is
+// whether the field's value arrives at all, and a value that arrives is a value that gets
+// validated.
+const depthProbe = await (async () => {
+  const { SOURCES } = await import("../src/sources.mjs");
+  const prev = process.env.HYDRA_BLOCKS;
+  delete process.env.HYDRA_BLOCKS;
+  const fromField = await SOURCES.blocks.fn({ depth: "abc" });
+  const valid = await SOURCES.blocks.fn({ depth: "3" });
+  process.env.HYDRA_BLOCKS = "abc";
+  const fromEnv = await SOURCES.blocks.fn({});
+  if (prev === undefined) delete process.env.HYDRA_BLOCKS; else process.env.HYDRA_BLOCKS = prev;
+  return { fromField, valid, fromEnv };
+})();
+
+check_("the activity depth field is the n of latestBlocks(n)", () => {
+  const { fromField, valid, fromEnv } = depthProbe;
+  // With HYDRA_BLOCKS unset, the only way this refuses is if the FIELD reached the function.
+  if (fromField?.available !== false || !/positive integer/.test(fromField?.reason ?? "")) {
+    throw new Error(`a non-numeric depth was not refused: ${JSON.stringify(fromField)}`);
+  }
+  // And it blames the field the user typed in, not an environment variable they never set.
+  if (!fromField.reason.startsWith("depth")) throw new Error(`blames the wrong source: ${fromField.reason}`);
+  // A usable depth must get past validation — a guard that refused everything would pass above.
+  if (/positive integer/.test(valid?.reason ?? "")) throw new Error(`depth 3 was refused: ${valid.reason}`);
+  // With no field, the environment is still the source, and is still named.
+  if (!String(fromEnv?.reason ?? "").startsWith("HYDRA_BLOCKS")) {
+    throw new Error(`no depth should fall back to HYDRA_BLOCKS: ${JSON.stringify(fromEnv)}`);
+  }
+  return "field refused and named · valid depth accepted · env still the fallback";
+});
+
 let skipped = 0;
 for (const r of results) {
   const gap = r.name.includes(known);

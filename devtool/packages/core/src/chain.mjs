@@ -17,14 +17,14 @@ import { readState } from "./state.mjs";
  * activity pane already print, and `error` is what `cli.mjs:147` turns into a non-zero exit. The
  * two front ends say the same thing and the exit code is right on the one that has one.
  *
- * HYDRA_BLOCKS is named here because it is the only source of this value at both call sites
- * (`agentcmds.mjs`, `sources.mjs`). Wire the activity page's `depth` field and this message needs
- * to widen with it.
+ * `source` names whoever supplied the number, because two surfaces now do: the CLI reads
+ * HYDRA_BLOCKS and the TUI's activity page has a `depth` field. Telling someone who typed in a
+ * field to check an environment variable is the same defect one layer down.
  */
-export async function latestBlocks(n = 8) {
+export async function latestBlocks(n = 8, source = "HYDRA_BLOCKS") {
   const count = Number(n);
   if (!Number.isInteger(count) || count < 1) {
-    const msg = `HYDRA_BLOCKS must be a positive integer — got ${JSON.stringify(String(n))}`;
+    const msg = `${source} must be a positive integer — got ${JSON.stringify(String(n))}`;
     return { available: false, reason: msg, error: msg };
   }
   const st = await readState();

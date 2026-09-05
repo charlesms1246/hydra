@@ -178,7 +178,7 @@ function App() {
   // alive for the poller's whole 120-second deadline after Ink had exited.
   const pollRef = useRef(null);
 
-  const { data, staleness, refresh } = useSources(page);
+  const { data, staleness, refresh } = useSources(page, { depth: forms.activity.depth });
 
   // Read once from the checkout's manifests. Not on a timer: a workspace member
   // does not appear while the TUI is open, and readdirSync on every frame would
