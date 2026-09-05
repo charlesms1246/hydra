@@ -4,6 +4,7 @@ import { Nav } from "../components/Nav.tsx";
 import { Code } from "../components/Code.tsx";
 import { Section } from "../components/Section.tsx";
 import { Footer } from "../components/Footer.tsx";
+import { WriteOn } from "../components/WriteOn.tsx";
 import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
 import { AsciiPanel } from "../components/viz/AsciiPanel.tsx";
 
@@ -36,7 +37,19 @@ export default function Home() {
 
         <Section n="01" id="what" title="WHAT THIS IS">
           <div className="prose">
-            <p>{SITE.what[0]}</p>
+            {/*
+              The lede writes itself on as the reader scrolls to it — see `WriteOn.tsx`.
+
+              Only the lede. The effect is a function of scroll position, so applying it to a
+              whole section means a reader who has arrived is still waiting, and the paragraph
+              becomes an obstacle rather than an entrance. One paragraph per page, the first one,
+              is the whole budget.
+
+              The text crosses the server/client boundary as a STRING, not as a module: this is a
+              server component, so `content.ts` — and `MEASURED` behind it — stays on the build
+              machine. Passing `SITE.what[0]` here does not bundle the file it came from.
+            */}
+            <WriteOn text={SITE.what[0]} />
             <p className="labelled">
               <span className="prose-label">METHOD</span>
               {SITE.what[1]}

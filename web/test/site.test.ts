@@ -510,8 +510,8 @@ test("nothing reaches identity or vault-client", () => {
 test("nothing sent to a browser reaches identity or vault-client", () => {
   const client = clientReachable(WEB);
   // A vacuous pass is the failure mode here: if the directive is spelled differently, or the
-  // component stops being reached from a page, this finds nothing and reports success. There is
-  // exactly one client component and the check has to be able to see it.
+  // components stop being reached from a page, this finds nothing and reports success. There are
+  // client components — the background and the write-on text — and the check has to see them.
   assert.ok(
     client.size > 0,
     "found no client component at all — the client boundary check is not looking at anything",

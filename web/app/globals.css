@@ -1548,3 +1548,40 @@ html[data-build="public"] .wordmark {
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------------------------
+ * Write-on text. See `components/WriteOn.tsx` — the mechanism is scroll position, not a trigger.
+ * ------------------------------------------------------------------------------------------ */
+
+.write-on-ch {
+  opacity: 0;
+  transition: opacity 380ms ease-out;
+}
+
+/* The word is the unbreakable unit; spaces are emitted outside it so lines can still break. */
+.write-on-word {
+  display: inline-block;
+}
+
+.write-on-line {
+  display: block;
+}
+
+/*
+ * ⛔ The copy must not depend on JavaScript to be readable.
+ *
+ * Characters ship at `opacity: 0` and are revealed from a scroll handler, so with scripting
+ * unavailable this page would serve paragraphs of invisible text — and every sentence on this
+ * site is checked for claims it may not make by a test that reads the markup, which cannot tell
+ * that a reader saw nothing. The typing is a flourish; the sentences are the content.
+ *
+ * `!important` is required to beat the inline styles that handler writes, and is load-bearing
+ * rather than incidental. `scripting: none` is the media query for exactly this case and needs no
+ * `<noscript>` in the markup; where it is unsupported it does not match, which is the same
+ * outcome as not having written it.
+ */
+@media (scripting: none) {
+  .write-on-ch {
+    opacity: 1 !important;
+  }
+}
