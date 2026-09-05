@@ -83,6 +83,27 @@ test("the repair is reachable from identity creation, not only from reading", ()
     + "on that surface starts life reading the whole chain");
 });
 
+test("BOTH FRONT ENDS SAY SO WHEN DISCOVERY FAILS — the diagnostic the refactor dropped", () => {
+  // `ensureFromBlock` is never fatal, so a node that blinked for one second at identity creation
+  // is SILENT unless a front end chooses to speak — and the user is left with a state file at
+  // block 0, a read that scans the whole chain forever, and nothing connecting the two.
+  //
+  // The CLI printed three lines for this before the move into `commands.ts`, and the move dropped
+  // them. Restoring them in `cli.ts` alone would rebuild the asymmetry this whole file is about,
+  // which is why the assertion is over both surfaces rather than over the one that regressed.
+  for (const [i, { name }] of FRONT_ENDS.entries()) {
+    const code = codeOf(readFileSync(FRONT_ENDS[i]!.file, "utf8"));
+    const init = i === 0
+      ? code.slice(code.indexOf('case "init"'), code.indexOf('case "bundle"'))
+      : code.slice(code.indexOf('effect.t === "init"'), code.indexOf("if (!state)"));
+    assert.match(init, /scans? the whole chain/,
+      `${name} creates an identity, fails to reach the node, and says nothing about it — so the `
+      + "user gets a client that reads the whole chain on every read and no sentence anywhere "
+      + "saying why. That reads as broken rather than as misconfigured, and only one of those "
+      + "gets reported");
+  }
+});
+
 test("THE TUI INJECTS ITS FETCH — a front end that reaches the real network in tests", () => {
   // Caught by the suite going from seconds to minutes. `ensureFromBlock(next)` without
   // `deps.fetchImpl` used the global `fetch`, so the TUI's own tests started bisecting a live

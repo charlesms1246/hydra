@@ -220,7 +220,14 @@ switch (command) {
     // SKIPPED WHEN `--from-block` WAS GIVEN, because a caller who states one means it, and a
     // devnet's contract is at a low block anyway. Failure here is not fatal: a client that cannot
     // reach the node at `init` should still get an identity, and 0 is what it would have had.
-    if (!flag("from-block") && await ensureFromBlock(state)) {
+    if (!flag("from-block") && await ensureFromBlock(state, fetch, (e) => {
+      // RESTORED. The move into `commands.ts` dropped these three lines, and they are the whole
+      // difference between a client that is misconfigured and a client that is broken: without
+      // them a node that blinked for one second leaves `fromBlock: 0` and no sentence saying so.
+      console.error(`could not find the contract's deployment block (${e.message}).`);
+      console.error("starting from 0, which works and is slow: every read scans the whole chain.");
+      console.error("pass `--from-block N` to set it yourself.");
+    })) {
       console.log(`reading from block ${state.fromBlock}, where ${state.contract.slice(0, 12)}… `
         + "was deployed — everything before it is blocks this contract did not exist in.");
     }

@@ -58,9 +58,18 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
     // The CLI had been repairing itself since the fix landed; the surface `0022` makes primary
     // had not. Same defect `chainFor` was moved to `chain.ts` to prevent — two front ends, one
     // of which picks differently.
-    await ensureFromBlock(next, deps.fetchImpl);
+    // RESTORED ON BOTH SURFACES, not just the one that had it. The CLI used to print three lines
+    // when discovery failed and the move into `commands.ts` dropped them; putting them back in
+    // `cli.ts` alone would rebuild the asymmetry this file's whole finding was about. A TUI has no
+    // stderr to print at, so it goes where a TUI says things: on the line the user just caused.
+    let unreached = "";
+    await ensureFromBlock(next, deps.fetchImpl, (e) => {
+      unreached = ` — but the node did not answer (${e.message}), so this identity starts at block `
+        + "0 and every read will scan the whole chain. `hydra init --from-block N` sets it.";
+    });
     deps.save(next);
-    return { t: "ok", state: next, text: `identity created — fingerprint ${fingerprint(publishBundle(next))}` };
+    return { t: "ok", state: next,
+      text: `identity created — fingerprint ${fingerprint(publishBundle(next))}${unreached}` };
   }
 
   if (!state) return { t: "error", text: "no identity yet" };
