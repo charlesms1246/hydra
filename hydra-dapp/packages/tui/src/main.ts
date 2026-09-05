@@ -21,7 +21,7 @@ import { start, update } from "./app.ts";
 import type { Model } from "./app.ts";
 import { screen } from "./view.ts";
 import { perform } from "./effects.ts";
-import { load, save, STATE_FILE } from "../../cli/src/state.ts";
+import { load, locked, resolvePassphrase, save, STATE_FILE } from "../../cli/src/state.ts";
 import type { State } from "../../cli/src/state.ts";
 import { chainFor } from "../../cli/src/chain.ts";
 
@@ -54,6 +54,16 @@ function openState(): State | null {
     process.exit(2);
   }
 }
+
+// **BEFORE THE TERMINAL IS TAKEN, AND BEFORE A `Model` EXISTS.** `promptPassphrase` manages raw
+// mode itself and restores it in a `finally`; the TUI sets raw mode of its own further down. The
+// handoff is the hazard — a prompt that did not put the terminal back leaves a dead keyboard on the
+// first frame, which looks like a hang rather than like a bug — so `tui-startup.test.ts` drives it
+// through a real pty and checks a frame gets drawn AND that a keystroke still reaches the program.
+//
+// No flag gate here, unlike `cli.ts`: this front end has no flags, so `locked()` is the whole test.
+// Nothing about the passphrase touches the keystroke handler, `m.fields` or the view.
+if (locked()) await resolvePassphrase();
 
 let model: Model = start(openState(), Date.now());
 

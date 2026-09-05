@@ -21,7 +21,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { isEnvelope, open as openEnvelope, seal } from "./at-rest.ts";
+import { isEnvelope, open as openEnvelope, promptPassphrase, seal } from "./at-rest.ts";
 import type { PrekeyStore } from "../../handshake/src/prekeys.ts";
 import type { DhState } from "../../handshake/src/dh-ratchet.ts";
 import { homedir } from "node:os";
@@ -316,6 +316,54 @@ export const passphraseFromEnvironment = (): boolean =>
   !supplied && Boolean(process.env[PASSPHRASE_ENV]);
 
 /** Whether the state on disk is locked. Answerable without the passphrase. */
+/**
+ * Get the passphrase from wherever it legitimately comes from, and warn about the bad one.
+ *
+ * **THIS LIVED IN `cli.ts`, WHICH IS WHY THE TUI CRASHED ON A LOCKED FILE.** `cli.ts` called it
+ * before dispatch; `main.ts` had no equivalent, so a locked state threw out of `load()` at module
+ * top level and Node printed a stack trace at a user who had done exactly what the Identity page
+ * told them to. That is the FOURTH thing found in one day living in a front-end file where the
+ * other front end could not reach it — and it is the cause of the third rather than another
+ * instance of it. See `claude-docs/ERRORS.md` E-DEV28.
+ *
+ * Here rather than in `at-rest.ts` because the passphrase store lives here and `at-rest.ts` cannot
+ * import this file without a cycle. `promptPassphrase` stays there: it is terminal handling, and
+ * this is policy about where a secret may come from.
+ *
+ * THE ORDER IS THE POLICY. A prompt first, because a typed secret reaches no shell history and no
+ * process table. A file second, for the caller that has one. The environment LAST and with a
+ * warning, because setting `HYDRA_PASSPHRASE` puts the passphrase in the same shell history and on
+ * the same disk as the file it protects, which is the exact case encryption at rest exists for.
+ *
+ * **THE WARNING TRAVELS WITH IT, and that is not incidental.** The TUI's own locked-file message
+ * tells the user to set that variable, so a resident client without this was routing people into
+ * the unwarned path by name.
+ *
+ * `instead` EXISTS BECAUSE THE REMEDY IS THE ONE PART THAT LEGITIMATELY DIFFERS. The CLI can say
+ * `--passphrase-file`; the TUI has no flags and pointing a user at one would be naming something
+ * they cannot reach. Everything above it — the cost, and that there is a cost — is the same on both
+ * surfaces. That split is the same one `front-end-parity.test.ts` settled for the block-0 warning:
+ * two front ends may say a thing differently, and neither may be silent about it.
+ */
+export async function resolvePassphrase(fromFile?: string, instead = "let it prompt"): Promise<void> {
+  if (fromFile) {
+    usePassphrase(readFileSync(fromFile, "utf8").trim());
+    return;
+  }
+  const typed = await promptPassphrase();
+  if (typed !== null && typed.trim() !== "") {
+    usePassphrase(typed);
+    return;
+  }
+  if (passphraseFromEnvironment()) {
+    process.stderr.write(
+      `WARNING: reading the passphrase from ${PASSPHRASE_ENV}. Setting it puts your\n`
+      + "passphrase in your shell history \u2014 in the clear, on the same disk as the file\n"
+      + "it is protecting, which is exactly the case encryption at rest is for.\n"
+      + `Use ${instead}.\n`);
+  }
+}
+
 export function locked(): boolean {
   if (!existsSync(STATE_FILE)) return false;
   try { return isEnvelope(JSON.parse(readFileSync(STATE_FILE, "utf8"))); } catch { return false; }

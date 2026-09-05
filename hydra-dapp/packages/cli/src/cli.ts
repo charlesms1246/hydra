@@ -61,7 +61,7 @@ import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
 import { load, save, exists, locked, usePassphrase, currentPassphrase,
-  passphraseFromEnvironment, STATE_FILE, PASSPHRASE_ENV } from "./state.ts";
+  passphraseFromEnvironment, resolvePassphrase, STATE_FILE, PASSPHRASE_ENV } from "./state.ts";
 import type { State } from "./state.ts";
 import { refusePassphrase, promptPassphrase } from "./at-rest.ts";
 
@@ -149,26 +149,12 @@ process.on("unhandledRejection", die);
  * scripting needs something, and it is treated the way `--invites` was: kept, and told the truth
  * about.
  */
-async function resolvePassphrase(): Promise<void> {
-  const file = flag("passphrase-file");
-  if (file) {
-    usePassphrase(readFileSync(file, "utf8").trim());
-    return;
-  }
-  const typed = await promptPassphrase();
-  if (typed !== null && typed.trim() !== "") {
-    usePassphrase(typed);
-    return;
-  }
-  if (passphraseFromEnvironment()) {
-    console.error(`WARNING: reading the passphrase from ${PASSPHRASE_ENV}. Setting it puts your`);
-    console.error("passphrase in your shell history — in the clear, on the same disk as the file");
-    console.error("it is protecting, which is exactly the case encryption at rest is for.");
-    console.error("Use --passphrase-file, or let it prompt.");
-  }
+// SHARED WITH THE TUI NOW — it lived here, and a locked state file crashed the resident
+// client because of it. `--passphrase-file` is the only CLI-shaped part: this front end has
+// flags and the other does not. See `state.ts:resolvePassphrase`.
+if (locked() || flag("passphrase-file")) {
+  await resolvePassphrase(flag("passphrase-file"), "--passphrase-file, or let it prompt");
 }
-
-if (locked() || flag("passphrase-file")) await resolvePassphrase();
 
 /**
  * Repair a state file that starts reading from block 0.
@@ -626,7 +612,7 @@ switch (command) {
     // at all — which is why the destructive-operations table had no row for it. A table of
     // operations cannot see an omission.
     const state = load();
-    await resolvePassphrase();
+    await resolvePassphrase(flag("passphrase-file"), "--passphrase-file, or let it prompt");
     const secret = currentPassphrase();
     if (!secret) {
       throw new Error("no passphrase given. Use --passphrase-file, or run this where it can "

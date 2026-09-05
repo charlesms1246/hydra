@@ -156,27 +156,42 @@ export const same = (a: string, b: string): boolean => {
  * Returns `null` when there is no terminal, so a caller can fall back and say why rather than
  * hanging on a pipe that will never answer.
  */
-export async function promptPassphrase(what = "passphrase"): Promise<string | null> {
+export function promptPassphrase(what = "passphrase"): Promise<string | null> {
   const stdin = process.stdin as NodeJS.ReadStream & { setRawMode?: (on: boolean) => void };
-  if (!stdin.isTTY || typeof stdin.setRawMode !== "function") return null;
+  if (!stdin.isTTY || typeof stdin.setRawMode !== "function") return Promise.resolve(null);
   process.stderr.write(`${what}: `);
   stdin.setRawMode(true);
   stdin.resume();
-  try {
+  // **A LISTENER, NOT `for await`, AND THE DIFFERENCE IS A DEAD KEYBOARD.** This read the stream
+  // with `for await (const chunk of stdin)` and returned from inside the loop. Node destroys a
+  // readable when its async iteration ends early — by `break`, `return` or `throw` — so answering
+  // the prompt destroyed `process.stdin`.
+  //
+  // Invisible to the CLI, which exits right after and never reads a key again. Fatal to the TUI:
+  // it drew its first frame correctly and then ignored every keystroke forever, because its
+  // `stdin.on("data")` was attached to a destroyed stream. **A hang, not an error** — which is the
+  // failure this whole day has been about, and it was found by driving a real pty and pressing a
+  // key rather than by checking that the prompt returned the right string.
+  return new Promise((resolve) => {
     let typed = "";
-    for await (const chunk of stdin) {
-      for (const byte of chunk as Buffer) {
+    const finish = (value: string | null) => {
+      stdin.off("data", onData);
+      stdin.setRawMode!(false);
+      stdin.pause();
+      process.stderr.write("\n");
+      resolve(value);
+    };
+    const onData = (chunk: Buffer) => {
+      for (const byte of chunk) {
         // Enter, in both line endings a terminal might send.
-        if (byte === 0x0d || byte === 0x0a) { process.stderr.write("\n"); return typed; }
+        if (byte === 0x0d || byte === 0x0a) return finish(typed);
         // Ctrl-C: leave without a passphrase rather than returning a partial one.
-        if (byte === 0x03) { process.stderr.write("\n"); return null; }
+        if (byte === 0x03) return finish(null);
         if (byte === 0x7f) { typed = typed.slice(0, -1); continue; }
         typed += String.fromCharCode(byte);
       }
-    }
-    return typed;
-  } finally {
-    stdin.setRawMode(false);
-    stdin.pause();
-  }
+    };
+    stdin.on("data", onData);
+  });
 }
+
