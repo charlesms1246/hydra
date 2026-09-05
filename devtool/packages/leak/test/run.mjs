@@ -12,6 +12,8 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { whatDoesThisLeak } from "../src/leak.mjs";
+import { openableHere } from "./cites.mjs";
+import { RULES } from "../../linter/src/rules.mjs";
 import { CLEAR, DECRYPTABLE, NOT_DISCLOSED, UNKNOWN, NA, FIELDS, PARTIES, isHeldCite, citeLabel } from "../src/facts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -270,21 +272,6 @@ if (teleport.problems.length === 0) {
 //    and NOTHING is marked; in a packed tarball every one of them is. So the assertion is the
 //    property, never a count — a count would encode which world the suite happens to be in.
 {
-  // Two roots, because a citation resolves against wherever the reader is standing: in a
-  // checkout `findings/` and `README.md` are at the repository root; in an installed package
-  // the README is at the package root and there is no repository above it. Same pair
-  // `facts.mjs:isHeldCite` uses, deliberately — a guard resolving paths differently from the
-  // thing it guards would pass on a distribution the tool itself gets wrong.
-  const PKG = join(here, "..", "..", "..");
-  const REPO = join(PKG, "..");
-  // A citation may name lines — `README.md:140-141`. The file is what has to exist.
-  const filePart = (c) => c.replace(/:[\d,\-]+$/, "");
-  const openableHere = (c) =>
-    // `upstream:` names starkware-libs/starknet-privacy at UPSTREAM_COMMIT — a public
-    // repository, openable by anyone with a browser, whether or not they cloned it.
-    c.startsWith("upstream:") ||
-    existsSync(join(PKG, filePart(c))) ||
-    existsSync(join(REPO, filePart(c)));
 
   const cites = new Set();
   for (const [, report] of ALL) {
@@ -312,6 +299,20 @@ if (teleport.problems.length === 0) {
   const staleMark = [...cites].filter((c) => openableHere(c) && citeLabel(c) !== c);
   if (mislabelled.length || staleMark.length) {
     console.log(`FAIL  invariant/citation-marker-matches-reality  ${[...mislabelled, ...staleMark].join(" ")}`);
+    failed++;
+  }
+
+  // The LINTER cites the same findings and prints them under every result, and its own suite
+  // cannot check this: `analyze.mjs` imports typescript, so it does not run in a packed tarball
+  // or in a fresh clone — precisely the two places where the findings ARE held. A guard that can
+  // only run where nothing is held checks half a property. `rules.mjs` has no imports, so the
+  // check lives here, in the suite that runs with no dependencies at all.
+  const ruleCites = [...new Set(Object.values(RULES).map((r) => r.finding))];
+  if (ruleCites.length < 3) { console.log(`FAIL  invariant/linter-citations-vacuous  ${ruleCites.length}`); failed++; }
+  const badRule = ruleCites.filter((c) => !openableHere(c) && !isHeldCite(c));
+  const misRule = ruleCites.filter((c) => (citeLabel(c) !== c) !== !openableHere(c));
+  if (badRule.length || misRule.length) {
+    console.log(`FAIL  invariant/linter-citation-openable-or-held  ${[...badRule, ...misRule].join(" ")}`);
     failed++;
   }
 

@@ -9,6 +9,9 @@ import { readFileSync, statSync, readdirSync } from "node:fs";
 import { join, extname, relative } from "node:path";
 import { analyzeSource } from "./analyze.mjs";
 import { AUDITOR_KEYS, ERROR, WARN, INFO, UNKNOWN } from "./rules.mjs";
+// One notion of "can the reader open this", shared with packages/leak — the linter makes the
+// same promise on the same citations and must not answer it differently.
+import { citeLabel, isHeldCite } from "../../leak/src/facts.mjs";
 
 const EXTS = new Set([".ts", ".tsx", ".mts", ".js", ".mjs", ".jsx"]);
 const SKIP = new Set(["node_modules", "dist", "build", ".git", "coverage", "target"]);
@@ -44,7 +47,15 @@ const findings = files.flatMap((f) => {
 });
 
 if (asJson) {
-  console.log(JSON.stringify({ filesScanned: files.length, findings }, null, 2));
+  // `finding` stays the raw path — it is an identifier, and marking it would corrupt it for
+  // anything matching on it. The held set is reported alongside instead, so a consumer of
+  // --json is told what a person at a terminal is told. Present only when true.
+  const held = [...new Set(findings.map((f) => f.finding))].filter(isHeldCite);
+  console.log(JSON.stringify({
+    filesScanned: files.length,
+    ...(held.length ? { heldCitations: held } : {}),
+    findings,
+  }, null, 2));
   process.exit(findings.some((f) => f.severity === ERROR || f.severity === WARN) ? 1 : 0);
 }
 
@@ -69,7 +80,7 @@ for (const f of findings) {
   console.log(`        ${f.detail.replace(/(.{1,92})(\s|$)/g, "$1\n        ").trimEnd()}`);
   if (f.evidence) console.log(`        evidence: ${f.evidence}`);
   console.log(`        fix: ${f.fix}`);
-  console.log(`        source: ${f.finding}\n`);
+  console.log(`        source: ${citeLabel(f.finding)}\n`);
 }
 
 const counts = findings.reduce((a, f) => ((a[f.severity] = (a[f.severity] ?? 0) + 1), a), {});
@@ -77,7 +88,9 @@ console.log(
   `${counts[ERROR] ?? 0} error, ${counts[WARN] ?? 0} warn, ` +
     `${counts[UNKNOWN] ?? 0} undetermined, ${counts[INFO] ?? 0} info`
 );
-console.log(`\nLive auditor keys (findings/06): mainnet ${AUDITOR_KEYS.mainnet}`);
-console.log(`                                 sepolia ${AUDITOR_KEYS.sepolia}\n`);
+const KEYS_CITE = citeLabel("findings/06-live-corroboration.md");
+console.log(`\nLive auditor keys (${KEYS_CITE}):`);
+console.log(`  mainnet ${AUDITOR_KEYS.mainnet}`);
+console.log(`  sepolia ${AUDITOR_KEYS.sepolia}\n`);
 
 process.exit(counts[ERROR] || counts[WARN] ? 1 : 0);
