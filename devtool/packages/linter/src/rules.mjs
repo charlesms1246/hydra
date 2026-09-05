@@ -85,7 +85,18 @@ export const RULES = {
       "at 8, 221 at 16, 111 at 32, 56 at 64. So rateLimit: {}, which defaults concurrency to 8, " +
       "costs at least four times what 32 does. These are lower bounds derived from the call " +
       "count, not measured latency: wall clock has not been measured against a real endpoint.",
-    fix: "Raise concurrency to 32-64 unless the RPC provider requires otherwise.",
+    // The trigger is `c <= 8` and it stays there. Moving it to 16 or 32 would assert a
+    // distinction findings/07 cannot resolve: only 4 and 8 sit above its estimator noise floor
+    // (:179-181), and a threshold placed inside the noise is standing rule 6's violation wearing
+    // a number. So the remedy says what is known, rather than implying a boundary the data does
+    // not support — a reader who sets 16, sees no warning and reads "raise to 32-64" concludes
+    // the rule is inconsistent, and today they would be right.
+    fix:
+      "Raise it. This fires at 8 or below because 4 and 8 are the only settings findings/07 " +
+      "could separate from its own measurement noise; 16 and 32 draw no warning because that " +
+      "data cannot resolve them, NOT because they were shown to be fine. The call-count " +
+      "arithmetic is solid either way — 32 costs at least 111 sequential round trips against " +
+      "442 at 8 — so treat this as a direction to move in, not a line to clear.",
   },
   HYD006: {
     severity: ERROR,
