@@ -258,8 +258,12 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
       deps.writeFile(effect.path, felts.map((f) => `0x${f.toString(16)}`).join(" "));
       return {
         t: "ok", state,
-        text: `wrote ${felts.length} felts to ${effect.path} for ${fp} — publishing them at `
-          + `${effect.address} is a separate act this client does not perform`,
+        // RESOLVED HERE TOO. `export` was fixed for this an hour before `record` was driven, and
+        // `record` was not — the same "the repair reached the surface its author was looking at"
+        // shape as the defect that started today. Both effects write a file and then tell the user
+        // to do something with it; neither can do that with a bare relative name.
+        text: `wrote ${felts.length} felts to ${resolve(effect.path)} for ${fp} — publishing them `
+          + `at ${effect.address} is a separate act this client does not perform`,
       };
     }
     case "anchor": {

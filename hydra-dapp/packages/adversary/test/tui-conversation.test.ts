@@ -37,6 +37,7 @@ import { Vault } from "../../vault-server/src/server.ts";
 import { serve } from "../../vault-server/src/http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
+import { resolve } from "node:path";
 
 /**
  * ONE RPC FIXTURE FOR THE FILE, because the setup page has an `rpc` field and it has a default.
@@ -128,8 +129,9 @@ test("TYPING INTO ANY FIELD GIVES BACK WHAT WAS TYPED — not `undefined` and th
     // Found by driving the real thing: typing a Starknet address on Record (4) put
     // `undefined0x29930129a5593da483…` in the field, on screen, for every user. `FIELDS.record`
     // declared four keys and the hand-written initial `fields` object listed none of them, so the
-    // typing handler's `m.fields[key] + k.value` appended to `undefined`. `A` would then have
-    // offered to publish a PERMANENT record committing to that string.
+    // typing handler's `m.fields[key] + k.value` appended to `undefined`. Nothing on that page
+    // reaches a chain — `A` writes a local file — so the cost was a page unusable from the first
+    // keystroke, which is enough on its own.
     //
     // **BOTH LISTS WERE INDIVIDUALLY CORRECT AND NOTHING COMPARED THEM** — the same shape as the
     // repair that reached the CLI and not the TUI. This drives every declared field on every page
@@ -196,12 +198,22 @@ test("EXPORT SAYS WHERE THE FILE WENT, not just what it was called", async () =>
   try {
     const h = harness(url, invites);
     const m = await created(h);
-    const ev = await perform({ t: "export", path: "bundle.json" }, m.state!, h.deps);
-    const said = (ev as { text?: string }).text ?? "";
-    assert.match(said, /^wrote \//,
-      `the export names a relative path, so the user is told to hand over a file and not where `
-      + `it is:\n  ${said}`);
-    assert.ok(h.files.has("bundle.json"), "the file was written somewhere else than it says");
+    // BOTH EFFECTS THAT WRITE A FILE, not just the one that was driven. `export` was fixed for
+    // this and `record` — one case below it, same shape, same sentence pattern — was not, and it
+    // took driving the Record page to notice. A guard over one of two is the defect it is for.
+    for (const effect of [
+      { t: "export" as const, path: "bundle.json" },
+      { t: "record" as const, path: "record.felts", address: "0x1" },
+    ]) {
+      const ev = await perform(effect, m.state!, h.deps);
+      const said = (ev as { text?: string }).text ?? "";
+      // The resolved path itself, not a shape that looks like one — `record` says "wrote 8 felts
+      // to /…", so a regex anchored after "wrote " failed on a message that was already correct.
+      assert.ok(said.includes(resolve(effect.path)),
+        `\`${effect.t}\` names a relative path, so the user is told a file exists and not where:`
+        + `\n  ${said}`);
+      assert.ok(h.files.has(effect.path), "the file was written somewhere else than it says");
+    }
   } finally { server.close(); }
 });
 

@@ -90,8 +90,16 @@ const FIELD_DEFAULTS: Readonly<Record<string, string>> = {
  * **IT WAS A HAND-WRITTEN OBJECT AND IT HAD DRIFTED.** `FIELDS.record` declares four keys and the
  * literal listed none of them, so `m.fields.myAddress` was `undefined` — and the typing handler
  * appends, `m.fields[key] + k.value`. Typing a Starknet address into the Record page produced
- * `undefined0x2993…`, on screen, in the field, for every user. `A` would then have offered to
- * publish a permanent record committing to that string.
+ * `undefined0x2993…`, on screen, in the field, for every user.
+ *
+ * **WHAT IT DID NOT DO, corrected from an earlier version of this comment that said it did:** it
+ * did not risk anything on chain. `A` writes felts to a LOCAL FILE and nothing on that page ever
+ * reaches a node — the `record` effect says so itself, and the confirm's warning is conditional
+ * ("PUBLISHED, that link is permanent"), with the success text closing it: publishing is "a
+ * separate act this client does not perform". Two of the four poisoned fields would have thrown in
+ * `BigInt`; the other two wrote to a garbage filename or failed a channel lookup. All bounded, all
+ * loud. **A page unusable from the first keystroke is worth reporting without the word "chain",
+ * and reaching for it was the failure this project exists to avoid.**
  *
  * Found by driving the real interface through a pty, not by reading either list: **both lists were
  * individually correct and nothing compares them.** That is the same shape as the fix that reached
