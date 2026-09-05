@@ -2081,3 +2081,41 @@ html[data-build="public"] .wordmark {
   color: var(--g-80);
   margin: 0;
 }
+
+/* --------------------------------------------------------------------------------------------
+ * The develop. See `components/Develop.tsx` — a reveal, not a fade.
+ * ------------------------------------------------------------------------------------------ */
+
+/*
+ * ⛔ THE DEFAULT IS FULLY DEVELOPED, AND IT HAS TO BE.
+ *
+ * `--lvl` is written by a scroll handler. With no JavaScript it is never set, so the fallback
+ * value of 100 is what a reader without scripting sees — the field, complete. This is the same
+ * contract as `.write-on-ch`'s `scripting: none` rule and it is load-bearing for the same reason:
+ * the effect is a flourish and the artwork is not. A default of 0 would ship blank panels to
+ * every reader with JavaScript off, and nothing that reads the markup could tell.
+ *
+ * Bright runs arrive first and faint ones fill in behind, so the subject resolves and the texture
+ * follows — the spread between the grey steps IS the develop.
+ *
+ * ⛔ **The `1.2` is what makes the image finish.** Grey steps run 8 to 80, and a naive
+ * `(lvl - 100 + g) / 20` leaves the faintest runs at 0.4 opacity when `lvl` reaches 100 — the
+ * field never fully resolves, and with no JavaScript that dimmed version is what every reader
+ * gets, permanently. Measured: 1495 of 1685 runs at full opacity, and it looks like a design
+ * choice. Scaling `lvl` by 1.2 puts every step at 1 by the end while keeping the arrival order.
+ */
+.panel-art span {
+  opacity: clamp(0, calc((var(--lvl, 100) * 1.2 + var(--g, 80) - 100) / 20), 1);
+  transition: opacity 260ms linear;
+}
+
+/*
+ * A reader who has asked for less motion gets the finished image, not a slower one. Belt and
+ * braces with the check in `Develop.tsx`: this covers the case where the component never mounts.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .panel-art span {
+    opacity: 1;
+    transition: none;
+  }
+}

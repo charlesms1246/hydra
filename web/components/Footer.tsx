@@ -2,6 +2,7 @@ import { SITE } from "../content.ts";
 import { provenance } from "../scripts/provenance.ts";
 import { isPublicBuild } from "../scripts/build-mode.ts";
 import { AsciiPanel } from "./viz/AsciiPanel.tsx";
+import { Develop } from "./Develop.tsx";
 
 /**
  * The footer.
@@ -88,9 +89,15 @@ export function Footer() {
             Its own column at wide widths, so it occupies the space three uneven link lists leave
             rather than sitting under them with a gap above it. `.panel-art` floors its glyph at
             6px and crops below that, so a 64-column field needs 230px before it is sliced: the
-            minimum width is set accordingly and is not a taste value. */}
+            minimum width is set accordingly and is not a taste value.
+
+            33 rows rather than 26: `panel()` now preserves the drawing's aspect and crops rather
+            than stretching, so a grid that does not match 100x52 loses the top and bottom of the
+            mark. 64 x 33 is the whole of it. */}
         <div className="footer-mark" aria-hidden>
-          <AsciiPanel cols={64} rows={26} blur={2.2} gain={1.1} />
+          <Develop>
+            <AsciiPanel cols={64} rows={33} blur={2.2} gain={1.1} />
+          </Develop>
         </div>
       </div>
 

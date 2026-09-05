@@ -6,6 +6,7 @@ import { Code } from "../../components/Code.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
 import { AsciiPanel } from "../../components/viz/AsciiPanel.tsx";
+import { Develop } from "../../components/Develop.tsx";
 
 /**
  * About, and the page the disclosure statement hangs off.
@@ -31,7 +32,8 @@ export default function About() {
         </header>
 
         <div className="panels panels-wide">
-          <AsciiPanel
+          <Develop>
+            <AsciiPanel
             cols={190}
             rows={34}
             blur={2.4}
@@ -39,6 +41,7 @@ export default function About() {
             crop={{ x: 0.06, y: 0.18, w: 0.88, h: 0.6 }}
             tag="THE DRAWING THE CLIENT SHIPS"
           />
+          </Develop>
         </div>
 
         {/* The staircase — see `app/page.tsx` and `.grid-12` in `globals.css`. The opening

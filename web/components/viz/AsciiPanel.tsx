@@ -31,7 +31,15 @@ export function AsciiPanel({
         {grid.map((row, y) => (
           <span key={y} className="panel-row">
             {runs(row).map((r, i) => (
-              <span key={i} style={{ color: `var(--g-${r.grey})` }}>{r.text}</span>
+              /*
+                `--g` carries the run's grey step into CSS so the field can DEVELOP without any
+                of it being recomputed in the browser — see `Develop.tsx` and `.panel-art span`.
+                The colour is the same value; this is the one number the reveal needs, and
+                emitting it here costs nothing because the run is already being written.
+              */
+              <span key={i} style={{ color: `var(--g-${r.grey})`, ["--g" as string]: r.grey }}>
+                {r.text}
+              </span>
             ))}
             {"\n"}
           </span>

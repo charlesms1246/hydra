@@ -6,6 +6,7 @@ import { Footer } from "../components/Footer.tsx";
 import { WriteOn } from "../components/WriteOn.tsx";
 import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
 import { AsciiPanel } from "../components/viz/AsciiPanel.tsx";
+import { Develop } from "../components/Develop.tsx";
 
 /**
  * The landing page. Marketing, and only marketing.
@@ -97,7 +98,9 @@ export default function Home() {
             breaks its pages with an image at exactly this point, and a page of rules and prose
             needs the same beat. */}
         <div className="panels panels-wide">
-          <AsciiPanel cols={190} rows={40} blur={1.7} gain={1.45} tag="HYDRA" />
+          <Develop>
+            <AsciiPanel cols={190} rows={40} blur={1.7} gain={1.45} tag="HYDRA" />
+          </Develop>
         </div>
 
         <Section n="03" id="before" title="BEFORE YOU USE IT">

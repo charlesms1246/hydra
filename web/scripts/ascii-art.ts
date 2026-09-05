@@ -94,6 +94,32 @@ export function panel({
     return c && c !== " " ? 1 : 0;
   };
 
+  /*
+   * ⛔ PRESERVE THE DRAWING'S ASPECT. Do not go back to stretching the crop to fill the grid.
+   *
+   * The sampler used to map the crop rectangle straight onto `cols x rows`, which stretches
+   * whenever the two do not share a shape. `art.txt` is 100x52; the home page's field is 190x40.
+   * That is a **2.5x horizontal stretch**, and it is why the mark rendered as an unrecognisable
+   * wide blob — the user called it "weird ascii logo render" and they were describing this.
+   *
+   * Both the source and the output are monospace grids, so the glyph's own aspect cancels and the
+   * comparison is simply cell counts. The crop is narrowed on whichever axis is proportionally
+   * too large, about its own centre — `object-fit: cover` semantics. A field with an extreme
+   * aspect therefore shows a BAND of the drawing at its true proportions rather than the whole of
+   * it squashed, which is the right trade for a full-bleed texture and the reason the footer mark
+   * is sized to the drawing instead.
+   */
+  const want = cols / rows;
+  const have = (crop.w * sw) / (crop.h * sh);
+  const fit = { ...crop };
+  if (have > want) {
+    fit.w = (crop.h * sh * want) / sw;
+    fit.x = crop.x + (crop.w - fit.w) / 2;
+  } else if (have < want) {
+    fit.h = (crop.w * sw) / (want * sh);
+    fit.y = crop.y + (crop.h - fit.h) / 2;
+  }
+
   const cos = Math.cos(rotate);
   const sin = Math.sin(rotate);
   const out: Cell[][] = [];
@@ -102,8 +128,8 @@ export function panel({
     const row: Cell[] = [];
     for (let c = 0; c < cols; c++) {
       // Normalised position inside the crop, then rotated about the crop's centre.
-      let u = crop.x + (c / (cols - 1)) * crop.w;
-      let v = crop.y + (r / (rows - 1)) * crop.h;
+      let u = fit.x + (c / (cols - 1)) * fit.w;
+      let v = fit.y + (r / (rows - 1)) * fit.h;
       if (rotate) {
         const du = u - 0.5;
         const dv = v - 0.5;
