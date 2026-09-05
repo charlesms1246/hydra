@@ -63,3 +63,65 @@ export function Section({
     </section>
   );
 }
+
+/**
+ * The page's container: the 86rem measure and the gutter, expressed once.
+ *
+ * ⛔ **Everything on a page sits in this or is a deliberate full-bleed exception.** Before it
+ * existed the measure was re-typed as a `max-width` on eight different selectors, which is how a
+ * site ends up with four left edges on one page — each value locally reasonable, none of them
+ * agreeing. `Section` uses it, and anything outside a section should too.
+ */
+export function Container({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={className ? `container ${className}` : "container"}>{children}</div>;
+}
+
+/**
+ * A tracked-out monospace label: eyebrows, ticks, column heads, margin notes.
+ *
+ * ⛔ **One label, one set of values.** There were fourteen independent expressions of this in the
+ * stylesheet, at three sizes and eight letter-spacings, because there was nothing to consume and
+ * so everybody typed one. The values live in `.label` in `globals.css`; this is the component
+ * form for new markup.
+ */
+export function Label({ children, className }: { children: ReactNode; className?: string }) {
+  return <span className={className ? `label ${className}` : "label"}>{children}</span>;
+}
+
+/**
+ * Prose that carries its own opaque ground.
+ *
+ * The reference's reason is worth keeping verbatim in spirit: rendered ASCII glyphs behind a
+ * paragraph are the same size and weight as the paragraph's own letterforms, so without a ground
+ * the two interleave and both become unreadable. **A blurred field is soft enough to read over; a
+ * crisp one is not.**
+ *
+ * We need it in fewer places than they do, because `.field` now scrolls off the top of the page
+ * and `.solids` fades within half a viewport — so most prose is already over black. It exists for
+ * the cases that are not: anything set over a panel or inside the first screen.
+ */
+export function Plate({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={className ? `plate ${className}` : "plate"}>{children}</div>;
+}
+
+/**
+ * The button.
+ *
+ * ⛔ **Written once because it was already written twice** — the deck's rail and the session
+ * page's connect control were styled independently, which is the drift this whole extraction is
+ * about, caught before it had a third instance.
+ */
+export function Button({
+  children,
+  href,
+  type = "button",
+  onClick,
+}: {
+  children: ReactNode;
+  href?: string;
+  type?: "button" | "submit";
+  onClick?: () => void;
+}) {
+  if (href) return <a className="button" href={href}>{children}</a>;
+  return <button className="button" type={type} onClick={onClick}>{children}</button>;
+}

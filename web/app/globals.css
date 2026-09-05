@@ -178,6 +178,41 @@ body {
 }
 
 /* --------------------------------------------------------------------------------------------
+ * ⛔ THE LABEL. One rule. Do not write a fifteenth.
+ *
+ * Gestalt has a single `Label` primitive — mono, small, uppercase, `tracking-[0.2em]`, `g-48` —
+ * and every eyebrow, tick, column head and margin note on the site is that one thing. Ours had
+ * **fourteen** independent expressions of it, at three sizes and eight different letter-spacings
+ * (0.04, 0.05, 0.1, 0.12, 0.16, 0.18, 0.2, 0.22em). None of them was wrong when it was written;
+ * each was a value somebody typed because there was nothing to consume.
+ *
+ * **That is why the section rhythm and content offsets drifted too.** A value each page re-types
+ * is a value each page gets slightly differently, and the difference is invisible in isolation
+ * and obvious across six pages. The fix is not to align fourteen numbers by hand — it is to have
+ * one place the number lives, so alignment is a property rather than an act.
+ *
+ * Selectors are listed rather than the class being applied in markup, because these are already
+ * in place across nine routes and a rename touches every one. What matters is that the values
+ * exist once.
+ * ------------------------------------------------------------------------------------------ */
+
+.label,
+.prose-label,
+.footer-tick,
+.why-label,
+.step-label,
+.section-tick,
+.slide-tick,
+.deck-dot-label,
+.ch-removed,
+.claim-band span,
+.nav-index,
+.nav-toggle {
+  text-transform: uppercase;
+  color: var(--g-48);
+}
+
+/* --------------------------------------------------------------------------------------------
  * The frame — corner letters and registration crosshairs.
  *
  * The only serif in the chrome, which is what makes the corner letters read as a printer's mark
@@ -382,9 +417,70 @@ body.has-canvas .field {
   padding-block: clamp(5rem, 16vh, 13rem) 0;
 }
 
+/* The container, expressed once — see `Container` in `components/Section.tsx`. */
+.container,
 .section-body {
   max-width: var(--measure);
   margin-inline: auto;
+}
+
+/*
+ * ⛔ SECTION RHYTHM IS A PROPERTY OF ADJACENCY, NOT A FLAG SOMEBODY SETS.
+ *
+ * Gestalt's sections are `pt-24 md:pt-40` — except the one straight after the full-screen
+ * statement, which is `pt-8`, because the statement already gave the page a screen of air and
+ * repeating it reads as slack. Ours was a uniform 144px everywhere, measured.
+ *
+ * Expressed as `+` rather than as a `tight` prop for the same reason `min-aspect-ratio` beat
+ * `min-width`: the condition is "does a statement precede this", which the DOM already knows.
+ * A prop is a thing somebody must remember on every new page, and the page they forget is the
+ * one that reads wrong.
+ */
+.statement + .section {
+  padding-block-start: clamp(1rem, 3vh, 2rem);
+}
+
+/*
+ * The offset between a section's head and its content, once. It was three different values
+ * arrived at separately — the head's own margin, plus a top margin on whichever block came
+ * first. The head owns the gap; blocks do not add to it.
+ */
+.section-head {
+  margin-bottom: 3.5rem;
+}
+
+.section-body > :first-child {
+  margin-top: 0;
+}
+
+.plate {
+  background: color-mix(in srgb, var(--black) 92%, transparent);
+  padding: 1.25rem 1.5rem;
+  backdrop-filter: blur(2px);
+}
+
+/*
+ * One button. See `Button` — the deck's rail and the session page's connect control were styled
+ * independently before this existed.
+ */
+.button {
+  display: inline-block;
+  padding: 0.65rem 1.5rem;
+  background: none;
+  border: 1px solid var(--g-32);
+  color: var(--white);
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover,
+.button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /*
@@ -467,7 +563,6 @@ body.has-canvas .field {
 .section-head {
   position: relative;
   text-align: center;
-  margin-bottom: clamp(2rem, 5vh, 4rem);
 }
 
 /*
@@ -508,9 +603,6 @@ body.has-canvas .field {
   left: var(--gutter);
   /* Inside the band, sitting on the lower rule. No backing — see `Section.tsx`. */
   bottom: 0.35rem;
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  letter-spacing: 0.2em;
   color: var(--g-48);
 }
 
@@ -559,9 +651,6 @@ body.has-canvas .field {
 }
 
 .prose-label {
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
   color: var(--g-48);
   display: block;
   margin-bottom: 0.5rem;
@@ -843,9 +932,6 @@ body.has-canvas .field {
 }
 
 .footer-tick {
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
   color: var(--g-48);
   display: block;
   margin-bottom: 1rem;
@@ -995,9 +1081,6 @@ body.has-canvas .field {
 
 /* Mono index at the left edge, label optically centred — the reference's exact arrangement. */
 .nav-index {
-  font-family: var(--mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.18em;
   color: var(--g-48);
 }
 
@@ -1101,9 +1184,6 @@ body.has-canvas .field {
 }
 
 .why-label {
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.12em;
   color: var(--accent);
   display: block;
   margin-bottom: 1.25rem;
@@ -1273,9 +1353,6 @@ body.has-canvas .field {
 }
 
 .step-label {
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.12em;
   color: var(--accent);
   display: block;
   margin-bottom: 0.75rem;
@@ -1865,9 +1942,6 @@ html[data-build="public"] .wordmark {
 }
 
 .slide-tick {
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  letter-spacing: 0.2em;
   color: var(--g-48);
   margin-bottom: 1.5rem;
 }
@@ -1951,9 +2025,6 @@ html[data-build="public"] .wordmark {
 }
 
 .deck-dot-label {
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  letter-spacing: 0.2em;
   color: var(--g-48);
   opacity: 0;
   transition: opacity 200ms;
@@ -2101,7 +2172,7 @@ html[data-build="public"] .wordmark {
   font-size: clamp(1.5rem, 3.4vw, 2.75rem);
   line-height: 1.15;
   color: var(--white);
-  margin: clamp(2rem, 5vh, 3.5rem) 0 0;
+  margin: 0;
 }
 
 /* The step: down, and inward. The second block of a staircase never starts where the first did. */
@@ -2197,22 +2268,8 @@ html[data-build="public"] .wordmark {
   outline-offset: 1px;
 }
 
-.session-connect button {
-  padding: 0.65rem 1.5rem;
-  background: none;
-  border: 1px solid var(--g-32);
-  color: var(--white);
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  letter-spacing: 0.2em;
-  cursor: pointer;
-}
-
-.session-connect button:hover,
-.session-connect button:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
-}
+/* The connect control is `.button` — see `Button` in `components/Section.tsx`. This was a second,
+   independently written copy of it, which is the drift the primitive exists to stop. */
 
 .session-block {
   margin-top: clamp(2rem, 5vh, 3rem);
@@ -2313,9 +2370,6 @@ html[data-build="public"] .wordmark {
 .ch-removed {
   display: block;
   padding-bottom: 0.75rem;
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  letter-spacing: 0.15em;
   color: var(--accent);
 }
 

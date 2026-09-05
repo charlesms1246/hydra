@@ -209,7 +209,7 @@ export function Session() {
             onChange={(e) => setBase(e.target.value)}
           />
         </label>
-        <button type="submit">Connect</button>
+        <button className="button" type="submit">Connect</button>
       </form>
 
       {refusal && <RefusalNote refusal={refusal} />}
