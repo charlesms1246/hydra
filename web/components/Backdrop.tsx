@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { Solids } from "./Solids.tsx";
 
 /**
@@ -12,25 +9,23 @@ import { Solids } from "./Solids.tsx";
  *
  * **It is on the disclosure page too, and the exit fade is why that is safe.** A field of lit
  * glyphs behind fifty-eight rows of citations would be unreadable, but `Solids.tsx` fades against
- * scroll position and is gone inside about one viewport — so on a long document it is a texture
- * at the masthead and absent by the first claim. The legibility problem solves itself from the
- * same value that drives the motion.
+ * scroll position and is gone inside about one viewport.
  *
- * Two layers, and the bottom one needs no script: `art.txt` is the project's own ASCII hydra, the
- * drawing the TUI shows on its Disclosure screen, inlined here as text. `Solids` hides it once
- * WebGL is actually running. A reader on a filtered network, without WebGL, or asking for reduced
- * motion keeps the static drawing and every word of the page.
+ * ⛔ **THE STATIC ASCII HYDRA IS GONE FROM HERE, 2026-09-05.** It was a second layer under
+ * `Solids` — the whole 100x52 drawing, inlined as text, shown whenever WebGL was not running.
+ *
+ * It was removed on the user's instruction: *"for some reason a full render of the ascii art is in
+ * all pages, this is not needed."* They are right, and the reason it read as wrong is that it was
+ * the same drawing at full size behind every page, so it stopped being a backdrop and became a
+ * picture the page happened to sit on.
+ *
+ * What replaced it is nothing. `Solids` is the backdrop; a reader without WebGL gets a black page,
+ * which is the correct fallback for decoration — the alternative was a fallback louder than the
+ * thing it stood in for.
  */
-function asciiField(): string {
-  return readFileSync(join(process.cwd(), "art.txt"), "utf8").replace(/\n$/, "");
-}
-
 export function Backdrop() {
   return (
     <>
-      <pre className="field" aria-hidden>
-        {asciiField()}
-      </pre>
       <Solids />
     </>
   );

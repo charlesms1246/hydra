@@ -919,15 +919,17 @@ body.has-canvas .field {
 }
 
 /*
- * The footer's one large moment. The reference closes on a serif statement at display scale, and
- * a footer that ends on the same size as its link labels has no close at all.
+ * ⛔ The INFO note is the smallest readable size on the page, by instruction, and it was a display
+ * line. It is a footnote about how the disclosure page is generated — genuinely subordinate — and
+ * setting it at 30px made it the loudest thing in the footer, competing with the links above it.
  */
 .footer-note p {
-  font-family: var(--serif);
-  font-size: clamp(1.25rem, 2.2vw, 1.875rem);
-  line-height: 1.3;
-  color: var(--g-80);
-  max-width: 52ch;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--g-64);
+  max-width: 68ch;
   margin: 0;
 }
 
@@ -1145,13 +1147,25 @@ body.has-canvas .field {
  * "Why it is different" — three cards, no borders, separated by rules.
  * ------------------------------------------------------------------------------------------ */
 
+/*
+ * The card grid, copied from Gestalt's MECHANICS section rather than reinvented.
+ *
+ * ⛔ **`gap: 1px` over a `--g-12` background IS the separator.** The reference uses
+ * `gap-px border border-g-12 bg-g-12` with each card on the page background: the hairlines
+ * between cards are the container showing through the gap, not borders on the cards. That is why
+ * they never double at a shared edge and never leave a half-pixel seam — there is one line, and
+ * it belongs to the gap.
+ *
+ * Full width of the container, so the boxes reach the page margins.
+ */
 .why {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0;
-  max-width: 90rem;
+  gap: 1px;
+  background: var(--g-12);
+  border: 1px solid var(--g-12);
+  max-width: var(--measure);
   margin-inline: auto;
-  border-top: 1px solid var(--g-12);
 }
 
 .why article {
@@ -2446,4 +2460,103 @@ html[data-build="public"] .wordmark {
   line-height: 1.5;
   letter-spacing: 0.06em;
   color: var(--g-64);
+}
+
+/* --------------------------------------------------------------------------------------------
+ * Scrollbars, copied from the reference rather than reinvented.
+ *
+ * Every overflow on this site is inside a pane with a hairline border — the deck's track, a slide,
+ * the terminal blocks. The platform default is a wide, light, rounded bar that reads as a piece of
+ * somebody else's interface dropped into the middle of ours, and on a black page it is the
+ * brightest object on the screen.
+ *
+ * ⛔ **The two styling mechanisms are mutually exclusive in Chrome.** Setting `scrollbar-color` or
+ * `scrollbar-width` to anything but `auto` makes Chrome render the *standard* scrollbar and ignore
+ * every `::-webkit-scrollbar` rule — so specifying both does not give belt-and-braces coverage, it
+ * silently discards the detailed one. They are split: the webkit pseudo-elements carry the design,
+ * and the standard properties are declared only inside an `@supports` block Chrome does not match.
+ *
+ * Square, not rounded: the whole interface is hairlines and right angles, and a pill-shaped thumb
+ * is the one shape nothing else on the page has.
+ * ------------------------------------------------------------------------------------------ */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--g-20);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--g-32);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--g-48);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@supports (scrollbar-width: thin) and (not selector(::-webkit-scrollbar-thumb)) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--g-20) transparent;
+  }
+}
+
+.why article {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: var(--black);
+  padding: 2rem;
+}
+
+/* The figure first, with a rule under it, exactly as the reference orders a card. */
+.why article .develop {
+  border-bottom: 1px solid var(--g-12);
+  padding-bottom: 1.5rem;
+}
+
+.why article h3 {
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(1.125rem, 1.7vw, 1.5rem);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.why article p {
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--g-64);
+  margin: 0;
+}
+
+.why article .why-label {
+  color: var(--accent);
+}
+
+@media (min-width: 48rem) {
+  .why {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .why.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

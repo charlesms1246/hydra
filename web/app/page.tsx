@@ -4,9 +4,9 @@ import { Code } from "../components/Code.tsx";
 import { Section } from "../components/Section.tsx";
 import { Footer } from "../components/Footer.tsx";
 import { WriteOn } from "../components/WriteOn.tsx";
-import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
-import { AsciiPanel } from "../components/viz/AsciiPanel.tsx";
 import { Develop } from "../components/Develop.tsx";
+import { AsciiPanel } from "../components/viz/AsciiPanel.tsx";
+import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
 
 /**
  * The landing page. Marketing, and only marketing.
@@ -90,22 +90,20 @@ export default function Home() {
           <div className="why">
             {SITE.why.map((w) => (
               <article key={w.label}>
+                {/* The render sits above the label so the eye meets the figure first, and it
+                    resolves as the card rises — see `Develop`. `aspect-[5/4]` in the reference;
+                    the panel's own grid gives us the same proportion. */}
+                <Develop>
+                  <AsciiPanel cols={70} rows={36} crop={w.crop} blur={2} gain={1.3} />
+                </Develop>
                 <span className="why-label">{w.label}</span>
                 <h3>{w.title}</h3>
-                <p>{w.body}</p>
+                <WriteOn text={w.body} />
               </article>
             ))}
           </div>
         </Section>
 
-        {/* One wide field, full-bleed, between the argument and the warning — the reference
-            breaks its pages with an image at exactly this point, and a page of rules and prose
-            needs the same beat. */}
-        <div className="panels panels-wide">
-          <Develop>
-            <AsciiPanel cols={190} rows={40} blur={1.7} gain={1.45} tag="HYDRA" />
-          </Develop>
-        </div>
 
         <Section n="03" id="before" title="BEFORE YOU USE IT">
           <ul className="warnings">
