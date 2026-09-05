@@ -4,6 +4,8 @@ import { SITE } from "../../../content.ts";
 import { Nav } from "../../../components/Nav.tsx";
 import { Section } from "../../../components/Section.tsx";
 import { CommandSurface } from "../../../components/CommandSurface.tsx";
+import { MockDevScreen } from "../../../components/MockTui.tsx";
+import { Reveal } from "../../../components/Reveal.tsx";
 import { Footer } from "../../../components/Footer.tsx";
 
 /**
@@ -35,7 +37,13 @@ export default function Page() {
           <p className="tagline">A local STRK20 privacy stack, and tooling that computes what a transaction discloses.</p>
         </header>
 
-        <Section n="01" id="commands" title="EVERY COMMAND">
+        <Section n="01" id="screen" title="WHAT IT LOOKS LIKE">
+          <Reveal>
+            <MockDevScreen />
+          </Reveal>
+        </Section>
+
+        <Section n="02" id="commands" title="EVERY COMMAND">
           <p className="capture-note">
             Captured from the binary when this page was built. It is what the tool prints today,
             not a description of it.

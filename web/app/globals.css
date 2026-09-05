@@ -2602,3 +2602,54 @@ html[data-build="public"] .wordmark {
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------------------------
+ * The mock terminal. See `components/MockTui.tsx` — a drawing, and it says so.
+ * ------------------------------------------------------------------------------------------ */
+
+/*
+ * ⛔ THE CONTAINER CARRIES THE PADDING, NOT THE `<pre>`.
+ *
+ * `100cqw` is the container's content box. With `container-type` and `padding` on the same
+ * element, the glyph size is computed for a width the text does not actually get — it is short by
+ * the padding — and a 92-column frame overflows and gets clipped on the right. Measured that way
+ * once; the box-drawing frame is exactly the thing where being a few columns short is visible.
+ */
+.tui {
+  margin-top: 1rem;
+  container-type: inline-size;
+  padding: 1.25rem;
+  background: var(--g-4);
+  border: 1px solid var(--g-12);
+}
+
+/*
+ * Sized by container query, like `.panel-art`: the frame is a fixed 92-column grid, so the size
+ * at which exactly 92 monospace advances fill the box is `100cqw / (92 * 0.6)`. Anything else
+ * either wraps the frame — which turns a box into rubble — or leaves it floating in the column.
+ */
+.tui-screen {
+  margin: 0;
+  font-family: var(--mono);
+  /* 0.61, not 0.6: Geist Mono's advance is a shade wider than the nominal half-em, and at
+     92 columns a rounding of a fraction of a pixel per glyph is two pixels of clipped frame. */
+  font-size: max(5px, calc(100cqw / (92 * 0.61)));
+  line-height: 1.3;
+  color: var(--g-64);
+  white-space: pre;
+}
+
+.tui-note {
+  margin: 1rem 0 0;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--g-48);
+  max-width: 68ch;
+}
+
+.tui-note code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}

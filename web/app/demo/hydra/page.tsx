@@ -4,6 +4,8 @@ import { SITE } from "../../../content.ts";
 import { Nav } from "../../../components/Nav.tsx";
 import { Section } from "../../../components/Section.tsx";
 import { CommandSurface } from "../../../components/CommandSurface.tsx";
+import { MockTui } from "../../../components/MockTui.tsx";
+import { Reveal } from "../../../components/Reveal.tsx";
 import { Footer } from "../../../components/Footer.tsx";
 
 /**
@@ -35,7 +37,15 @@ export default function Page() {
           <p className="tagline">A scriptable command line, and a terminal interface over the same code.</p>
         </header>
 
-        <Section n="01" id="commands" title="EVERY COMMAND">
+        {/* What using it looks like, before the catalogue of what it can do. A command list tells
+            a reader what exists; it does not show them the thing. */}
+        <Section n="01" id="screen" title="WHAT IT LOOKS LIKE">
+          <Reveal>
+            <MockTui />
+          </Reveal>
+        </Section>
+
+        <Section n="02" id="commands" title="EVERY COMMAND">
           <p className="capture-note">
             Captured from the binary when this page was built. It is what the tool prints today,
             not a description of it.
