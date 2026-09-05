@@ -13,6 +13,7 @@
     "build": "npm run preflight && next build --webpack",
     "test": "npm run build && node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "check:figures": "node scripts/figure-geometry.ts",
     "build:public": "HYDRA_PUBLIC=1 npm run preflight && HYDRA_PUBLIC=1 next build --webpack"
   },
   "dependencies": {

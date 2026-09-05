@@ -60,6 +60,12 @@ jobs:
             fi
           done
 
+      # `test/site.test.ts` asserts that the build does not IGNORE type errors — a check on the
+      # setting, not on the outcome. Nothing ran `tsc`, so a real error sat in the test file
+      # unnoticed. Running it is the difference between "errors are not suppressed" and "there
+      # are none".
+      - run: npm run typecheck
+
       - run: npm run build:public
 
       # ⛔ ASSERT THE MODE, because a workflow that silently falls back to `build` is the exposure
@@ -80,6 +86,21 @@ jobs:
       - run: node --test test/*.test.ts
         env:
           HYDRA_PUBLIC: "1"
+
+      # ⛔ MEASURE THE PAGE, because everything above this line reads it.
+      #
+      # The tests and the preflight check strings, provenance markers and imports — and four
+      # defects have shipped that were true of the rendered geometry and false of nothing in the
+      # markup, with the suite green through all four. This renders every route at four widths and
+      # fails on a label that leaves its own viewBox or prints over another.
+      #
+      # **It must not skip when no browser is present**, and it does not: `figure-geometry.ts`
+      # exits non-zero and lists the paths it looked in. A geometry guard that passes quietly on a
+      # machine without Chrome converts "nobody measured this" into a green tick, which is the
+      # exact failure it exists to answer. If a future runner image drops Chrome, this step goes
+      # red and somebody sets CHROME_PATH — that is the intended outcome, not an inconvenience.
+      - name: Measure the rendered figures
+        run: npm run check:figures
 
       - uses: actions/upload-pages-artifact@v3
         with:
