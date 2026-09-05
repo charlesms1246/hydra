@@ -15,7 +15,7 @@
  * that still rewrote the file would pass a test that only checked `ok === false`.
  */
 
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,7 @@ let failed = 0;
 const check = async (name, fn) => {
   try {
     const detail = await fn();
+    if (detail?.skip) return console.log(`SKIP  ${name}  — ${detail.skip}`);
     console.log(`PASS  ${name}${detail ? `  — ${detail}` : ""}`);
   } catch (e) {
     console.log(`FAIL  ${name}  — ${e.message}`);
@@ -108,6 +109,45 @@ await check("a readable file still saves and still forgets", async () => {
   const f = await forgetFlow("fone");
   eq(f.ok, true, "forget ok");
   eq((await listFlows()).flows.length, 1, "after forget");
+});
+
+// ---- the write itself ----------------------------------------------------
+// Refusing to overwrite a corrupt file is half the fix; the other half is not creating one.
+// The write is a rename, so the destination is never a prefix of the new contents.
+
+await check("a save leaves no temp file behind", async () => {
+  reset();
+  await saveFlow(flow("one"));
+  await forgetFlow("fone");
+  const strays = readdirSync(HOME).filter((f) => f !== "flows.json");
+  if (strays.length) throw new Error(`left behind: ${strays.join(", ")}`);
+  return "flows.json and nothing else";
+});
+
+// What this pins is the MECHANISM, and it is worth being exact about why. It does not
+// reproduce a torn write: at fifty flows the file is a few kilobytes and a kill lands
+// between the syscalls too rarely to test on. What it does show is that the save goes
+// through a sibling temp file — a directory with no create permission stops it, which an
+// in-place `writeFile` to an existing file sails straight through — and that a failure
+// leaves both the previous contents and the directory clean. Torn-write immunity then
+// follows from `rename(2)`, not from this assertion.
+await check("a write that fails leaves the previous flows intact", async () => {
+  if (process.getuid?.() === 0) return { skip: "running as root — chmod does not deny root" };
+  reset();
+  await saveFlow(flow("keep-me"));
+  await saveFlow(flow("and-me"));
+  const before = readFileSync(FILE, "utf8");
+  chmodSync(HOME, 0o500);                       // no new files in the directory
+  try {
+    const r = await saveFlow(flow("doomed"));
+    eq(r.ok, false, "save failed");
+  } finally {
+    chmodSync(HOME, 0o700);
+  }
+  eq(readFileSync(FILE, "utf8"), before, "file on disk");
+  eq((await listFlows()).flows.length, 2, "flows still readable");
+  const strays = readdirSync(HOME).filter((f) => f !== "flows.json");
+  if (strays.length) throw new Error(`left behind: ${strays.join(", ")}`);
 });
 
 rmSync(HOME, { recursive: true, force: true });

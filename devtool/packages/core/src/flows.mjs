@@ -11,7 +11,7 @@
  * and a saved shell fragment is an obvious way to turn a config file into an exploit.
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { HYDRA_HOME } from "./state.mjs";
 import { ACTION_TYPES } from "../../leak/src/facts.mjs";
@@ -120,6 +120,34 @@ export async function listFlows() {
   return { available: true, flows: parsed.flows, file: file() };
 }
 
+/**
+ * Write the whole file by rename, never in place.
+ *
+ * `rename(2)` within one filesystem is atomic: a reader sees the old file or the new one and
+ * never a prefix of the new one. The plain `writeFile` this replaces is what made a truncated
+ * `flows.json` reachable at all — kill the process between `open(O_TRUNC)` and the last byte
+ * and the user's flows are gone, which is the corruption `listFlows` above now refuses to
+ * write over. Refusing was the urgent half; this is the half that stops it happening.
+ *
+ * The temp file is a sibling because a rename across filesystems is a copy, not a rename, and
+ * `$HYDRA_HOME` can be anywhere. Named with the pid so two processes cannot collide on it.
+ *
+ * NOT fsync'd. The failure this defends against is a killed process, where the kernel still
+ * holds the written bytes; surviving a power cut as well would cost an fsync of the file and
+ * its directory on every save, and nothing here is worth that.
+ */
+async function writeFlows(next) {
+  await mkdir(process.env.HYDRA_HOME ?? HYDRA_HOME, { recursive: true });
+  const tmp = `${file()}.${process.pid}.tmp`;
+  try {
+    await writeFile(tmp, JSON.stringify({ version: 1, flows: next }, null, 2));
+    await rename(tmp, file());
+  } catch (e) {
+    await rm(tmp, { force: true });
+    throw e;
+  }
+}
+
 /** Refuse rather than overwrite. `existing.flows` is empty for both causes; only this tells them apart. */
 const unreadable = (existing) =>
   existing.available ? null : `${existing.file} could not be read (${existing.error}) — move or repair it first`;
@@ -132,8 +160,7 @@ export async function saveFlow(input) {
   if (why) return { ok: false, error: why };
   const next = [v.flow, ...existing.flows.filter((f) => f.id !== v.flow.id)].slice(0, 50);
   try {
-    await mkdir(process.env.HYDRA_HOME ?? HYDRA_HOME, { recursive: true });
-    await writeFile(file(), JSON.stringify({ version: 1, flows: next }, null, 2));
+    await writeFlows(next);
     return { ok: true, flow: v.flow, flows: next };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -149,7 +176,7 @@ export async function forgetFlow(id) {
   if (!existing.flows.some((f) => f.id === id)) return { ok: false, error: "no such flow" };
   const next = existing.flows.filter((f) => f.id !== id);
   try {
-    await writeFile(file(), JSON.stringify({ version: 1, flows: next }, null, 2));
+    await writeFlows(next);
     return { ok: true, flows: next };
   } catch (e) {
     return { ok: false, error: e.message };
