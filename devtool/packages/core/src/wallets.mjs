@@ -9,7 +9,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { rpc } from "./probe.mjs";
 
-/** Why a write path refuses an --rpc override. One wording, three call sites. */
+/** Why a write path refuses an --rpc override. One wording, four call sites. */
 const REFUSAL_TEXT = (st) =>
   `--rpc/HYDRA_RPC is set to ${st.rpcOverride}, which is not a stack this tool controls. ` +
   "Unset it and run against a local stack.";
@@ -103,6 +103,14 @@ export async function faucet({ address, amount = 1e18, unit = "FRI" }) {
 export async function addToken({ symbol, address }) {
   const st = await readState();
   if (!st) return { ok: false, error: "no running stack — run `hydra-dev up`" };
+  // Refused for the same reason `faucet` refuses: this WRITES, and `--rpc` names a chain this
+  // tool does not control. Worse than a meaningless write — `readState` merges the override into
+  // the state it returns, so persisting it BAKES `devnetUrl: <the override>` into state.json, and
+  // a later `hydra-dev devnet` with nothing set reports mainnet as `● devnet up`. A read-only
+  // escape hatch becoming durable configuration, by way of a write path that never refused it.
+  if (st.rpcOverride) {
+    return { ok: false, error: `tracking a token writes, so it is devnet-only: ${REFUSAL_TEXT(st)}` };
+  }
   const sym = String(symbol ?? "").trim().toUpperCase();
   const addr = String(address ?? "").trim();
   if (!/^[A-Z0-9]{1,10}$/.test(sym)) return { ok: false, error: "symbol must be 1-10 letters or digits" };
@@ -121,6 +129,9 @@ export async function addToken({ symbol, address }) {
 export async function removeToken(symbol) {
   const st = await readState();
   if (!st) return { ok: false, error: "no running stack" };
+  if (st.rpcOverride) {
+    return { ok: false, error: `untracking a token writes, so it is devnet-only: ${REFUSAL_TEXT(st)}` };
+  }
   const sym = String(symbol ?? "").toUpperCase();
   if (sym === "STRK" || sym === "ETH") return { ok: false, error: `${sym} is the pool's own token` };
   if (!st.tokens?.[sym]) return { ok: false, error: `${sym} is not tracked` };
@@ -142,6 +153,15 @@ export async function removeToken(symbol) {
 export async function exportWallets(dest) {
   const st = await readState();
   if (!st) return { ok: false, error: "no running stack — run `hydra-dev up`" };
+  // Writes a FILE rather than state, and refuses the override for the same reason the others do.
+  // Driven under `--rpc` with no stack, it produced `wallets-export.json` holding zero accounts,
+  // empty tokens and `devnetUrl: <the mainnet endpoint>` — a document titled "wallets" describing
+  // a machine that has none, and naming a chain this tool does not control. Mild next to a
+  // poisoned state.json, and still a file somebody could read as an empty result rather than as
+  // a question that should not have been asked.
+  if (st.rpcOverride) {
+    return { ok: false, error: `exporting writes a file, so it is devnet-only: ${REFUSAL_TEXT(st)}` };
+  }
   const w = await wallets();
   if (!w.available) return { ok: false, error: w.reason };
   const path = dest ?? join(HYDRA_HOME, `wallets-${st.startedAt?.slice(0, 10) ?? "export"}.json`);
