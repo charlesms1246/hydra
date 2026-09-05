@@ -79,21 +79,58 @@ export function validate(input) {
   return { ok: true, flow: { ...flow, runnable: !reason, reason } };
 }
 
+/**
+ * The saved flows, or a refusal to guess.
+ *
+ * "You have no flows yet" and "your flows file could not be read" are DIFFERENT FACTS and
+ * this used to return the same value for both — `{ available: true, flows: [] }`. That is
+ * not a display problem. `saveFlow` reads this and writes back what it gets, so an
+ * unreadable file made the next save rewrite it with one flow, silently, exit 0. Twelve
+ * saved flows for one keypress and no message.
+ *
+ * The file becomes unreadable the ordinary way: the write below is a single `writeFile`,
+ * so a process killed mid-write leaves truncated JSON. `history.mjs:62-65` reasoned about
+ * exactly this — a process killed mid-append is "the whole point of choosing JSONL over one
+ * JSON array" — and that reasoning never reached the file whose own header says losing it
+ * "would be absurd".
+ *
+ * ENOENT is the only error that means "none yet". Everything else, including JSON that
+ * parses to the wrong shape, is `available: false` with the reason, and every caller that
+ * writes must check it.
+ */
 export async function listFlows() {
+  let text;
   try {
-    const parsed = JSON.parse(await readFile(file(), "utf8"));
-    const flows = Array.isArray(parsed?.flows) ? parsed.flows : [];
-    return { available: true, flows, file: file() };
-  } catch {
-    return { available: true, flows: [], file: file() };
+    text = await readFile(file(), "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return { available: true, flows: [], file: file() };
+    return { available: false, flows: [], error: e.message, file: file() };
   }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    return { available: false, flows: [], error: `not valid JSON: ${e.message}`, file: file() };
+  }
+  // A file that parses but carries no `flows` array is corrupt too, and reaches this the
+  // same way — a torn write can land on a prefix that happens to be valid JSON.
+  if (!Array.isArray(parsed?.flows)) {
+    return { available: false, flows: [], error: "no flows array in the file", file: file() };
+  }
+  return { available: true, flows: parsed.flows, file: file() };
 }
+
+/** Refuse rather than overwrite. `existing.flows` is empty for both causes; only this tells them apart. */
+const unreadable = (existing) =>
+  existing.available ? null : `${existing.file} could not be read (${existing.error}) — move or repair it first`;
 
 export async function saveFlow(input) {
   const v = validate(input);
   if (!v.ok) return v;
-  const { flows } = await listFlows();
-  const next = [v.flow, ...flows.filter((f) => f.id !== v.flow.id)].slice(0, 50);
+  const existing = await listFlows();
+  const why = unreadable(existing);
+  if (why) return { ok: false, error: why };
+  const next = [v.flow, ...existing.flows.filter((f) => f.id !== v.flow.id)].slice(0, 50);
   try {
     await mkdir(process.env.HYDRA_HOME ?? HYDRA_HOME, { recursive: true });
     await writeFile(file(), JSON.stringify({ version: 1, flows: next }, null, 2));
@@ -104,9 +141,13 @@ export async function saveFlow(input) {
 }
 
 export async function forgetFlow(id) {
-  const { flows } = await listFlows();
-  if (!flows.some((f) => f.id === id)) return { ok: false, error: "no such flow" };
-  const next = flows.filter((f) => f.id !== id);
+  const existing = await listFlows();
+  // Before the membership test, not after: an unreadable file has no members, so "no such
+  // flow" would blame the id for a problem with the file.
+  const why = unreadable(existing);
+  if (why) return { ok: false, error: why };
+  if (!existing.flows.some((f) => f.id === id)) return { ok: false, error: "no such flow" };
+  const next = existing.flows.filter((f) => f.id !== id);
   try {
     await writeFile(file(), JSON.stringify({ version: 1, flows: next }, null, 2));
     return { ok: true, flows: next };
