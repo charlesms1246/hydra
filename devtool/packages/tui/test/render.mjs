@@ -19,7 +19,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable, PassThrough } from "node:stream";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { html } from "../src/ui.mjs";
 import { LogPane, Confirm } from "../src/panels.mjs";
 import { visibleRows } from "../src/toolspage.mjs";
@@ -690,7 +690,18 @@ check_("every flow amount crosses the wire in the units its label claims", () =>
 check_("skill status counts HYDRA's own skills, not only the pinned bundle", () => {
   const sk = agentStatus().skills;
   if (!sk.own || !sk.thirdParty) throw new Error("no breakdown between the two skill sets");
-  if (!sk.own.available.length) throw new Error("packages/skills was not read at all");
+  // `packages/skills` is gitignored (.gitignore:20, beside `packages/mcp` on :21), so a clone
+  // can genuinely lack it — the same situation the MCP check below reports as a skip. This one
+  // threw instead, so `npm test` FAILED on a fresh clone: 1 of 76, exit 1, at the step
+  // immediately before `npm publish`. Two withheld directories, one skipped and one fatal.
+  //
+  // ABSENT IS A SKIP; PRESENT-BUT-EMPTY IS STILL A FAILURE, and the two are checked separately
+  // rather than collapsed into "no skills found". A directory that is there and reads as nothing
+  // is a broken reader, which is the case this assertion exists for.
+  if (!existsSync(new URL("../../skills", import.meta.url))) {
+    return { skip: "packages/skills is not present here — withheld from this clone" };
+  }
+  if (!sk.own.available.length) throw new Error("packages/skills is present and was read as empty");
   for (const name of sk.own.available) {
     if (!sk.expected.includes(name)) throw new Error(`${name} is on disk but not expected`);
   }
