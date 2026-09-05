@@ -2262,21 +2262,87 @@ html[data-build="public"] .wordmark {
   max-width: var(--measure);
 }
 
-.session-connect {
+/* --------------------------------------------------------------------------------------------
+ * The connect prompt, and the wireframe under it.
+ *
+ * ⛔ **The wireframe is not a loading state.** It is the shape of the page, drawn empty, so a
+ * reader who has not connected can see what this page is before deciding whether to point it at
+ * their own machine. A spinner tells them nothing and asks for a credential anyway. The boxes do
+ * not appear on connection — they fill.
+ * ------------------------------------------------------------------------------------------ */
+
+.session-prompt {
+  position: sticky;
+  top: clamp(5rem, 12vh, 7rem);
+  z-index: 10;
+  max-width: 34rem;
+  margin: 0 0 clamp(2rem, 5vh, 3rem);
+  padding: 1.5rem;
+  background: var(--black);
+  border: 1px solid var(--g-20);
+}
+
+.session-prompt h2 {
+  font-family: var(--sans);
+  font-weight: 200;
+  font-size: clamp(1.25rem, 2vw, 1.625rem);
+  margin: 0 0 0.75rem;
+}
+
+.session-prompt p {
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--g-64);
+  margin: 0 0 1.25rem;
+}
+
+.session-prompt code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  color: var(--white);
+}
+
+.session-prompt form {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 1rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--g-12);
 }
 
-.session-connect label {
+.session-prompt label {
   display: block;
-  flex: 1 1 22rem;
+  flex: 1 1 16rem;
 }
 
-.session-connect input {
+/*
+ * The wireframe: the whole frame recedes while it is empty, so the prompt in front of it is
+ * plainly the thing to act on. It is not hidden — a reader can read the structure through it.
+ */
+.session-frame.is-wire {
+  opacity: 0.4;
+  filter: grayscale(1);
+  pointer-events: none;
+}
+
+/* A placeholder bar. Hairline-bounded like everything else, never a grey block. */
+.wire {
+  display: block;
+  height: 0.7rem;
+  border: 1px solid var(--g-12);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--g-4) 0 6px,
+    transparent 6px 12px
+  );
+}
+
+.wire-value { width: min(22rem, 100%); }
+.wire-row { width: 100%; height: 1.6rem; margin: 0.6rem 0; }
+.wire-text { width: min(38rem, 100%); height: 1.1rem; }
+.wire-basis { width: min(26rem, 100%); margin-top: 0.5rem; }
+
+.session-prompt input {
   display: block;
   width: 100%;
   margin-top: 0.5rem;
@@ -2288,7 +2354,7 @@ html[data-build="public"] .wordmark {
   font-size: 0.875rem;
 }
 
-.session-connect input:focus-visible {
+.session-prompt input:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }

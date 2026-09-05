@@ -188,40 +188,57 @@ export function Session() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const live = !!status;
+
   return (
     <div className="session">
-      <form
-        className="session-connect"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void connect();
-        }}
-      >
-        <label htmlFor="base">
-          <span className="prose-label">LOCAL API</span>
-          <input
-            id="base"
-            name="base"
-            type="text"
-            value={base}
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(e) => setBase(e.target.value)}
-          />
-        </label>
-        <button className="button" type="submit">Connect</button>
-      </form>
+      {/*
+        ⛔ THE PAGE IS A WIREFRAME UNTIL A SESSION EXISTS, and the wireframe is not a loading state.
 
-      {refusal && <RefusalNote refusal={refusal} />}
+        It is the shape of what will be here, drawn empty — a reader arriving without a session
+        should be able to see what this page IS before deciding to point it at their machine.
+        A spinner or an empty page tells them nothing and asks for a credential anyway.
 
-      {status && <StatusPanel status={status} />}
+        Everything below reads `live`. The same boxes hold placeholders or data; they do not
+        appear on connection, they fill.
+      */}
+      {!live && (
+        <div className="session-prompt" role="dialog" aria-modal="false" aria-labelledby="connect-h">
+          <h2 id="connect-h">Connect to your machine</h2>
+          <p>
+            Run <code>hydra gui</code> and open the link it prints, or paste the address here.
+            Nothing on this page is fetched from this site.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void connect();
+            }}
+          >
+            <label htmlFor="base">
+              <span className="label">LOCAL API</span>
+              <input
+                id="base"
+                name="base"
+                type="text"
+                value={base}
+                spellCheck={false}
+                autoComplete="off"
+                onChange={(e) => setBase(e.target.value)}
+              />
+            </label>
+            <button className="button" type="submit">Connect</button>
+          </form>
+          {refusal && <RefusalNote refusal={refusal} />}
+        </div>
+      )}
 
-      {channels && (
+      <div className={live ? "session-frame" : "session-frame is-wire"} aria-hidden={!live}>
+        <StatusPanel status={status} />
+
         <section className="session-block">
           <h2>Conversations</h2>
-          {channels.length === 0 ? (
-            <p className="prose-body">No channels in this state yet.</p>
-          ) : (
+          {channels && channels.length > 0 ? (
             <ul className="session-channels">
               {channels.map((c) => (
                 <li key={c.name}>
@@ -243,16 +260,18 @@ export function Session() {
                 </li>
               ))}
             </ul>
+          ) : (
+            <ul className="session-channels">
+              {[0, 1, 2].map((i) => (
+                <li key={i}><span className="wire wire-row" /></li>
+              ))}
+            </ul>
           )}
         </section>
-      )}
 
-      {open && (
         <section className="session-block">
-          <h2>{open}</h2>
-          {messages === null ? (
-            <p className="prose-body">Reading stored history…</p>
-          ) : (
+          <h2>{open ?? "Messages"}</h2>
+          {messages && messages.length > 0 ? (
             <ol className="session-messages">
               {messages.map((m) => (
                 <li key={m.id} className={m.mine ? "msg mine" : "msg"}>
@@ -269,16 +288,20 @@ export function Session() {
                 </li>
               ))}
             </ol>
+          ) : (
+            <ol className="session-messages">
+              {[0, 1].map((i) => (
+                <li key={i} className="msg">
+                  <span className="wire wire-text" />
+                  <span className="wire wire-basis" />
+                </li>
+              ))}
+            </ol>
           )}
         </section>
-      )}
+      </div>
 
-      {!tried && !status && (
-        <p className="prose-body">
-          Open this page from the link <code>hydra gui</code> prints, or enter the address it
-          printed above. Nothing on this page is fetched from the site serving it.
-        </p>
-      )}
+      {live && refusal && <RefusalNote refusal={refusal} />}
     </div>
   );
 }
@@ -305,8 +328,24 @@ function RefusalNote({ refusal }: { refusal: Refusal }) {
   );
 }
 
-function StatusPanel({ status }: { status: Status }) {
-  const scanningWholeChain = !!status.chain?.contract && status.chain?.fromBlock === 0;
+function StatusPanel({ status }: { status: Status | null }) {
+  const scanningWholeChain = !!status?.chain?.contract && status?.chain?.fromBlock === 0;
+  /* The wireframe's rows: the same keys, with a bar where the value will be. */
+  if (!status) {
+    return (
+      <section className="session-block">
+        <h2>This machine</h2>
+        <dl className="session-status">
+          {["IDENTITY", "STATE FILE", "AT REST", "VAULT", "NETWORK", "ROUTE", "INVITES LEFT"].map((k) => (
+            <div className="session-row" key={k}>
+              <dt className="label">{k}</dt>
+              <dd><span className="wire wire-value" /></dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    );
+  }
   return (
     <section className="session-block">
       <h2>This machine</h2>
