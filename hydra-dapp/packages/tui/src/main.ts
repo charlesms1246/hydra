@@ -22,12 +22,40 @@ import type { Model } from "./app.ts";
 import { screen } from "./view.ts";
 import { perform } from "./effects.ts";
 import { load, save, STATE_FILE } from "../../cli/src/state.ts";
+import type { State } from "../../cli/src/state.ts";
 import { chainFor } from "../../cli/src/chain.ts";
 
 /** How often the queue is checked. One second, because the schedule is in milliseconds. */
 const TICK_MS = 1000;
 
-let model: Model = start(existsSync(STATE_FILE) ? load() : null, Date.now());
+/**
+ * Open the state file, or say why not — WITHOUT a stack trace.
+ *
+ * **THE IDENTITY PAGE TELLS A USER TO RUN `hydra lock`. DOING THAT MADE THIS PROGRAM CRASH.**
+ * `load()` was called at module top level with nothing around it, so a locked file threw and Node
+ * printed the file path, a source excerpt, a caret and five stack frames. The sentence explaining
+ * what to do was in there, between the excerpt and the frames, which is not where anybody reads.
+ *
+ * The CLI has handled this since it existed — `cli.ts` checks `locked()` and resolves a passphrase
+ * before anything else. **The TUI did not, which is the same defect as `ensureFromBlock` living in
+ * `cli.ts` and never being called here: a repair that reached one of two front ends.** Third
+ * instance today, which is why `front-end-parity.test.ts` exists.
+ *
+ * THIS ONLY FIXES THE PRESENTATION. Whether the TUI should PROMPT for the passphrase the way the
+ * CLI does is a behavioural question and is not decided here — `HYDRA_PASSPHRASE` works today and
+ * the message says so.
+ */
+function openState(): State | null {
+  if (!existsSync(STATE_FILE)) return null;
+  try {
+    return load();
+  } catch (e) {
+    process.stderr.write(`\n${e instanceof Error ? e.message : String(e)}\n\n`);
+    process.exit(2);
+  }
+}
+
+let model: Model = start(openState(), Date.now());
 
 const size = () => ({
   rows: process.stdout.rows || 24,
