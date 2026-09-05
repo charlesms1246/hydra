@@ -88,3 +88,39 @@ test("`show` WITH NO ID NAMES THE MISSING ARGUMENT, not the search it did not ru
   assert.match(r.out, /needs the id of a review/);
   assert.match(r.out, /operator queue/, "the refusal names no way to find the id");
 });
+
+test("A FLAG WITH NO VALUE IS REFUSED, not treated as a flag nobody passed", async () => {
+  // **`--generate-invites` WITH NO NUMBER SILENTLY STARTED A SERVER.** `Number(undefined)` is
+  // `NaN`, `NaN > 0` is false, so an operator who asked for invite codes got a running vault with
+  // zero invites and no message at all. `cli.ts` fixed this shape for the user client and wrote
+  // down why; neither non-user binary inherited it, which is the I8 split's quiet cost.
+  const r = await operator("report", "--queue");
+  assert.notEqual(r.code, 0);
+  assert.match(r.out, /--queue needs a value/);
+  assert.ok(!r.out.includes("at ModuleJob"), `and it is a sentence, not a stack:\n${r.out}`);
+});
+
+test("THE VAULT SERVER REFUSES IT TOO, and mints codes when given one", async () => {
+  // The binary where it mattered most: the failure was silent AND produced a running service.
+  const VAULT = join(import.meta.dirname, "..", "..", "vault-server", "src", "main.ts");
+  const bare = await (async () => {
+    try {
+      const { stdout, stderr } = await run("node", [VAULT, "--generate-invites"],
+        { encoding: "utf8", timeout: 10_000 });
+      return { code: 0, out: `${stdout}${stderr}` };
+    } catch (e) {
+      const err = e as { code?: number; stdout?: string; stderr?: string };
+      return { code: err.code ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
+    }
+  })();
+  assert.notEqual(bare.code, 0,
+    `\`--generate-invites\` with no value started a server instead of minting codes:\n${bare.out}`);
+  assert.match(bare.out, /needs a value/);
+  assert.ok(!/vault on http/.test(bare.out),
+    `asking for invite codes started a service:\n${bare.out}`);
+
+  // And the flag still works, so the refusal has not eaten the feature.
+  const { stdout } = await run("node", [VAULT, "--generate-invites", "3"], { encoding: "utf8" });
+  assert.equal(stdout.trim().split("\n").length, 3, "three codes were not minted");
+  assert.match(stdout.trim().split("\n")[0]!, /^[0-9a-f]{32}$/, "a code is not 128 bits of hex");
+});

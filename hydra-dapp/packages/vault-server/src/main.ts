@@ -31,9 +31,35 @@ import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import type { RateLimitConfig } from "./ratelimit.ts";
 
 const args = process.argv.slice(2);
+
+/**
+ * A message, not a stack — this binary had no top-level handler either.
+ *
+ * The user client has had `die()` since it existed. I8 keeps operator and user surfaces off one
+ * dependency path, and one of the things that split quietly cost is that neither non-user binary
+ * inherited it: every argument error here dumped Node internals at whoever runs the vault.
+ */
+const die = (e: unknown): never => {
+  console.error(`\n  ${e instanceof Error ? e.message : String(e)}\n`);
+  if (args.includes("--debug")) console.error(e);
+  process.exit(1);
+};
+process.on("uncaughtException", die);
+process.on("unhandledRejection", die);
 const flag = (name: string, fallback = ""): string => {
   const i = args.indexOf(`--${name}`);
-  return i >= 0 ? args[i + 1] : fallback;
+  if (i < 0) return fallback;
+  const next = args[i + 1];
+  // **A FLAG WITH NO VALUE IS NOT A FLAG YOU DID NOT PASS**, and treating them alike is how
+  // `--generate-invites` with no number silently started a SERVER instead of minting codes:
+  // `Number(undefined)` is `NaN`, `NaN > 0` is false, and an operator who asked for invite codes
+  // got a running vault with zero invites and no message. `cli.ts` fixed this shape for the user
+  // client and documented why; neither non-user binary got it.
+  if (next === undefined || next.startsWith("--")) {
+    throw new Error(`--${name} needs a value and was given none. A flag with no value is not the `
+      + "same as a flag you did not pass, so this refuses rather than guessing at the default.");
+  }
+  return next;
 };
 
 /**

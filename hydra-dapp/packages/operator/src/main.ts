@@ -36,9 +36,44 @@ import { compelledAuthorityFromFile } from "./queue.ts";
 import { serveIntake } from "./intake.ts";
 
 const args = process.argv.slice(2);
+
+/**
+ * A message, not a stack — the operator surface had no top-level handler at all.
+ *
+ * **REGISTERED BEFORE ANY FLAG IS READ.** `queuePath` calls `flag()` at module top level, so a
+ * handler installed further down is one the first argument error never reaches — which is how
+ * the first version of this fix still printed a stack for `--queue` with no value.
+ *
+ * **EVERY ARGUMENT ERROR HERE DUMPED RAW NODE INTERNALS AT A MODERATOR**, with absolute paths and
+ * five frames, burying messages that are otherwise good and do name their condition and remedy.
+ * The user client has had `die()` since it existed; I8 keeps operator and user surfaces off one
+ * dependency path, and this is one of the things the split quietly cost — a rule that lives on one
+ * surface and not the other, which is the class this repository has spent the week on.
+ *
+ * `--debug` prints the stack as well, the same spelling the user client uses, because a moderator
+ * debugging this should not have to learn a second convention.
+ */
+const die = (e: unknown): never => {
+  console.error(`\n  ${e instanceof Error ? e.message : String(e)}\n`);
+  if (args.includes("--debug")) console.error(e);
+  process.exit(1);
+};
+process.on("uncaughtException", die);
+process.on("unhandledRejection", die);
 const flag = (name: string, fallback = ""): string => {
   const i = args.indexOf(`--${name}`);
-  return i >= 0 ? args[i + 1] : fallback;
+  if (i < 0) return fallback;
+  const next = args[i + 1];
+  // **A FLAG WITH NO VALUE IS NOT A FLAG YOU DID NOT PASS**, and treating them alike is how
+  // `--generate-invites` with no number silently started a SERVER instead of minting codes:
+  // `Number(undefined)` is `NaN`, `NaN > 0` is false, and an operator who asked for invite codes
+  // got a running vault with zero invites and no message. `cli.ts` fixed this shape for the user
+  // client and documented why; neither non-user binary got it.
+  if (next === undefined || next.startsWith("--")) {
+    throw new Error(`--${name} needs a value and was given none. A flag with no value is not the `
+      + "same as a flag you did not pass, so this refuses rather than guessing at the default.");
+  }
+  return next;
 };
 const positional = args.filter((a, i) =>
   !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--")));
@@ -87,25 +122,7 @@ function monthOf(spec: string): Period {
 
 const out = (...lines: string[]) => console.log(lines.join("\n"));
 
-/**
- * A message, not a stack — the operator surface had no top-level handler at all.
- *
- * **EVERY ARGUMENT ERROR HERE DUMPED RAW NODE INTERNALS AT A MODERATOR**, with absolute paths and
- * five frames, burying messages that are otherwise good and do name their condition and remedy.
- * The user client has had `die()` since it existed; I8 keeps operator and user surfaces off one
- * dependency path, and this is one of the things the split quietly cost — a rule that lives on one
- * surface and not the other, which is the class this repository has spent the week on.
- *
- * `--debug` prints the stack as well, the same spelling the user client uses, because a moderator
- * debugging this should not have to learn a second convention.
- */
-const die = (e: unknown): never => {
-  console.error(`\n  ${e instanceof Error ? e.message : String(e)}\n`);
-  if (args.includes("--debug")) console.error(e);
-  process.exit(1);
-};
-process.on("uncaughtException", die);
-process.on("unhandledRejection", die);
+
 
 switch (command) {
   case "queue": {
