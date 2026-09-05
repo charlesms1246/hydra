@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
-import { Code } from "../../components/Code.tsx";
 import { Section } from "../../components/Section.tsx";
+import { WriteOn } from "../../components/WriteOn.tsx";
 import { Footer } from "../../components/Footer.tsx";
 
 /**
@@ -46,13 +46,39 @@ export default function About() {
           </p>
         </Section>
 
-        <Section n="02" id="not-claimed" title="WHAT THIS DOES NOT CLAIM">
-          <ul className="warnings">
-            {SITE.doesNotClaim.map((line) => (
-              <li key={line}><Code>{line}</Code></li>
+        {/*
+          ⛔ `SITE.doesNotClaim` used to be repeated here. It is on `/about/disclosure/` and
+          nowhere else now — one page holds every negative, by instruction, and a caveat printed
+          in two places is a caveat that can be edited in one.
+
+          What stands here instead is the thing this page is for: there are two tools, they are
+          for different people, and a reader who has arrived at "about" is asking which.
+        */}
+        <Section n="02" id="tools" title="TWO TOOLS">
+          <div className="why two">
+            {SITE.demo.tools.map((t) => (
+              <article key={t.id}>
+                <span className="why-label">{t.who}</span>
+                <h3><a href={t.href}>{t.name}</a></h3>
+                <WriteOn text={t.body} />
+                <p className="cta cta-inline">
+                  <a href={t.href}>See {t.name} &rarr;</a>
+                </p>
+              </article>
             ))}
-          </ul>
+          </div>
         </Section>
+
+        <Section n="03" id="disclosure" title="AND ONE PAGE OF CAVEATS">
+          <p className="statement-lead col-7">
+            Everything this project does not claim, is not ready for, and cannot hide from you is
+            on a single page, generated from the code that makes each line true.
+          </p>
+          <p className="cta">
+            <a href="/about/disclosure/">Read what every party can see &rarr;</a>
+          </p>
+        </Section>
+
       </main>
 
       <Footer />

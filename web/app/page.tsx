@@ -1,10 +1,10 @@
 import { SITE } from "../content.ts";
 import { Nav } from "../components/Nav.tsx";
-import { Code } from "../components/Code.tsx";
 import { Section } from "../components/Section.tsx";
 import { Footer } from "../components/Footer.tsx";
 import { WriteOn } from "../components/WriteOn.tsx";
 import { Develop } from "../components/Develop.tsx";
+import { Reveal } from "../components/Reveal.tsx";
 import { AsciiPanel } from "../components/viz/AsciiPanel.tsx";
 import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
 
@@ -105,23 +105,28 @@ export default function Home() {
         </Section>
 
 
-        <Section n="03" id="before" title="BEFORE YOU USE IT">
-          <ul className="warnings">
-            {SITE.beforeYouUse.map((line) => (
-              <li key={line}><Code>{line}</Code></li>
-            ))}
-          </ul>
-          {/*
-            The shape of the disclosure, without any of its text.
+        {/*
+          ⛔ The warnings that stood here are on `/about/disclosure/` and nowhere else.
 
-            The landing page may not quote a generated claim — that is the rule that makes the
-            split between this page and `/about/disclosure/` honest rather than a demotion. A count
-            is not a claim, so this shows the *shape*: forty things a party can see against eleven
-            they cannot. It is the strongest argument on the page and it makes none of the
-            sentences the page is forbidden from making.
-          */}
+          Every negative, caveat and disclosure is on one page now, by instruction. **This is a
+          real trade and it is worth naming rather than quietly making**: the previous arrangement
+          put two warnings in front of a reader before any link to a download, and its comment
+          argued that a page which makes somebody find that out later is a page that misled them.
+          What replaces it is a link that says plainly what is behind it and is the only call to
+          action on this page — so the warning is one click away rather than absent, and the click
+          is the loudest thing here.
+        */}
+        <Section n="03" id="before" title="WHAT EVERY PARTY CAN SEE">
+          <p className="statement-lead col-7">
+            Forty things a party to this system can see, seven it protects with a measurement
+            attached, and eleven it does not expose. All of it is generated from the code, and all
+            of it is on one page.
+          </p>
+
           <div className="fig-map">
-            <DisclosureMap />
+            <Reveal>
+              <DisclosureMap />
+            </Reveal>
           </div>
 
           <p className="cta">
