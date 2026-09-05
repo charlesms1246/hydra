@@ -46,6 +46,7 @@ import {
 import { STATE_FILE as WHERE } from "./state.ts";
 import type { Secret } from "../../identity/src/domains.ts";
 import type { Chain } from "./chain.ts";
+import { blockHeight, deploymentBlock } from "./chain.ts";
 import { STATE_FILE } from "./state.ts";
 import type { State, ChannelState, ReceivedMessage } from "./state.ts";
 
@@ -141,6 +142,42 @@ export const decodeWire = (text: string): any => JSON.parse(text, (k, v) =>
 // ---------------------------------------------------------------------------
 // Setup and identity
 // ---------------------------------------------------------------------------
+
+/**
+ * Make sure a state file does not start reading from block 0 — see `chain.ts:deploymentBlock`.
+ *
+ * **IT LIVED IN `cli.ts` AND THE TUI NEVER CALLED IT.** Measured against a genuinely TUI-created
+ * state on Sepolia: `fromBlock: 0`, **108 seconds and 178 RPC round trips to return seven events**,
+ * on every read, permanently. The CLI had been repairing itself since the fix landed and the
+ * resident client — the one `0022` makes the primary surface — had not.
+ *
+ * This is the defect `chain.ts`'s own header describes for `chainFor`: *there are now two front
+ * ends, and a TUI that picked differently would give the same user two different disclosures.*
+ * `repairFromBlock` was the same shape and did not move. So it lives here, beside the commands
+ * both front ends call, and `two-front-ends.test.ts` asserts neither can drop it.
+ *
+ * ONCE, AND THEN WRITTEN DOWN — about nine seconds of bisection against 178 calls on every read.
+ * ONLY WHEN IT IS 0: a caller who set `--from-block` meant it, and a devnet contract is at a low
+ * block. NEVER FATAL: a node that cannot be reached must not stop a command that might still work,
+ * and 0 is what the file already had.
+ *
+ * Returns true when it changed something, so the caller knows to save.
+ */
+export async function ensureFromBlock(
+  state: State,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  if (state.fromBlock !== 0 || !state.contract || !state.rpcUrl) return false;
+  try {
+    const latest = await blockHeight(state.rpcUrl, fetchImpl);
+    const at = await deploymentBlock(state.rpcUrl, state.contract, latest, fetchImpl);
+    if (at === 0) return false;
+    state.fromBlock = at;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function init(overrides: Partial<State> = {}): State {
   return {

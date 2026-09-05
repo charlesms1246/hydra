@@ -18,7 +18,7 @@
 import {
   init, publishBundle, openAndSend, collect, sendMessage, flush, FLUSH_LIMIT, readChannel, rotatePrekey,
   fingerprint, nextOneTime, encodeWire, decodeWire, foreignSends, forget,
-  myRecord, anchorPeer, recordFelts,
+  myRecord, anchorPeer, recordFelts, ensureFromBlock,
 } from "../../cli/src/commands.ts";
 import type { State } from "../../cli/src/state.ts";
 import type { Chain } from "../../cli/src/chain.ts";
@@ -52,6 +52,13 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
       network: f.network || undefined,
       invites: f.invites.split(",").map((s) => s.trim()).filter(Boolean),
     });
+    // **THE RESIDENT CLIENT READ FROM BLOCK 0 FOREVER AND NOBODY NOTICED**, because the repair
+    // lived in `cli.ts` and this file never called it. Measured on a genuinely TUI-created state
+    // against Sepolia: 108 seconds and 178 RPC round trips to return seven events, on every read.
+    // The CLI had been repairing itself since the fix landed; the surface `0022` makes primary
+    // had not. Same defect `chainFor` was moved to `chain.ts` to prevent — two front ends, one
+    // of which picks differently.
+    await ensureFromBlock(next, deps.fetchImpl);
     deps.save(next);
     return { t: "ok", state: next, text: `identity created — fingerprint ${fingerprint(publishBundle(next))}` };
   }
@@ -60,6 +67,7 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
 
   switch (effect.t) {
     case "send": {
+      if (await ensureFromBlock(state, deps.fetchImpl)) deps.save(state);
       const r = await sendMessage(
         state, deps.chain(state), effect.channel,
         effect.signed ? "signed" : "ephemeral", effect.text, deps.now());
@@ -71,6 +79,8 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
       };
     }
     case "read": {
+      // A state file created before the repair existed still says 0. Once, then persisted.
+      if (await ensureFromBlock(state, deps.fetchImpl)) deps.save(state);
       const messages = await readChannel(state, deps.chain(state), effect.channel, deps.fetchImpl);
       return {
         t: "messages", channel: effect.channel, messages,

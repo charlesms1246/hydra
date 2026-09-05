@@ -56,9 +56,8 @@ import {
   fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
   myRecord, anchorPeer, anchorOf, recordFelts, drain, linkabilityOf, post, fetchPosts,
   bundleFromChain,
-  encodeWire as encode, decodeWire as decode,
-} from "./commands.ts";
-import { chainFor, blockHeight, deploymentBlock } from "./chain.ts";
+  encodeWire as encode, decodeWire as decode, ensureFromBlock } from "./commands.ts";
+import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
 import { load, save, exists, locked, usePassphrase, currentPassphrase,
@@ -172,36 +171,19 @@ async function resolvePassphrase(): Promise<void> {
 if (locked() || flag("passphrase-file")) await resolvePassphrase();
 
 /**
- * Repair a state file that starts reading from block 0 — see `deploymentBlock`.
+ * Repair a state file that starts reading from block 0.
  *
- * **`init` LEARNED THE DEPLOYMENT BLOCK; EVERY IDENTITY CREATED BEFORE THAT DID NOT.** Those files
- * still say `fromBlock: 0`, so they still ask a node for the contract's log from the genesis of the
- * network, and the fix would have helped only people who started over. That is the worse half of a
- * migration to skip: the ones who already have conversations are exactly the ones with something
- * to lose by re-initialising.
- *
- * ONCE, AND THEN WRITTEN DOWN. Nine seconds of bisection against 178 RPC round trips on every
- * single read, so it pays for itself before the first read finishes.
- *
- * ONLY WHEN IT IS 0. A caller who set `--from-block` meant it, and a devnet contract really is at
- * a low block. This never overrides a value somebody chose.
- *
- * NEVER FATAL. A node that cannot be reached here must not stop a read that might still work from
- * cache or fail with its own better message; 0 is what the file already had.
+ * **THE LOGIC MOVED TO `commands.ts` BECAUSE THE TUI NEVER CALLED THIS ONE.** It lived here, was
+ * called from two places in this file, and the resident client — the primary surface by `0022` —
+ * read from block 0 forever: 108 seconds and 178 RPC round trips per read, measured on Sepolia.
+ * This is now the thin front-end half: ask, and persist if it changed.
  */
 async function repairFromBlock(state: State): Promise<void> {
-  if (state.fromBlock !== 0 || !state.contract || !state.rpcUrl) return;
-  try {
-    const latest = await blockHeight(state.rpcUrl);
-    const at = await deploymentBlock(state.rpcUrl, state.contract, latest);
-    if (at === 0) return;
-    state.fromBlock = at;
+  if (!flag("from-block") && await ensureFromBlock(state)) {
     save(state);
-    console.error(`(reading from block ${at}, where this contract was deployed — this state file `
-      + "predates that being recorded, and every read was scanning the whole chain. Fixed once.)");
-  } catch {
-    // Deliberately silent. The command that follows will report a node it cannot reach, in its
-    // own words, and two messages about one unreachable node is one too many.
+    console.error(`(reading from block ${state.fromBlock}, where this contract was deployed — this `
+      + "state file predates that being recorded, and every read was scanning the whole chain. "
+      + "Fixed once.)");
   }
 }
 
@@ -238,17 +220,9 @@ switch (command) {
     // SKIPPED WHEN `--from-block` WAS GIVEN, because a caller who states one means it, and a
     // devnet's contract is at a low block anyway. Failure here is not fatal: a client that cannot
     // reach the node at `init` should still get an identity, and 0 is what it would have had.
-    if (!flag("from-block") && state.contract && state.rpcUrl) {
-      try {
-        const latest = await blockHeight(state.rpcUrl);
-        state.fromBlock = await deploymentBlock(state.rpcUrl, state.contract, latest);
-        console.log(`reading from block ${state.fromBlock}, where ${state.contract.slice(0, 12)}… `
-          + "was deployed — everything before it is blocks this contract did not exist in.");
-      } catch (e) {
-        console.error(`could not find the contract's deployment block (${(e as Error).message}).`);
-        console.error("starting from 0, which works and is slow: every read scans the whole chain.");
-        console.error("pass `--from-block N` to set it yourself.");
-      }
+    if (!flag("from-block") && await ensureFromBlock(state)) {
+      console.log(`reading from block ${state.fromBlock}, where ${state.contract.slice(0, 12)}… `
+        + "was deployed — everything before it is blocks this contract did not exist in.");
     }
     save(state);
     console.log(`identity written to ${STATE_FILE}`);
