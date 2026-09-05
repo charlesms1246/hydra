@@ -123,6 +123,41 @@ async function created(h: ReturnType<typeof harness>, extra: Partial<Record<stri
 
 // ---------------------------------------------------------------------------
 
+test("NO DISCLOSURE ROW LOSES ITS QUALIFICATION TO THE RIGHT EDGE", async () => {
+  // **THE ONE TRUNCATION ON THIS PRODUCT THAT IS WORSE THAN UNHELPFUL.** Disclosure (5) is the
+  // screen the whole method rests on — every row generated from the code that makes it true, and
+  // the same source the site renders. The tail of a disclosure row is its QUALIFICATION: "the
+  // padded size bucket, NOT THE TRUE LENGTH", "which of the two classes, encrypted or public".
+  // Lose the tail and the row does not read as broken. It reads as a stronger promise than the
+  // code makes, which is the one direction this product must never fail in.
+  //
+  // `truncate` always leaves "…", so a cut is detectable. Checked at every scroll position, at 80
+  // columns — the default xterm and the default `docker exec` — and at the narrowest size the
+  // frame test already covers.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    const m = await created(h);
+    // **BOTH MODES.** The first version of this checked only the default one, and a mutation that
+    // stopped wrapping the CITATIONS passed it — `m.cite` is false unless the user turns it on, so
+    // the guard was a statement about the page I happened to render rather than about the page.
+    // Citations are file:line strings, which are exactly the shape that overruns a narrow box.
+    for (const cite of [false, true])
+    for (const size of [{ rows: 24, cols: 80 }, { rows: 12, cols: 46 }, { rows: 24, cols: 100 }]) {
+      for (let scroll = 0; scroll < 260; scroll++) {
+        const frame = render({ ...m, page: "disclosure" as const, scroll, cite }, size);
+        // The nav header and the key footer truncate by design; the box body must not.
+        const body = frame.filter((l) => l.replace(/\x1b\[[0-9;]*m/g, "").startsWith("│"));
+        const cut = body.find((l) => l.replace(/\x1b\[[0-9;]*m/g, "").includes("…"));
+        assert.equal(cut, undefined,
+          `at ${size.cols} columns, scroll ${scroll}, cite ${cite}, a disclosure row is cut off `
+          + `at the right `
+          + `edge — so what the reader sees is a claim without its qualification:\n  ${cut}`);
+      }
+    }
+  } finally { server.close(); }
+});
+
 test("EXPORT SAYS WHERE THE FILE WENT, not just what it was called", async () => {
   // `wrote bundle.json — give it to whoever wants to reach you`: the same sentence tells a user to
   // go and hand over a file and does not say which directory it is in. The field's default is a
