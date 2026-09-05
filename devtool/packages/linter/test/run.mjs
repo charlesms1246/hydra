@@ -19,6 +19,10 @@ const CASES = [
   ["network-mixup.ts", ["HYD006", "HYD007"]],
   ["indirect.ts", ["HYD000", "HYD007"]],
   ["indexer-direct.ts", ["HYD003", "HYD008", "HYD003", "HYD002", "HYD003", "HYD007"]],
+  // One cause, five spellings: a shorthand property and a spread both mean "present, and not
+  // readable from this file". The first line is the syntax HYD001's own detail quotes, and it
+  // used to produce no error and exit 0.
+  ["shorthand.ts", ["HYD001", "HYD000", "HYD000", "HYD000", "HYD000", "HYD007"]],
   ["false-positive-bait.ts", []],
 ];
 

@@ -23,10 +23,35 @@ function prop(objLiteral, name) {
   );
 }
 
+/**
+ * The value of a property, or a marker saying WHICH KIND of "no value" this is.
+ *
+ * Three states, not two, and collapsing two of them into `undefined` was one cause behind four
+ * symptoms. `{ url }` is a `ShorthandPropertyAssignment`: the property is PRESENT and its value
+ * is a reference this single-file, no-type-checker tool cannot follow. Read as "absent", that
+ * made HYD001 miss the exact spelling its own `detail` quotes —
+ * `createPrivateTransfers({ discoveryProvider: { url } })` — and exit 0, so a configuration that
+ * posts the viewing key with no OHTTP walked through a gate built to stop it. The same read made
+ * HYD004 announce "options present but no rateLimit" about `{ rateLimit }`, where the property is
+ * sitting in the source it is describing.
+ *
+ * A spread does the same thing from the other side: `{ ...cfg }` may supply any name, so a name
+ * not found in an object that spreads is UNRESOLVED rather than ABSENT.
+ *
+ * Standing rule 6 — a rule that cannot determine the answer reports UNKNOWN and never asserts —
+ * only holds if "cannot determine" can reach the rules. That is what UNRESOLVED is for.
+ */
+const ABSENT = Symbol("property is not there");
+const UNRESOLVED = Symbol("property is there and its value cannot be read statically");
+
 function propValue(objLiteral, name) {
   const p = prop(objLiteral, name);
-  if (!p) return undefined;
-  return ts.isPropertyAssignment(p) ? p.initializer : undefined;
+  if (!p) {
+    if (!objLiteral || !ts.isObjectLiteralExpression(objLiteral)) return ABSENT;
+    return objLiteral.properties.some((x) => ts.isSpreadAssignment(x)) ? UNRESOLVED : ABSENT;
+  }
+  // Shorthand, and anything else that is not a plain `name: value`.
+  return ts.isPropertyAssignment(p) ? p.initializer : UNRESOLVED;
 }
 
 /** Reads a numeric literal, or undefined when it is not statically knowable. */
@@ -75,7 +100,8 @@ export function analyzeSource(fileName, sourceText) {
   /** Inspects an options object for OHTTP on a key-bearing provider. */
   const checkOhttp = (optionsNode, node, evidence) => {
     const ohttp = propValue(optionsNode, "ohttp");
-    if (ohttp === undefined) return report("HYD001", node, evidence);
+    if (ohttp === ABSENT) return report("HYD001", node, evidence);
+    if (ohttp === UNRESOLVED) return report("HYD000", node, `${evidence} — ohttp is not a literal`);
     if (isFalse(ohttp)) return report("HYD002", node, evidence);
     if (isTrue(ohttp) || ts.isObjectLiteralExpression(ohttp)) return;
     report("HYD000", node, `${evidence} — ohttp is not a literal`);
@@ -102,10 +128,14 @@ export function analyzeSource(fileName, sourceText) {
       usesPool = true;
       const arg = node.arguments[0];
       const dp = propValue(arg, "discoveryProvider");
-      if (dp === undefined) {
+      if (dp === ABSENT) {
         // No discoveryProvider key at all; not our call to judge.
+      } else if (dp === UNRESOLVED) {
+        report("HYD000", arg ?? node, "discoveryProvider is not an inline literal");
       } else if (ts.isObjectLiteralExpression(dp)) {
-        if (propValue(dp, "url")) {
+        // `!== ABSENT`, not truthiness: `{ url }` names a url this tool cannot read, and that
+        // is still a url. It is the OHTTP question that decides the rule, not the spelling.
+        if (propValue(dp, "url") !== ABSENT) {
           checkOhttp(dp, dp, "discoveryProvider: { url: … }");
         }
       } else if (!ts.isNewExpression(dp)) {
@@ -126,7 +156,8 @@ export function analyzeSource(fileName, sourceText) {
         if (opts === undefined) report("HYD008", node, "two-argument construction");
         else if (ts.isObjectLiteralExpression(opts)) {
           const ohttp = propValue(opts, "ohttp");
-          if (ohttp === undefined) report("HYD008", node, "options without ohttp");
+          if (ohttp === ABSENT) report("HYD008", node, "options without ohttp");
+          else if (ohttp === UNRESOLVED) report("HYD000", node, "ohttp is not a literal");
           else if (isFalse(ohttp)) report("HYD002", node, "ohttp: false");
           else if (!isTrue(ohttp) && !ts.isObjectLiteralExpression(ohttp) && !ts.isConditionalExpression(ohttp))
             report("HYD000", node, "ohttp is not a literal");
@@ -140,13 +171,22 @@ export function analyzeSource(fileName, sourceText) {
           report("HYD004", node, "new ContractDiscoveryProvider(pool) with no options");
         } else if (ts.isObjectLiteralExpression(opts)) {
           const rl = propValue(opts, "rateLimit");
-          if (rl === undefined) {
+          if (rl === ABSENT) {
             report("HYD004", node, "options present but no rateLimit");
+          } else if (rl === UNRESOLVED) {
+            report("HYD000", node, "rateLimit is not a literal");
           } else if (ts.isObjectLiteralExpression(rl)) {
-            const c = numberOf(propValue(rl, "concurrency"));
-            if (c === undefined)
+            const cv = propValue(rl, "concurrency");
+            if (cv === ABSENT) {
+              // `rateLimit: {}` really does default to 8. That is a fact about the config.
               report("HYD005", node, "rateLimit without a literal concurrency (defaults to 8)");
-            else if (c <= 8) report("HYD005", node, `concurrency: ${c}`);
+            } else if (cv === UNRESOLVED) {
+              report("HYD000", node, "concurrency is not a literal");
+            } else {
+              const c = numberOf(cv);
+              if (c === undefined) report("HYD000", node, "concurrency is not a numeric literal");
+              else if (c <= 8) report("HYD005", node, `concurrency: ${c}`);
+            }
           } else {
             report("HYD000", node, "rateLimit is not a literal");
           }
