@@ -159,24 +159,35 @@ const HELD = /\bheld\b|\bwithheld\b|not in the public repository|pending (privat
 /**
  * WHICH DOCUMENTS, AND THIS IS THE SCOPE DECISION RATHER THAN A DEFAULT.
  *
- * Run over all 75 files in `claude-docs/` this reports 1,382 unmarked citations, and almost all
- * of them are session notes citing a sibling note. That reader HAS `claude-docs/`; nothing is
- * hidden from them, and a guard that shouts about it is one people learn to skip — which is the
- * same failure as not having it.
+ * Run over all 75 files in `claude-docs/` this reports 1,382 unmarked citations, almost all of
+ * them session notes citing a sibling note. That reader HAS `claude-docs/`; nothing is hidden
+ * from them, and a guard that shouts about it is one people learn to skip — which is the same
+ * failure as not having it, plus the appearance of coverage.
  *
- * The defect was never in the session logs. It was in the documents whose sentences are QUOTED
- * OUTWARD — into a submission form, into a video script, into a message to StarkWare — and read
- * by somebody holding a clone and nothing else. That is the reader whose citations have to
- * resolve, so that is the list. `--all` scans everything for anyone who wants the noise.
+ * THE TEST IS NOT "DOES THIS DOCUMENT LOOK OFFICIAL". IT IS "DOES ITS CONTENT LEAVE THE
+ * REPOSITORY". The first version of this list had seven files, picked by the first test, and
+ * three were wrong: `PUBLISHING-RUNBOOK.md` is an operator checklist the user runs,
+ * `RECORDING-RUNBOOK.md` is production discipline for whoever holds the camera, and
+ * `SITE-COPY-SPEC.md` is written for another session. Every one of those readers has
+ * `claude-docs/` open. Their six sibling-document citations were judged individually before this
+ * list was narrowed and not one was a defect — `RECORDING-RUNBOOK.md:237` telling the recordist
+ * that the `tx` output must match `SUBMISSION.md` field by field is a useful instruction to a
+ * person who can open both, and deleting it would remove a cross-check.
+ *
+ * **Narrowing a guard is how you hide a finding, so this is written down rather than done
+ * quietly, and it was checked before it was done.** Nothing real is lost: the only substantive
+ * citation in the three removed files is `SITE-COPY-SPEC.md`'s `decisions/0012`, and
+ * `DEMO-VIDEO.md` cites the same record in content that IS spoken aloud, so the finding survives
+ * where it has a reader who cannot open it. `--all` scans everything for anyone who disagrees.
+ *
+ * `DISCLOSURE-STATEMENT.md` stays in scope and is generated — `statement.ts` writes it and its
+ * own header says do not edit. If it ever fails here the fix is to regenerate, never to edit.
  */
 const OUTWARD = [
-  "SUBMISSION.md",
-  "DEMO-VIDEO.md",
-  "RECORDING-RUNBOOK.md",
-  "DISCLOSURE-STATEMENT.md",
-  "STARKWARE-MESSAGE.md",
-  "PUBLISHING-RUNBOOK.md",
-  "SITE-COPY-SPEC.md",
+  "SUBMISSION.md",           // quoted into the submission form, read by a judge with a clone
+  "DEMO-VIDEO.md",           // its blockquotes are spoken aloud in the video
+  "STARKWARE-MESSAGE.md",    // sent to a named third party
+  "DISCLOSURE-STATEMENT.md", // generated; a failure here means regenerate, never edit
 ];
 
 const all = process.argv.includes("--all");
@@ -222,9 +233,15 @@ for (const file of files) {
 // Vacuity. A matcher that silently found nothing would pass every check above, which is the
 // failure mode a guard of this shape actually has.
 const problems = [];
-if (files.length < 5) problems.push(`only ${files.length} documents scanned`);
+// Not "at least N files" — that was calibrated to a scope which has since changed, and a
+// threshold that moves with the list is not a check. Every named document must have been found:
+// a renamed or deleted one silently leaving scope is the failure this catches.
+if (!all) {
+  const missing = OUTWARD.filter((f) => !files.some((x) => x.endsWith("/" + f)));
+  if (missing.length) problems.push(`named but not scanned: ${missing.join(", ")}`);
+}
 if (unresolvable > 400) problems.push(`${unresolvable} candidates resolved to nothing — the matcher is too loose`);
-if (ok + markedHeld + unmarked < 20) problems.push(`only ${ok + markedHeld + unmarked} citations found`);
+if (ok + markedHeld + unmarked < 10) problems.push(`only ${ok + markedHeld + unmarked} citations found`);
 if (ok === 0) problems.push("no citation resolved to a tracked file — the resolver is broken");
 if (markedHeld === 0 && unmarked === 0) problems.push("no untracked citation seen — nothing exercised the held path");
 if (tracked.size < 100) problems.push(`git ls-files returned only ${tracked.size} paths`);
