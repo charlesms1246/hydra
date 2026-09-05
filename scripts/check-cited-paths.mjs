@@ -26,6 +26,11 @@
  * every one of the citations that made this necessary.** It has to ask what a clone contains, and
  * `git ls-files` is that question asked directly of the index.
  *
+ * The vacuity check is an ASSERTION THAT EVERY NAMED DOCUMENT WAS FOUND, not a minimum file
+ * count. It was a count once and the count was calibrated to a scope that then changed — a
+ * threshold which moves with the list is not a check. The assertion catches a renamed or deleted
+ * document silently leaving scope, which the count never covered.
+ *
  * MEASURED, NOT LISTED. There is no list of held paths here, the same way the devtool's marker
  * has no list of held findings. Trackedness is read from git on every run, so on the day
  * `findings/` is committed every citation to it starts passing on its own — the answer goes stale
