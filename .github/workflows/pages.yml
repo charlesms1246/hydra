@@ -15,6 +15,19 @@
 #
 # This comment lives here as well as in `web/README.md` because the workflow is what somebody edits
 # when a build fails, and `npm run build` is the obvious thing to reach for.
+# ⛔ PRECONDITION THIS FILE CANNOT SATISFY: Pages must be enabled on the repository, with its
+# source set to **GitHub Actions** rather than to a branch.
+#
+# Checked 2026-09-05 on `charlesms1246/hydra`: `has_pages: false`, and `repos/.../pages` is a hard
+# 404. Until somebody with admin changes that setting, `deploy-pages` fails however clean the build
+# is — and it fails with an API error about a missing Pages site, which reads like a token problem
+# and is not one. The account CI runs as has `push` and `admin: false`, so this is a person
+# clicking Settings → Pages, not something a workflow can arrange for itself. **Do not add a
+# workaround here**; a workflow-level fix for a missing repository setting is the wrong kind of
+# clever, and it would hide the one instruction that resolves this.
+#
+# The `build` job is independently useful in the meantime: on a pull request it runs every gate
+# below and publishes nothing.
 name: pages
 
 on:
