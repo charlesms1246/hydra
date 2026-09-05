@@ -19,6 +19,16 @@ name: pages
 
 on:
   workflow_dispatch:
+  # ⛔ A PULL REQUEST BUILDS BUT DOES NOT DEPLOY, and that is the point of it being here.
+  #
+  # Every gate below — typecheck, the public-build assertion, the tests, the figure measurement —
+  # had never executed on a runner. Without this trigger their first run would be the push that
+  # makes the site live, which is the user's to make and close to a deadline. A guard that
+  # correctly refuses to skip is exactly the guard that turns a missing binary into a failed
+  # deploy, so it must be exercised somewhere cheaper first. The `deploy` job is gated on the
+  # event below so a pull request cannot publish.
+  pull_request:
+    paths: ["web/**", ".github/workflows/pages.yml"]
   push:
     branches: [main]
     paths: ["web/**", ".github/workflows/pages.yml"]
@@ -48,6 +58,27 @@ jobs:
       # No lockfile ambiguity: the site's tree is small and pinned, and a resolution that differs
       # from the one tested is a different site.
       - run: npm ci
+
+      # ⛔ NAME THE BROWSER RATHER THAN INHERITING IT.
+      #
+      # `check:figures` renders the site, and it refuses to skip when no browser is present — the
+      # right behaviour, and the reason this step exists. `ubuntu-latest` ships Chrome today, but
+      # that is a runner-image detail and not a promise, and the discovery list inside
+      # `figure-geometry.ts` should not be doing load-bearing work on the publish path. This fails
+      # in thirty seconds with an instruction instead of after a full build with a path list.
+      - name: Locate a browser for the figure measurement
+        run: |
+          for c in "$CHROME_BIN" /usr/bin/google-chrome /usr/bin/google-chrome-stable \
+                   /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -n "$c" ] && [ -x "$c" ]; then
+              echo "CHROME_PATH=$c" >> "$GITHUB_ENV"
+              echo "using $c"
+              exit 0
+            fi
+          done
+          echo "::error::no Chrome on this runner. The figure measurement renders the site and"
+          echo "::error::must not be skipped. Add a setup step that installs one, or set CHROME_PATH."
+          exit 1
 
       # The restricted assets are gitignored, so a clean checkout must not have them. If one is
       # present the checkout is not clean, and a public build is not safe to make from it.
@@ -108,6 +139,8 @@ jobs:
 
   deploy:
     needs: build
+    # A pull request runs every gate above and publishes nothing.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
