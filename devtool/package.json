@@ -25,6 +25,7 @@
     "packages/leak",
     "packages/linter",
     "packages/tui",
+    "scripts/test-preflight.mjs",
     "skills-lock.json",
     "!packages/*/node_modules"
   ],
