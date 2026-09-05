@@ -11,6 +11,10 @@
  * is the required answer whenever the mechanism cannot be established from the input.
  */
 
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 /** Upstream source of truth. Every `upstream:` citation below is at this commit. */
 export const UPSTREAM_COMMIT = "980da8affafb9f8350975ca93c03b2299a31ac9b";
 
@@ -57,6 +61,8 @@ export const PARTIES = [
  * no finding has been written yet — see README, "Claims with no finding behind them".
  */
 export const CITE = {
+  HELD_NOTICE: "README.md:140-141",
+
   F01: "findings/01-escrow.md",
   F02: "findings/02-indexer-viewing-key.md",
   F03: "findings/03-sub-accounts.md",
@@ -89,6 +95,56 @@ export const CITE = {
   CONTRACT_DISCOVERY: "upstream:sdk/src/internal/contract-discovery.ts:386-388",
   FACTORY_NO_OHTTP: "upstream:sdk/src/factory.ts:108",
 };
+
+/**
+ * A citation a reader of THIS distribution cannot open.
+ *
+ * `findings/` is gitignored pending private contact with StarkWare (README.md:140-141), so it
+ * is absent from the tarball and from the public repository. Rendered plainly, those citations
+ * look exactly like the `upstream:` ones beside them — which name a public repository and are
+ * openable — and this project's whole method is that you are not asked to take a claim on
+ * trust, you are asked to go and look. Eight to ten unopenable citations per run is that method
+ * failing on the tool whose purpose is the method.
+ *
+ * MEASURED, not declared. A static list of held names would go stale in the lying direction the
+ * day `findings/` ships: the marker would still be there and the files would be openable. This
+ * asks the filesystem, so the marker disappears by itself on the day the disclosure lands.
+ *
+ * `node:fs` in the evidence layer is deliberate and is the reason it is HERE rather than in the
+ * three renderers: one answer, one place, and no chance of the CLI and the TUI disagreeing about
+ * what a reader can open. It is a builtin, so `hydra-dev leak` still runs with no dependencies
+ * installed.
+ */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PKG_ROOT = join(HERE, "..", "..", "..");          // devtool/, the published package root
+const REPO_ROOT = join(PKG_ROOT, "..");                 // the checkout, when this IS a checkout
+
+const heldCache = new Map();
+
+export function isHeldCite(cite) {
+  const c = String(cite);
+  if (!c.startsWith("findings/")) return false;
+  if (heldCache.has(c)) return heldCache.get(c);
+  // The `devtool/package.json` test is what stops an installed package from mistaking a
+  // directory that happens to be called `findings/` next to the caller's node_modules for
+  // this repository's.
+  const inCheckout =
+    existsSync(join(REPO_ROOT, "devtool", "package.json")) && existsSync(join(REPO_ROOT, c));
+  const held = !(inCheckout || existsSync(join(PKG_ROOT, c)));
+  heldCache.set(c, held);
+  return held;
+}
+
+/**
+ * How a citation is written wherever one is shown.
+ *
+ * `held:` rather than a trailing note because every surface that renders a citation truncates
+ * from the right — `disclosure.mjs:211` slices to the drawer width — and a marker that can be
+ * cut off is worse than none: it reads as openable again. It is also the exact sibling of the
+ * `upstream:` prefix already in the table, so the two kinds of citation are told apart the same
+ * way.
+ */
+export const citeLabel = (cite) => (isHeldCite(cite) ? `held:${cite}` : String(cite));
 
 // ---------------------------------------------------------------------------
 // Deployment facts (findings/06, read from the live pools on 2026-08-29)

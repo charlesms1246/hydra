@@ -11,7 +11,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { whatDoesThisLeak } from "./leak.mjs";
-import { FIELDS, PARTIES, UNKNOWN, NA, CLEAR, DECRYPTABLE } from "./facts.mjs";
+import { FIELDS, PARTIES, UNKNOWN, NA, CLEAR, DECRYPTABLE, citeLabel } from "./facts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const examplesDir = join(here, "..", "examples");
@@ -144,7 +144,7 @@ for (const d of report.disclosures) {
       if (c.disclosure === NA) continue;
       console.log(`  ${name} — ${c.fields.join(", ")}: ${c.disclosure}`);
       console.log(`      ${wrap(c.why, 6)}`);
-      console.log(`      source: ${c.cites.join("  |  ")}\n`);
+      console.log(`      source: ${c.cites.map(citeLabel).join("  |  ")}\n`);
     }
   }
 }
@@ -156,7 +156,7 @@ for (const s of report.anonymitySets) {
   console.log(`\n  action ${s.index} (${s.action}) — ${s.question}`);
   console.log(`  size: ${s.size}`);
   console.log(`      ${wrap(s.basis, 6)}`);
-  console.log(`      source: ${s.cites.join("  |  ")}`);
+  console.log(`      source: ${s.cites.map(citeLabel).join("  |  ")}`);
 }
 
 console.log(`\n${"=".repeat(96)}`);
@@ -164,7 +164,7 @@ console.log("notes");
 console.log(`${"=".repeat(96)}\n`);
 for (const n of report.notes) {
   console.log(`  [${n.kind}] ${wrap(n.text, 6)}`);
-  console.log(`      source: ${n.cites.join("  |  ")}\n`);
+  console.log(`      source: ${n.cites.map(citeLabel).join("  |  ")}\n`);
 }
 
 console.log(

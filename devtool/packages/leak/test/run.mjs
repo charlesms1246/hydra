@@ -8,11 +8,11 @@
  * per-case, because they are properties of the tool and not of any one transaction.
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { whatDoesThisLeak } from "../src/leak.mjs";
-import { CLEAR, DECRYPTABLE, NOT_DISCLOSED, UNKNOWN, NA, FIELDS, PARTIES } from "../src/facts.mjs";
+import { CLEAR, DECRYPTABLE, NOT_DISCLOSED, UNKNOWN, NA, FIELDS, PARTIES, isHeldCite, citeLabel } from "../src/facts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const example = (n) => JSON.parse(readFileSync(join(here, "..", "examples", `${n}.json`), "utf8"));
@@ -257,6 +257,73 @@ const teleport = whatDoesThisLeak(CASES.at(-1)[1]);
 if (teleport.problems.length === 0) {
   console.log("FAIL  invariant/unrecognised-input-is-reported");
   failed++;
+}
+
+// 6. Every citation is either something the reader of THIS distribution can open, or is
+//    marked as held. The site enforces the matching property in web/test/site.test.ts —
+//    "every citation is a file a reader of the repository can open" — and the devtool made the
+//    same promise and broke it eight to ten times per run: `findings/` is gitignored pending
+//    private contact with StarkWare, so it is in neither the tarball nor the public repo, and
+//    the citations rendered identically to the `upstream:` ones beside them, which are real.
+//
+//    This runs in both worlds and must pass in both. In a checkout the findings are present
+//    and NOTHING is marked; in a packed tarball every one of them is. So the assertion is the
+//    property, never a count — a count would encode which world the suite happens to be in.
+{
+  // Two roots, because a citation resolves against wherever the reader is standing: in a
+  // checkout `findings/` and `README.md` are at the repository root; in an installed package
+  // the README is at the package root and there is no repository above it. Same pair
+  // `facts.mjs:isHeldCite` uses, deliberately — a guard resolving paths differently from the
+  // thing it guards would pass on a distribution the tool itself gets wrong.
+  const PKG = join(here, "..", "..", "..");
+  const REPO = join(PKG, "..");
+  // A citation may name lines — `README.md:140-141`. The file is what has to exist.
+  const filePart = (c) => c.replace(/:[\d,\-]+$/, "");
+  const openableHere = (c) =>
+    // `upstream:` names starkware-libs/starknet-privacy at UPSTREAM_COMMIT — a public
+    // repository, openable by anyone with a browser, whether or not they cloned it.
+    c.startsWith("upstream:") ||
+    existsSync(join(PKG, filePart(c))) ||
+    existsSync(join(REPO, filePart(c)));
+
+  const cites = new Set();
+  for (const [, report] of ALL) {
+    for (const d of report.disclosures)
+      for (const [key] of PARTIES) for (const f of FIELDS) for (const c of d.byParty[key][f].cites ?? []) cites.add(c);
+    for (const s2 of report.anonymitySets) for (const c of s2.cites ?? []) cites.add(c);
+    for (const n of report.notes) for (const c of n.cites ?? []) cites.add(c);
+  }
+
+  // Vacuity: a filter that silently matched nothing would make every check below pass.
+  if (cites.size < 10) { console.log(`FAIL  invariant/citations-vacuous  only ${cites.size} citations collected`); failed++; }
+  if (![...cites].some((c) => c.startsWith("upstream:"))) { console.log("FAIL  invariant/citations-vacuous  no upstream citation"); failed++; }
+  if (![...cites].some((c) => c.startsWith("findings/"))) { console.log("FAIL  invariant/citations-vacuous  no findings citation"); failed++; }
+
+  const unopenable = [...cites].filter((c) => !openableHere(c) && !isHeldCite(c));
+  if (unopenable.length) {
+    console.log(`FAIL  invariant/citation-openable-or-held  ${unopenable.join(" ")}`);
+    failed++;
+  }
+
+  // The marker must track reality in BOTH directions: everything held is labelled, and
+  // nothing openable is labelled. The second half is what fails the day `findings/` ships
+  // and a static marker would have gone stale.
+  const mislabelled = [...cites].filter((c) => (citeLabel(c) !== c) !== isHeldCite(c));
+  const staleMark = [...cites].filter((c) => openableHere(c) && citeLabel(c) !== c);
+  if (mislabelled.length || staleMark.length) {
+    console.log(`FAIL  invariant/citation-marker-matches-reality  ${[...mislabelled, ...staleMark].join(" ")}`);
+    failed++;
+  }
+
+  // And the report itself must say so, for `--json` and the MCP tool, which render nothing.
+  const anyHeld = [...cites].some(isHeldCite);
+  for (const [name, report] of ALL) {
+    const hasNote = report.notes.some((n) => n.kind === "held");
+    if (hasNote !== anyHeld) {
+      console.log(`FAIL  invariant/held-note-present-iff-held  ${name}: note=${hasNote} held=${anyHeld}`);
+      failed++;
+    }
+  }
 }
 
 console.log(

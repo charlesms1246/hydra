@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { html } from "./ui.mjs";
 import { C, mark, PARTY_SHORT, FIELD_SHORT } from "./theme.mjs";
 import { Frame, wrap, windowOf } from "./layout.mjs";
-import { UNKNOWN } from "../../leak/src/facts.mjs";
+import { UNKNOWN, citeLabel } from "../../leak/src/facts.mjs";
 import { whatDoesThisLeak } from "../../leak/src/leak.mjs";
 import { leakConfig } from "../../cli/src/agentcmds.mjs";
 
@@ -208,7 +208,7 @@ export const WhyDrawer = ({ report, actionIndex, cursor, width, bodyRows, citeRo
       ${citeShown.map((c, i) => html`
         <${Box} key=${"c" + i}>
           <${Box} width=${8}><${Text} color=${C.muted}>${i === 0 ? " cites" : ""}<//><//>
-          <${Text} color=${C.accent} dimColor>${c.slice(0, interior - 8)}<//>
+          <${Text} color=${C.accent} dimColor>${citeLabel(c).slice(0, interior - 8)}<//>
         <//>`)}
       ${citeExtra > 0
         ? html`<${Text} color=${C.muted}>${`        +${citeExtra} more — enter expands`}<//>`
@@ -254,7 +254,7 @@ export const AnonDrawer = ({ report, actionIndex, width, bodyRows, focused, scro
       l, color: set.size === UNKNOWN || set.size === undefined ? C.unknown : C.warn,
     })),
     ...wrap(set.basis ?? "", interior - 1).map((l) => ({ l, color: C.muted })),
-    ...(set.cites ?? []).map((c) => ({ l: c, color: C.accent })),
+    ...(set.cites ?? []).map((c) => ({ l: citeLabel(c), color: C.accent })),
   ];
   const start = Math.min(scroll, Math.max(0, lines.length - bodyRows));
   const shown = lines.slice(start, start + bodyRows);

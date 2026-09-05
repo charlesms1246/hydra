@@ -22,6 +22,7 @@ import {
   FIELDS,
   PARTIES,
   CITE,
+  isHeldCite,
   NETWORKS,
   ACTION_TYPES,
   DISCOVERY_KINDS,
@@ -683,6 +684,32 @@ export function whatDoesThisLeak(tx) {
     notes: notesFor(tx ?? {}, actions),
     problems,
   };
+
+  // Every citation this report actually used, once, in the order they were first cited.
+  const cited = [];
+  const collect = (cs) => { for (const c of cs ?? []) if (!cited.includes(c)) cited.push(c); };
+  for (const d of disclosures) for (const row of Object.values(d.byParty)) for (const f of FIELDS) collect(row[f].cites);
+  for (const a of report.anonymitySets) collect(a.cites);
+  for (const n of report.notes) collect(n.cites);
+
+  // A citation to something the reader cannot open has to say so IN THE REPORT, not only in
+  // the two human renderers — `--json` and the MCP tool return this object untouched, and a
+  // consumer reading `cites: ["findings/01-escrow.md"]` is owed the same sentence a person at
+  // a terminal gets. Present only when it is true: the day `findings/` ships, `isHeldCite`
+  // stops returning true and this note stops appearing, rather than going stale.
+  const held = cited.filter(isHeldCite);
+  if (held.length) {
+    report.notes.push({
+      kind: "held",
+      text:
+        `${held.length} of the citations above name write-ups this distribution does not ` +
+        `contain: ${held.join(", ")}. They are marked \`held:\` where they are shown. The ` +
+        `findings are being shared with StarkWare before publication, so they are absent from ` +
+        `the package and from the public repository — every other citation here is a file or a ` +
+        `line you can go and open, and these are the exception.`,
+      cites: [CITE.HELD_NOTICE],
+    });
+  }
 
   report.unknownCount =
     disclosures.reduce(
