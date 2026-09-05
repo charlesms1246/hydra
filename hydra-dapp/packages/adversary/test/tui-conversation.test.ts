@@ -123,6 +123,36 @@ async function created(h: ReturnType<typeof harness>, extra: Partial<Record<stri
 
 // ---------------------------------------------------------------------------
 
+test("THE LOG LINE IS ONE ROW, so what it says has to survive being truncated", async () => {
+  // Found by driving the real thing through a pty rather than by reading it. At 100 columns the
+  // identity-creation warning rendered as "…but the node did not answer (fetc…" — the problem
+  // named, the remedy cut off. `render` truncates the log to one row, so a sentence whose useful
+  // half is at the end loses exactly that half, and the user is told something is wrong and
+  // nothing about what to do. Asserted at 80 columns, narrower than the pty that caught it.
+  const { url, server, invites } = await vault();
+  try {
+    const h = harness(url, invites);
+    const m = await created(h);
+    const dead: typeof fetch = (async (i: any, ini: any) => {
+      const target = typeof i === "string" ? i : (i as Request).url;
+      if (target === NODE.url) throw new Error("connect ECONNREFUSED (simulated)");
+      return fetch(i, ini);
+    }) as typeof fetch;
+    const deps = { ...h.deps, fetchImpl: dead, session: { discoveryFailedFor: null } };
+
+    const ev = await perform({ t: "init", fields: { ...m.fields, vault: url, rpc: NODE.url,
+      contract: "0x1", invites: invites.join(",") } } as any, null, deps);
+    const said = (ev as { text?: string }).text ?? "";
+    assert.match(said, /Status/, "the identity-creation warning does not point anywhere, so a "
+      + "user reads that something failed and has nowhere to go");
+
+    const shown = text({ ...m, log: [{ text: said, tone: "warn", at: T0 }] } as any,
+      { rows: 24, cols: 80 });
+    assert.ok(shown.includes("Status"),
+      `at 80 columns the warning is truncated before it names where to look:\n  ${said}`);
+  } finally { server.close(); }
+});
+
 test("A CLIENT READING FROM BLOCK 0 SAYS SO ON THE STATUS PAGE", async () => {
   // The remedy for "one attempt per node per session" is a restart, and a remedy nobody is told
   // about is not a remedy. `fromBlock` at 0 with a contract set is exactly the failed-discovery

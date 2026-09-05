@@ -104,14 +104,21 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
     // when discovery failed and the move into `commands.ts` dropped them; putting them back in
     // `cli.ts` alone would rebuild the asymmetry this file's whole finding was about. A TUI has no
     // stderr to print at, so it goes where a TUI says things: on the line the user just caused.
+    // **SHORT, AND IT POINTS.** The first version said the whole thing here and the log line is
+    // ONE ROW, truncated at the terminal width: driven through a pty at 100 columns it came out
+    // as "…but the node did not answer (fetc…", so the half naming the problem survived and the
+    // half naming the remedy did not. That is the same defect as the status row two files over,
+    // and worse than silence. The full sentence lives on Status, which wraps; this says go there.
     let unreached = "";
-    await ensureFromBlockOnce(next, deps, (e) => {
-      unreached = ` — but the node did not answer (${e.message}), so this identity starts at block `
-        + "0 and every read will scan the whole chain. `hydra init --from-block N` sets it.";
-    });
+    await ensureFromBlockOnce(next, deps, () => { unreached = "node unreachable — see Status (6) · "; });
     deps.save(next);
+    // **THE WARNING GOES FIRST, AND THAT ORDERING IS THE FIX.** Shortening it was not enough: a
+    // 32-character fingerprint plus "identity created" is already 62 columns, so at 80 the
+    // warning fell off the end whatever it said. Truncation eats the tail, so the tail has to be
+    // the part you can afford to lose — and the fingerprint is on Identity (3) permanently while
+    // this line is the only place the failure is ever mentioned.
     return { t: "ok", state: next,
-      text: `identity created — fingerprint ${fingerprint(publishBundle(next))}${unreached}` };
+      text: `${unreached}identity created — fingerprint ${fingerprint(publishBundle(next))}` };
   }
 
   if (!state) return { t: "error", text: "no identity yet" };

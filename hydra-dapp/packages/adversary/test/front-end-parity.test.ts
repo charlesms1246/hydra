@@ -86,21 +86,33 @@ test("the repair is reachable from identity creation, not only from reading", ()
 test("BOTH FRONT ENDS SAY SO WHEN DISCOVERY FAILS — the diagnostic the refactor dropped", () => {
   // `ensureFromBlock` is never fatal, so a node that blinked for one second at identity creation
   // is SILENT unless a front end chooses to speak — and the user is left with a state file at
-  // block 0, a read that scans the whole chain forever, and nothing connecting the two.
+  // block 0, a read that scans the whole chain forever, and nothing connecting the two. The CLI
+  // printed three lines for this before the move into `commands.ts`; the move dropped them.
   //
-  // The CLI printed three lines for this before the move into `commands.ts`, and the move dropped
-  // them. Restoring them in `cli.ts` alone would rebuild the asymmetry this whole file is about,
-  // which is why the assertion is over both surfaces rather than over the one that regressed.
-  for (const [i, { name }] of FRONT_ENDS.entries()) {
-    const code = codeOf(readFileSync(FRONT_ENDS[i]!.file, "utf8"));
+  // **THE TWO SURFACES SAY IT DIFFERENTLY AND THAT IS NOT A PARITY FAILURE.** A CLI writes as
+  // many lines of stderr as it likes. A TUI's log is ONE ROW, truncated at the terminal width —
+  // driving the real thing through a pty at 100 columns turned the long version into "…but the
+  // node did not answer (fetc…", the problem named and the remedy cut off, which is worse than
+  // silence. So the TUI points at the page that wraps, and what is asserted here is the property
+  // rather than the wording: neither surface is silent, and each names somewhere to go.
+  const SAYS = [
+    { i: 0, condition: /scans? the whole chain/, remedy: /--from-block/ },
+    { i: 1, condition: /node unreachable/, remedy: /Status/ },
+  ];
+  for (const { i, condition, remedy } of SAYS) {
+    const { name, file } = FRONT_ENDS[i]!;
+    const code = codeOf(readFileSync(file, "utf8"));
     const init = i === 0
       ? code.slice(code.indexOf('case "init"'), code.indexOf('case "bundle"'))
       : code.slice(code.indexOf('effect.t === "init"'), code.indexOf("if (!state)"));
-    assert.match(init, /scans? the whole chain/,
+    assert.match(init, condition,
       `${name} creates an identity, fails to reach the node, and says nothing about it — so the `
       + "user gets a client that reads the whole chain on every read and no sentence anywhere "
       + "saying why. That reads as broken rather than as misconfigured, and only one of those "
       + "gets reported");
+    assert.match(init, remedy,
+      `${name} names the problem and no remedy, which leaves the user knowing something is wrong `
+      + "and having nowhere to go with it");
   }
 });
 
