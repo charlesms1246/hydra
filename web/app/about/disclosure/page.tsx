@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 
 import { statement } from "../../../../hydra-dapp/packages/claims/src/statement.ts";
 import { SITE } from "../../../content.ts";
-import { PageFrame } from "../../../components/PageFrame.tsx";
 import { Nav } from "../../../components/Nav.tsx";
 import { Code } from "../../../components/Code.tsx";
 import { Section } from "../../../components/Section.tsx";
@@ -38,7 +37,6 @@ export default function Disclosures() {
 
   return (
     <>
-      <PageFrame word={SITE.name.toUpperCase()} />
       <Nav current="about" />
 
       <main className="page">

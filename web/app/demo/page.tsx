@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
 import { SITE } from "../../content.ts";
-import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
@@ -23,7 +22,6 @@ export const metadata: Metadata = {
 export default function Demo() {
   return (
     <>
-      <PageFrame word={SITE.name.toUpperCase()} />
       <Nav current="demo" />
 
       <main className="page">

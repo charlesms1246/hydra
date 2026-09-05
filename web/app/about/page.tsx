@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
 import { SITE } from "../../content.ts";
-import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
 import { Code } from "../../components/Code.tsx";
 import { Section } from "../../components/Section.tsx";
@@ -23,7 +22,6 @@ export const metadata: Metadata = {
 export default function About() {
   return (
     <>
-      <PageFrame word={SITE.name.toUpperCase()} />
       <Nav current="about" />
 
       <main className="page">
@@ -43,14 +41,17 @@ export default function About() {
           />
         </div>
 
+        {/* The staircase — see `app/page.tsx` and `.grid-12` in `globals.css`. The opening
+            statement flush left at seven columns, then down and inward: the label right-aligned
+            in 1–3, the paragraph running 4–12 to the right margin. */}
         <Section n="01" id="what" title="WHAT IT IS">
-          <div className="prose">
-            <p>{SITE.about.body[0]}</p>
-            <p className="labelled">
-              <span className="prose-label">METHOD</span>
-              {SITE.about.body[1]}
-            </p>
+          <p className="statement-lead col-7">{SITE.about.body[0]}</p>
+
+          <div className="grid-12 step">
+            <span className="col-note prose-label">METHOD</span>
+            <p className="col-9 prose-body">{SITE.about.body[1]}</p>
           </div>
+
           <p className="cta">
             <a href="/about/disclosure/">The disclosure statement &rarr;</a>
           </p>

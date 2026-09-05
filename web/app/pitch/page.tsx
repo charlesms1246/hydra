@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
 import { SITE } from "../../content.ts";
-import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
 import { Deck, Slide } from "../../components/Deck.tsx";
 import { Auditor } from "../../components/Auditor.tsx";
@@ -58,7 +57,6 @@ export default function Pitch() {
   const p = SITE.pitch;
   return (
     <>
-      <PageFrame word={SITE.name.toUpperCase()} />
       <Nav current="pitch" />
 
       <Deck labels={LABELS}>

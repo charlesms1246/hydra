@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { SITE } from "../content.ts";
 import { Backdrop } from "../components/Backdrop.tsx";
+import { PageFrame } from "../components/PageFrame.tsx";
 import { isPublicBuild } from "../scripts/build-mode.ts";
 
 /**
@@ -25,7 +26,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" data-build={isPublicBuild() ? "public" : "full"}>
       <body>
+        {/*
+          Chrome that belongs to every page, rendered once here rather than repeated in each.
+
+          **The backdrop has to be here for a reason the frame does not**: it is a single fixed
+          canvas behind the whole site, so a client-side navigation does not tear it down and
+          restart it. That continuity is what makes separate routes read as one document, and it
+          is a property no amount of per-page work produces.
+
+          `PageFrame` joined it because it was eight identical copies of the same two lines, and
+          the eighth was one edit away from being forgotten. Its word was always the wordmark.
+
+          ⛔ **`Nav` and `Footer` stay on the pages, deliberately.** `Nav` takes `current` — which
+          route you are on — and a shared layout cannot know that without `usePathname`, a client
+          hook. The nav is a `<details>` element specifically so the menu works with no script,
+          and buying deduplication with that property would be a bad trade. `Footer` is on every
+          page except `/pitch/`, which is a full-height deck with nowhere to put one; a layout
+          that rendered it everywhere would put a footer inside a slide.
+        */}
         <Backdrop />
+        <PageFrame word={SITE.name.toUpperCase()} />
         {children}
       </body>
     </html>

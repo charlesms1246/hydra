@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { SITE } from "../../content.ts";
-import { PageFrame } from "../../components/PageFrame.tsx";
 import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Code } from "../../components/Code.tsx";
@@ -51,7 +50,6 @@ export default function Install() {
   const deps = dependencies();
   return (
     <>
-      <PageFrame word={SITE.name.toUpperCase()} />
       <Nav current="install" />
 
       <main className="page">
@@ -87,9 +85,7 @@ export default function Install() {
         </Section>
 
         <Section n="03" id="supply-chain" title="WHAT STANDS BEHIND THIS PAGE">
-          <div className="prose">
-            <p>{SITE.install.supplyChain}</p>
-          </div>
+          <p className="statement-lead col-7">{SITE.install.supplyChain}</p>
           <ul className="deps" data-generated="manifest">
             {deps.runtime.map((d) => (
               <li key={d}><code>{d}</code></li>

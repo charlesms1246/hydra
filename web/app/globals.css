@@ -482,7 +482,8 @@ body.has-canvas .field {
  * ------------------------------------------------------------------------------------------ */
 
 .prose {
-  max-width: 62rem;
+  /* The reading measure is now a property of a block's span, not a cap on the wrapper. */
+  max-width: var(--measure);
   margin-inline: auto;
 }
 
@@ -691,7 +692,7 @@ body.has-canvas .field {
   list-style: none;
   padding: 0;
   margin: 0 auto;
-  max-width: 62rem;
+  max-width: none;
   display: grid;
   gap: 1.5rem;
 }
@@ -779,7 +780,7 @@ body.has-canvas .field {
 /*
  * Aligned to the COLUMNS above it, not to the page measure.
  *
- * It was `max-width: 62rem` centred while `.footer-cols` is 90rem on the gutter, so the closing
+ * It was a 62rem centred column while `.footer-cols` is 90rem on the gutter, so the closing
  * statement started 166px to the right of the link lists — the same two-container-models defect
  * as the four left edges on the pages, reproduced inside one footer. The paragraph keeps its own
  * `52ch` reading measure; what moved is where the block starts.
@@ -1097,7 +1098,8 @@ body.has-canvas .field {
  * ------------------------------------------------------------------------------------------ */
 
 .cta {
-  max-width: 62rem;
+  /* On the container, so a call to action lines up with the section it closes. */
+  max-width: var(--measure);
   margin: 3rem auto 0;
 }
 
@@ -1123,7 +1125,9 @@ body.has-canvas .field {
 .doc-head {
   padding: clamp(7rem, 18vh, 12rem) 0 0;
   margin-inline: auto;
-  max-width: 62rem;
+  /* The page head sits on the container, not in a narrower column inside it — the
+   defect this fixes is the one the footer had: two container models, one page. */
+  max-width: var(--measure);
 }
 
 .doc-head h1 {
@@ -1199,6 +1203,13 @@ body.has-canvas .field {
  * Install steps
  * ------------------------------------------------------------------------------------------ */
 
+/*
+ * The install steps, on the twelve-column grid rather than in a centred column.
+ *
+ * Each step is a numbered label, a title, a terminal block and a note. Stacked in a 62rem column
+ * they read as a wall; on the grid the label sits in the margin where `.col-note` puts a section
+ * label, and the step's own content runs out to the right margin. Same staircase, repeated.
+ */
 .steps {
   list-style: none;
   padding: 0;
@@ -1211,7 +1222,7 @@ body.has-canvas .field {
    * what "the layout is flat" means when the type is otherwise fine.
    */
   margin: 0 auto;
-  max-width: 62rem;
+  max-width: none;
   counter-reset: step;
 }
 
@@ -1259,7 +1270,6 @@ body.has-canvas .field {
   display: grid;
   gap: 0.25rem 2rem;
   grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-  max-width: 62rem;
 }
 
 .deps li {
