@@ -417,8 +417,34 @@ export class Vault {
       // **CHECKED HERE, SPENT AFTER THE WRITE — and it used to be spent here.** See the note on
       // the persist below: this was `!this.#invites.delete(...)`, so the code was destroyed
       // before the only step that can fail.
-      if (!r.invite || !this.#invites.has(r.invite)) {
-        return { ok: false, error: "invite required" };
+      // **THREE FAILURES USED TO COLLAPSE INTO "invite required", WHICH IS TRUE OF ONE OF THEM.**
+      // No header, a code this vault never issued, and a code already spent all returned the same
+      // sentence — so the client that supplied a perfectly good code was told it had supplied
+      // none, with no remedy. The third is the case `main.ts` calls NORMAL: running out is the
+      // expected failure, because cover spends codes at the cover rate and *"the timing defence is
+      // what runs out first"*.
+      if (!r.invite) {
+        return { ok: false,
+          error: "an upload needs an invite: send it as the x-hydra-invite header. Whoever runs "
+            + "this vault issues them." };
+      }
+      // **WRONG AND SPENT ARE MERGED, AND HERE IS THE ARGUMENT, because this repository states its
+      // indistinguishability rather than leaving it to be inferred** — `#fetch` argues the batch
+      // minimum, the read path argues removed-versus-never-existed with a decision reference, and
+      // this had nothing.
+      //
+      // Separating them would answer, for any string a caller offers, whether this vault ever
+      // issued it. Codes are 128 bits, so that is not a guessing oracle — the case it matters for
+      // is somebody who came by a code they were not given, a written copy or a shoulder-read, who
+      // would otherwise learn whether it is live before spending it. The cost of merging is that a
+      // legitimate holder is not told which of the two happened; the message covers both, and the
+      // remedy is the same either way, so the cost is wording rather than action.
+      if (!this.#invites.has(r.invite)) {
+        return { ok: false,
+          error: "this invite was not accepted: either it is not one this vault issued, or it has "
+            + "already been used. Each code buys ONE upload and cover objects spend them too, so a "
+            + "client doing the timing defence uses several per message. Ask whoever runs this "
+            + "vault for more." };
       }
       // **A SPENT INVITE CAME BACK ON RESTART.** `#invites` is rebuilt from `--invites-file` at
       // startup and redemption only deleted from the in-memory set, so a deploy, a crash or a

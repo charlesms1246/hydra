@@ -143,3 +143,34 @@ test("NOTHING IS LEFT ON DISK BY A FAILED WRITE", async () => {
       "a refused upload left something in the store");
   } finally { vault.close(); }
 });
+
+test("NO INVITE AND A REJECTED INVITE ARE DIFFERENT REFUSALS", async () => {
+  // **THREE FAILURES COLLAPSED INTO "invite required", which is true of one of them.** No header,
+  // a code never issued, and a code already spent all said the same thing — so a client that
+  // supplied a good code was told it had supplied none, and the case `main.ts` calls NORMAL
+  // (running out, because cover spends codes at the cover rate) was the most misdescribed.
+  const vault = await onDisk(["code-one"]);
+  try {
+    const none = await fetch(`${vault.url}/v1/enc/enc:x`, { method: "PUT", body: BODY });
+    const noneSaid = JSON.stringify(await none.json());
+    assert.match(noneSaid, /x-hydra-invite/,
+      `a request with no invite is not told which header carries one:\n  ${noneSaid}`);
+
+    const wrong = await vault.put("enc:y", "never-issued");
+    const wrongSaid = JSON.stringify(await wrong.json());
+    assert.ok(!/needs an invite/.test(wrongSaid),
+      `a client that supplied an invite is told it supplied none:\n  ${wrongSaid}`);
+    assert.match(wrongSaid, /already been used|not one this vault issued/,
+      `the refusal does not say what was wrong with the code:\n  ${wrongSaid}`);
+    assert.match(wrongSaid, /Ask whoever runs this vault/,
+      `running out is the expected failure and the refusal names no remedy:\n  ${wrongSaid}`);
+
+    // AND SPENT READS THE SAME AS WRONG, deliberately — see the argument in `server.ts`. Asserted
+    // so the merge is a decision the tests hold rather than an accident somebody tidies away.
+    assert.equal((await vault.put("enc:a", "code-one")).status, 201);
+    const spent = await vault.put("enc:b", "code-one");
+    assert.equal(JSON.stringify(await spent.json()), wrongSaid,
+      "a spent code and a code that was never issued give different answers, which tells anyone "
+      + "holding a code they were not given whether it is still live");
+  } finally { vault.close(); }
+});

@@ -75,6 +75,47 @@ test("AN ENCRYPTED OBJECT IS REFUSED WITH THE REASON, not accepted and dropped",
   });
 });
 
+test("A MISTYPED ID IS NOT TREATED AS A PRIVATE CONVERSATION", async () => {
+  // **THE GUARD WAS `!startsWith("pub:")` AND THE MESSAGE ASSERTED THE OBJECT WAS ENCRYPTED.** So
+  // a dropped prefix — on the only part of this tool a stranger can reach, on a harm-reporting
+  // path — told a person their report concerned a private conversation nobody could review, that
+  // nothing had been recorded, and that *"blocking and deleting are yours to do and do not need
+  // us."* Every clause wrong about what they had sent.
+  //
+  // **THE TEST ABOVE DROVE `enc:deadbeef` AND ONLY THAT.** The guard caught a superset and the
+  // superset was never exercised — the property the author had in mind rather than the one the
+  // code checked, which is the shape this repository keeps finding.
+  await withIntake(async ({ file, spool }) => {
+    for (const bad of ["abc123", "", "pub", "PUB:abc", "enc", "../../etc/passwd"]) {
+      const res = await file({ blobId: bad, body: "someone posted my home address" });
+      const body = await res.json() as { error?: string; because?: string };
+      const said = `${body.error} ${body.because}`;
+      assert.ok(!/nobody but the people in the conversation/.test(said),
+        `id ${JSON.stringify(bad)} is described as an encrypted object:\n  ${said}`);
+      assert.ok(!/blocking and deleting are yours to do/.test(said),
+        `a reporter who mistyped an id is told to handle the harm themselves:\n  ${said}`);
+      // AND IT SAYS WHAT AN ID LOOKS LIKE, because a refusal with no remedy on this surface leaves
+      // somebody who is being harmed with nothing to do next.
+      assert.match(said, /"pub:"/,
+        `the refusal does not say what a valid id looks like:\n  ${said}`);
+      assert.match(said, /Nothing has been recorded/,
+        `the refusal does not say whether the report was kept:\n  ${said}`);
+      assert.ok(!existsSync(spool), `a report with id ${JSON.stringify(bad)} was spooled`);
+    }
+  });
+});
+
+test("AND AN ENCRYPTED ID STILL GETS THE ENCRYPTED ANSWER", async () => {
+  // The other half: splitting the branch must not have turned `enc:` into "unrecognised id". That
+  // paragraph is correct and is the one `decisions/0035` §2 asks for.
+  await withIntake(async ({ file }) => {
+    const res = await file({ blobId: "enc:deadbeef", body: "someone sent me something awful" });
+    assert.equal(res.status, 422);
+    assert.match(String((await res.json() as { because?: string }).because),
+      /nobody but the people in the conversation/);
+  });
+});
+
 test("THE SPOOL RECORDS NOTHING ABOUT WHO SENT IT", async () => {
   // The two-world property `no-accounts` is held to everywhere else, applied to the newest
   // surface: the operator SEES a connection — that is why `report.connection` is on the

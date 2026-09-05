@@ -103,6 +103,24 @@ export function serveIntake(
       // who believes they have been heard and has not is worse served than one told the truth —
       // and the reason is not a limitation to apologise for: nobody but the participants can read
       // an encrypted object, so there is nothing for an operator to review.
+      // **THE GUARD CAUGHT A SUPERSET AND THE MESSAGE ASSERTED ONE MEMBER OF IT.** `!startsWith("pub:")`
+      // is true of `abc123` and of an empty string as well as of `enc:`, and the paragraph below
+      // states as fact that the object IS encrypted. So on the only part of this tool a stranger
+      // can reach, on a harm-reporting path, **a dropped prefix got a person told their report
+      // concerned a private conversation and that blocking and deleting were theirs to do.**
+      // Every clause of it was wrong about what they had sent.
+      //
+      // The sibling branch above already says "a report is JSON: { blobId, body }" for a malformed
+      // body — the surface knew how to say this and said it two lines earlier.
+      if (!blobId.startsWith("pub:") && !blobId.startsWith("enc:")) {
+        return send(res, 400, {
+          error: "that is not an id this service recognises",
+          because: `an id names the class of the object it points at: "pub:" for a public post, `
+            + `"enc:" for an encrypted one. "${blobId.slice(0, 40)}" is neither, so this service `
+            + "cannot tell what you are reporting. Nothing has been recorded. Check the id and "
+            + "send it again.",
+        });
+      }
       if (!blobId.startsWith("pub:")) {
         return send(res, 422, {
           error: "only public posts can be reported",
