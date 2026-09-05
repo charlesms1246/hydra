@@ -25,7 +25,7 @@ import { loopbackOnly } from "../src/hermetic.ts";
 
 import { DENIABLE } from "../../claims/src/warnings.ts";
 import { decode } from "../../tui/src/keys.ts";
-import { start, update, PAGES, selected } from "../../tui/src/app.ts";
+import { start, update, PAGES, FIELDS, selected } from "../../tui/src/app.ts";
 import type { Model, Event } from "../../tui/src/app.ts";
 import { render } from "../../tui/src/view.ts";
 import { perform } from "../../tui/src/effects.ts";
@@ -122,6 +122,35 @@ async function created(h: ReturnType<typeof harness>, extra: Partial<Record<stri
 }
 
 // ---------------------------------------------------------------------------
+
+test("TYPING INTO ANY FIELD GIVES BACK WHAT WAS TYPED — not `undefined` and then what was typed",
+  async () => {
+    // Found by driving the real thing: typing a Starknet address on Record (4) put
+    // `undefined0x29930129a5593da483…` in the field, on screen, for every user. `FIELDS.record`
+    // declared four keys and the hand-written initial `fields` object listed none of them, so the
+    // typing handler's `m.fields[key] + k.value` appended to `undefined`. `A` would then have
+    // offered to publish a PERMANENT record committing to that string.
+    //
+    // **BOTH LISTS WERE INDIVIDUALLY CORRECT AND NOTHING COMPARED THEM** — the same shape as the
+    // repair that reached the CLI and not the TUI. This drives every declared field on every page
+    // rather than the pages somebody remembered.
+    const { url, server, invites } = await vault();
+    try {
+      const h = harness(url, invites);
+      const base = await created(h);
+      for (const [page, fields] of Object.entries(FIELDS)) {
+        for (const [i, f] of fields.entries()) {
+          let m = { ...base, page: page as typeof base.page, field: i, typing: true };
+          m = await feed(m, h.deps, "abc");
+          assert.ok(!m.fields[f.key]!.includes("undefined"),
+            `typing into ${page}.${f.key} produced "${m.fields[f.key]}" — the field was never `
+            + "initialised, so the first keystroke appends to the string \"undefined\"");
+          assert.ok(m.fields[f.key]!.endsWith("abc"),
+            `${page}.${f.key} came back as "${m.fields[f.key]}"`);
+        }
+      }
+    } finally { server.close(); }
+  });
 
 test("NO DISCLOSURE ROW LOSES ITS QUALIFICATION TO THE RIGHT EDGE", async () => {
   // **THE ONE TRUNCATION ON THIS PRODUCT THAT IS WORSE THAN UNHELPFUL.** Disclosure (5) is the

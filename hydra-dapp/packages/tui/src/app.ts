@@ -77,6 +77,33 @@ export const FIELDS: Record<Page | "setup", readonly { readonly key: string; rea
   status: [],
 };
 
+/** The fields that start with something in them. Everything else declared above starts empty. */
+const FIELD_DEFAULTS: Readonly<Record<string, string>> = {
+  vault: "http://127.0.0.1:8080",
+  rpc: "http://127.0.0.1:5050",
+  exportPath: "bundle.json",
+};
+
+/**
+ * Every field in {@link FIELDS}, empty unless it has a default.
+ *
+ * **IT WAS A HAND-WRITTEN OBJECT AND IT HAD DRIFTED.** `FIELDS.record` declares four keys and the
+ * literal listed none of them, so `m.fields.myAddress` was `undefined` — and the typing handler
+ * appends, `m.fields[key] + k.value`. Typing a Starknet address into the Record page produced
+ * `undefined0x2993…`, on screen, in the field, for every user. `A` would then have offered to
+ * publish a permanent record committing to that string.
+ *
+ * Found by driving the real interface through a pty, not by reading either list: **both lists were
+ * individually correct and nothing compares them.** That is the same shape as the fix that reached
+ * the CLI and not the TUI — two places that must agree, no third thing asserting they do.
+ *
+ * Derived rather than checked, because a test that compares two lists still leaves two lists. A
+ * page that adds a field now gets it initialised by construction.
+ */
+const initialFields = (): Record<string, string> =>
+  Object.fromEntries(Object.values(FIELDS).flat()
+    .map((f) => [f.key, FIELD_DEFAULTS[f.key] ?? ""]));
+
 /** What `main.ts` is being asked to do. Descriptions, not calls. */
 export type Effect =
   | { readonly t: "init"; readonly fields: Readonly<Record<string, string>> }
@@ -162,11 +189,7 @@ export function start(state: State | null, now: number): Model {
     state,
     typing: !state,
     field: 0,
-    fields: {
-      vault: "http://127.0.0.1:8080", rpc: "http://127.0.0.1:5050", contract: "",
-      accountsFile: "", account: "", network: "", invites: "",
-      compose: "", peerName: "", peerBundle: "", exportPath: "bundle.json",
-    },
+    fields: initialFields(),
     channel: 0,
     scroll: 0,
     transcript: {},
