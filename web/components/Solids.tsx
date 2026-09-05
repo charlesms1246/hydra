@@ -266,7 +266,36 @@ export function Solids() {
        * somebody is trying to read it. Fading against the same progress value means they are
        * already well dimmed by the time they cross, and gone before the section ends.
        */
-      mount.style.opacity = String(rest * (1 - progress) ** 1.4);
+      const alpha = rest * (1 - progress) ** 1.4;
+      mount.style.opacity = String(alpha);
+
+      /*
+       * ⛔ **Nothing is drawn while the field is invisible, and this is not an optimisation —
+       * it is the difference between a decoration and a tax on every page that has prose.**
+       *
+       * `progress` is clamped to 1, so past `exitViewports` the opacity is exactly zero and stays
+       * there for the whole rest of the document. Without this return, each frame after that still
+       * runs a full WebGL pass and an `AsciiEffect` rebuild: `AsciiEffect.js:285` assigns the
+       * entire `<tr><td>…` as one `innerHTML` string rather than diffing, and because this mount
+       * passes `color: true` (:267) every character is its own `<span style='color:rgb(…)'>`. At
+       * `resolution: 0.19` on a 1692px viewport that is 321 x 89 = 28,569 cells reparsed, relaid
+       * out and repainted per frame, forever, behind text nobody can see it through.
+       *
+       * **It is worst exactly where it is least wanted.** `hero` is true on the landing page only;
+       * everywhere else `exitViewports` is 0.5175, so on `/pitch/`, `/install/` and
+       * `/about/disclosure/` the field is gone after half a viewport and the reader pays for it
+       * down the entire length of a long prose page.
+       *
+       * The threshold is one 8-bit step: below 1/255 the compositor cannot distinguish it from
+       * transparent, so nothing is being hidden that was visible.
+       *
+       * **The loop is not cancelled and the geometry update is skipped with it.** Both matter:
+       * scrolling back up must bring the field back, and it does, because every position and
+       * rotation below is an absolute function of `scrolled` rather than an accumulation — a
+       * skipped frame leaves nothing stale to repair. Cancelling instead would be a one-way door
+       * on a page a reader can scroll both directions.
+       */
+      if (alpha < 1 / 255) return;
 
       for (const s of solids) {
         travel.copy(s.exit).multiplyScalar(eased * EXIT_DISTANCE);
