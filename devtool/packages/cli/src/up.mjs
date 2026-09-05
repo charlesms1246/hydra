@@ -12,7 +12,8 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { upstreamPath } from "./doctor.mjs";
 import { AUDITOR_NOTE } from "./notes.mjs";
-import { writeState, clearState } from "../../core/src/state.mjs";
+import { writeState, clearState, readState } from "../../core/src/state.mjs";
+import { isRunning } from "../../core/src/stack.mjs";
 import { startControl } from "./control.mjs";
 
 function freePort() {
@@ -81,7 +82,41 @@ async function waitForHealth(url, timeoutMs = 30_000) {
   return false;
 }
 
+/**
+ * Refuse to start a second stack over a first.
+ *
+ * There is nothing stopping this. Ports are chosen by BINDING a free one — `pinDevnetPort`
+ * above for devnet, `freePort()` for the discovery service — so a second `hydra-dev up` does
+ * not collide, does not error, and looks entirely normal. It then overwrites state.json
+ * wholesale, and `hydra-dev down` reads that file and kills the SECOND stack's pids while
+ * reporting success. The first stack's devnet, discovery service and control API — loopback,
+ * holding devnet account keys — keep running with nothing recording where they are.
+ *
+ * The TUI has always refused this, twice: on the key (`keymap.mjs:162`, `when: (s) => !s.up`)
+ * and again in the handler (`app.mjs:299`). Somebody thought about it carefully on one surface
+ * and the thought never crossed to the other — the fifth instance of that shape in a day.
+ *
+ * Probed, not merely read off the file. A stale state.json left by a crash must not block
+ * `up` forever — the half-dead stack is exactly what you restart, which is the same reason
+ * the TUI's stop key is deliberately NOT gated on `s.up`.
+ *
+ * `isRunning()` reads `readState()`, which synthesises state from an `--rpc`/`HYDRA_RPC`
+ * override and would then report a public node as a running stack. That cannot happen here:
+ * `up` is in `cli.mjs`'s `LOCAL_ONLY`, which refuses the override before this file loads, and
+ * `packages/cli/test/guards.mjs` asserts that list still names it.
+ */
+async function refuseSecondStack() {
+  if (!(await isRunning())) return false;
+  const st = await readState();
+  console.error("\n  a stack is already running — this would start a second one and orphan it.");
+  console.error(`    devnet    ${st?.devnetUrl ?? "?"}`);
+  if (st?.startedAt) console.error(`    started   ${st.startedAt}`);
+  console.error("\n  stop it with `hydra-dev down` first, or leave it running and use it.\n");
+  return true;
+}
+
 export async function up() {
+  if (await refuseSecondStack()) process.exit(2);
   const up_ = upstreamPath();
   await pinDevnetPort(up_);
   const { Devnet } = await import(join(up_, "sdk/dist/testing/index.js"));
