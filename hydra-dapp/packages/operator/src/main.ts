@@ -163,6 +163,24 @@ switch (command) {
     }
     if (!category) throw new Error("a decision needs a category — it is what the report publishes");
     const q = load(queuePath);
+    // **A SECOND DECISION PUBLISHED TWO CONTRADICTORY CELLS AND NAMED A KEPT OBJECT AS REMOVED.**
+    // `decide pub:one removed csam` then `decide pub:one kept other` yielded both cells in the
+    // report AND `pub:one` in the permanent removals index — while this command printed "Nothing
+    // to take down", which reads as the keep having taken effect.
+    //
+    // The operator got no warning because there was nothing to warn them with: the first `decide`
+    // resolves the review out of the queue, so `show` afterwards answers `No open review` and the
+    // prior decision is on no surface at the moment the second is made. **`summarise` already
+    // prints "No previous decision about this object" for an undecided one — the field exists and
+    // is consulted, and became unreachable exactly when it mattered.** So it is consulted here.
+    const already = q.history(blobId);
+    if (already.length > 0) {
+      const prior = already.map((d) => `${d.outcome} (${d.category})`).join(", ");
+      throw new Error(`${blobId} has already been decided: ${prior}. A second decision does not `
+        + "replace the first — both are published, as separate cells, and a removal stays in the "
+        + "permanent index whatever follows it. If the first decision was wrong, that is what the "
+        + "appeal path is for.");
+    }
     const d = q.decide(blobId, outcome, category, now());
     save(queuePath, q);
     // THE ID IS PRINTED BECAUSE AN APPEAL NAMES IT. Without it nobody can contest this decision —

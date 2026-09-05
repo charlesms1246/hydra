@@ -107,3 +107,46 @@ test("AND A PUBLIC DECISION IS COUNTED, not merely accounted for", () => withQue
   assert.ok(!/cannot account for/.test(r.out),
     `a decision the report CAN account for was put in the fault row:\n${r.out}`);
 }));
+
+test("ONE OBJECT CANNOT PUBLISH TWO CONTRADICTORY CELLS", () => withQueue(async (queue) => {
+  // **`decide pub:one removed csam` then `decide pub:one kept other`** published BOTH cells and
+  // named `pub:one` in the permanent removals index although the final decision was to keep it —
+  // while the command printed "Nothing to take down", which reads as the keep having taken effect.
+  //
+  // Written straight into the queue, because `decide` refuses the second one now. This is the
+  // queue of an operator who did it before that fix: the report must not publish the contradiction
+  // it inherited.
+  const { writeFileSync } = await import("node:fs");
+  const at = Date.now();
+  writeFileSync(queue, JSON.stringify({
+    version: 4, open: [], received: [], appeals: [], published: [], compelled: [],
+    decided: [
+      { id: "c".repeat(32), blobId: "pub:one", outcome: "removed", category: "csam", at },
+      { id: "d".repeat(32), blobId: "pub:one", outcome: "kept", category: "other", at: at + 1000 },
+    ],
+  }));
+
+  const r = await operator(queue, "report", PERIOD);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!/csam \/ removed/.test(r.out),
+    `the report publishes a removal that was superseded by a keep:\n${r.out}`);
+  assert.match(r.out, /other \/ kept/, "the effective decision is not published");
+  // THE INDEX IS PERMANENT, so naming a kept object in it is the half that cannot be walked back.
+  assert.ok(!/pub:one/.test(r.out),
+    `an object whose final decision was KEPT is named in the permanent removals index:\n${r.out}`);
+}));
+
+test("A SECOND DECISION IS REFUSED, and the refusal names the first", () => withQueue(async (queue) => {
+  // The operator had nothing to warn them: the first `decide` resolves the review out of the
+  // queue, so `show` then answers `No open review` and the prior decision is on no surface at the
+  // moment the second is made. `summarise` already prints "No previous decision about this
+  // object" for an undecided one — the field existed and became unreachable when it mattered.
+  assert.equal((await operator(queue, "decide", "pub:one", "removed", "csam")).code, 0);
+  const second = await operator(queue, "decide", "pub:one", "kept", "other");
+  assert.notEqual(second.code, 0, "a second decision about the same object was recorded");
+  assert.match(second.out, /already been decided/);
+  assert.match(second.out, /removed \(csam\)/,
+    `the refusal does not say what the earlier decision was, so the operator cannot tell whether `
+    + `they are repeating themselves or contradicting themselves:\n${second.out}`);
+  assert.match(second.out, /appeal/, "the refusal names no way forward");
+}));

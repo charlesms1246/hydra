@@ -103,7 +103,21 @@ export function report(
   readonly removedIds: readonly string[];
 } {
   const inPeriod = decisions.filter((d) => d.at >= period.from && d.at < period.to);
-  const publicOnly = inPeriod.filter((d) => d.blobId.startsWith("pub:"));
+  // **ONE CELL PER OBJECT, NOT ONE PER DECISION — the effective decision is the latest one.**
+  // Two decisions about `pub:one` published `csam / removed` AND `other / kept`, and named the
+  // object in the permanent removals index although the final decision was to keep it. `decide`
+  // refuses a second one now, so this cannot arise going forward; it is here because a queue
+  // written before that fix can hold the pair, and a report that publishes both is a report
+  // contradicting itself about an object it names.
+  //
+  // Appeals are unaffected: a reversal is recorded on the appeal, not as a second decision, and
+  // `appeals / decision reversed` counts those separately. Checked rather than assumed.
+  const latest = new Map<string, Decision>();
+  for (const d of inPeriod.filter((x) => x.blobId.startsWith("pub:"))) {
+    const seen = latest.get(d.blobId);
+    if (!seen || d.at >= seen.at) latest.set(d.blobId, d);
+  }
+  const publicOnly = [...latest.values()];
   const removed = publicOnly.filter((d) => d.outcome === "removed");
   // **EVERY DECIDED ENTRY IS ACCOUNTED FOR OR THE REPORT SAYS IT CANNOT BE.** Anything that is not
   // `pub:` used to fall out of the counts, the named list and the text alike — no cell, no
