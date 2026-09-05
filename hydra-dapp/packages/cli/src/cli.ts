@@ -633,6 +633,26 @@ switch (command) {
     }
     refusePassphrase(secret);
     if (!has("i-have-written-the-phrase-down")) {
+      // **NOTHING HAS HAPPENED YET, AND THAT HAS TO BE THE FIRST THING SAID.** This printed
+      // `KEY_LOCKED.full` bare, whose first line is present indicative — *"Your state file is
+      // encrypted with your passphrase: the root key and every message in it."* — and then exited
+      // having written nothing. A user read that, believed their root key was encrypted, and it
+      // was in the clear. The negation was eleven lines further down and nothing above it was
+      // conditional.
+      //
+      // **THE PATH EVERY FIRST-TIME USER TAKES**, because the confirmation flag is undiscoverable
+      // until you have run it once — so the false reading was the default reading.
+      //
+      // `unlock`, fifteen lines below, already had the shape: it states what the command WOULD do
+      // before printing the block that describes the resulting state. Its comment says why —
+      // *"turning a protection off should not read like turning a setting on"* — and the same
+      // holds for a protection that has not been turned on at all. These `full` blocks describe a
+      // STATE, so a surface printing one before that state exists has to frame it or it lies.
+      console.error("NOTHING HAS BEEN ENCRYPTED YET. Your state file is unchanged, and your root");
+      console.error("key is still in it in the clear.");
+      console.error("");
+      console.error("This is what `hydra lock --i-have-written-the-phrase-down` WOULD do:");
+      console.error("");
       for (const line of KEY_LOCKED.full) console.error(line);
       console.error("");
       console.error("THIS IS THE DESTRUCTIVE PART, and it is destructive to YOU: if you forget the");
@@ -644,6 +664,10 @@ switch (command) {
       console.error("COPY OF THE SECRET, not a backup: anyone who finds it has everything.");
       console.error("");
       console.error("Then run: hydra lock --i-have-written-the-phrase-down");
+      console.error("");
+      // Said twice, at both ends, because the block between them describes an encrypted file and
+      // a reader who skims from either direction should hit the negation before the claim.
+      console.error("Until you run that, nothing is encrypted and nothing has been written.");
       process.exit(2);
     }
     state.lockedAtRest = true;

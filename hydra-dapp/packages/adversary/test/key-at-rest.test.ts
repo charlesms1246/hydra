@@ -19,6 +19,7 @@ import { promisify } from "node:util";
 
 import { seal, open as openEnvelope, isEnvelope, refusePassphrase, MIN_PASSPHRASE }
   from "../../cli/src/at-rest.ts";
+import { KEY_LOCKED } from "../../claims/src/warnings.ts";
 
 const run = promisify(execFile);
 const CLI = join(import.meta.dirname, "..", "..", "cli", "src", "cli.ts");
@@ -107,6 +108,32 @@ test("LOCKING IS AN OPERATION WITH A NAME AND A CONFIRMATION", async () => {
     // And it did not lock: a warning that acts anyway is not a confirmation.
     const raw = await readFile(join(home, "state.json"), "utf8");
     assert.ok(!isEnvelope(JSON.parse(raw)), "it locked despite refusing to");
+
+    // **AND IT DOES NOT SAY THE OPPOSITE OF WHAT IT DID.** The three assertions above check the
+    // BEHAVIOUR — two warnings appear, the file is not an envelope — and all three passed while
+    // the command opened with `KEY_LOCKED.full`'s first line, present indicative: *"Your state
+    // file is encrypted with your passphrase: the root key and every message in it."* Reproduced:
+    // `seedHex` in the clear afterwards. On the path every first-time user takes, because the
+    // confirmation flag is undiscoverable until you have run it once.
+    //
+    // **A false assurance about a security property, in the present tense, is the worst thing
+    // this can ship** — and the test that drove this exact path checked the property its author
+    // was thinking about rather than the one that mattered.
+    //
+    // Asserted as an ORDER against the claim's real text, imported rather than retyped: the
+    // negation must come before the sentence describing an encrypted file, because a reader who
+    // stops early must not stop on the claim.
+    const said = String(refused.stderr);
+    const claim = said.indexOf(KEY_LOCKED.full[0]!);
+    const denial = said.search(/NOTHING HAS BEEN ENCRYPTED/);
+    assert.ok(denial >= 0,
+      `refusing to lock never says that nothing was encrypted:\n${said}`);
+    assert.ok(claim === -1 || denial < claim,
+      "the refusal states that the file IS encrypted before it states that it is not, so a user "
+      + `who reads the first line believes their root key is protected when it is in the clear:\n${said}`);
+    assert.match(said, /nothing is encrypted and nothing has been written/,
+      "the refusal does not close by saying nothing happened, so a reader skimming from the "
+      + "bottom lands on the description of an encrypted file");
   });
 });
 
