@@ -102,6 +102,31 @@
 
   /* The page gutter, matched to the frame inset so the rules line up with the corner marks. */
   --gutter: clamp(1rem, 4vw, 4rem);
+
+  /*
+   * ── The type scale ──────────────────────────────────────────────────────────────────────────
+   *
+   * Six levels, each with one job. They were already here as a dozen unrelated `clamp()`s written
+   * per component, which is how a page ends up reading as **two** sizes however many it has: the
+   * levels existed but no page used more than two of them at once, so no step was ever visible.
+   *
+   *   display  the wordmark and page titles — the grotesk, once per screen
+   *   title    section titles, straddling the rule
+   *   lede     the ONE paragraph that opens a page or a section
+   *   body     everything else that is prose
+   *   caption  figure captions, notes, anything subordinate to the thing above it
+   *   label    mono, tracked, uppercase — metadata, ticks, indices, column heads
+   *
+   * ⛔ **The step between `lede` and `body` is the one that carries the page.** `.prose p` used to
+   * be lede-sized for every paragraph, so a section was a wall of 36px serif with no entry point
+   * and nothing to rest on. One lede then body is the rhythm; two ledes is none.
+   */
+  --t-display: clamp(2.75rem, 9vw, 7rem);
+  --t-title: clamp(2rem, 6.5vw, 5.5rem);
+  --t-lede: clamp(1.375rem, 2.6vw, 2.125rem);
+  --t-body: clamp(1.0625rem, 1.35vw, 1.25rem);
+  --t-caption: 0.9375rem;
+  --t-label: 0.6875rem;
 }
 
 *,
@@ -289,8 +314,8 @@ body.has-canvas .field {
 
 .tagline {
   font-family: var(--serif);
-  font-size: clamp(1.125rem, 2.2vw, 1.75rem);
-  line-height: 1.35;
+  font-size: var(--t-lede);
+  line-height: 1.32;
   color: var(--g-80);
   max-width: 34ch;
   margin: 0;
@@ -308,10 +333,19 @@ body.has-canvas .field {
 .section-head {
   position: relative;
   text-align: center;
-  border-bottom: 1px solid var(--g-20);
-  margin-inline: calc(var(--gutter) * -1);
-  padding-inline: var(--gutter);
   margin-bottom: clamp(2rem, 5vh, 4rem);
+}
+
+/*
+ * The ruled band. Both rules belong to the band itself rather than being positioned lines, so
+ * they cannot drift out of register with the type across breakpoints.
+ */
+.section-band {
+  position: relative;
+  border-block: 1px solid var(--g-20);
+  margin-inline: calc(var(--gutter) * -1);
+  padding: 0.15rem var(--gutter) 0.2rem;
+  margin-top: 0.35rem;
 }
 
 .section-number {
@@ -321,12 +355,13 @@ body.has-canvas .field {
   line-height: 1;
   color: var(--accent);
   display: block;
+  font-family: var(--mono);
 }
 
 .section-title {
   font-family: var(--sans);
   font-weight: 200;
-  font-size: clamp(2rem, 6.5vw, 5.5rem);
+  font-size: var(--t-title);
   line-height: 1;
   letter-spacing: -0.02em;
   margin: 0;
@@ -337,13 +372,12 @@ body.has-canvas .field {
 .section-tick {
   position: absolute;
   left: var(--gutter);
-  bottom: -0.55em;
+  /* Inside the band, sitting on the lower rule. No backing — see `Section.tsx`. */
+  bottom: 0.35rem;
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
+  font-size: var(--t-label);
+  letter-spacing: 0.2em;
   color: var(--g-48);
-  background: var(--black);
-  padding-right: 0.75rem;
 }
 
 /* --------------------------------------------------------------------------------------------
@@ -355,11 +389,29 @@ body.has-canvas .field {
   margin-inline: auto;
 }
 
+/*
+ * Body, and a lede for the paragraph that opens the block.
+ *
+ * Every paragraph used to be the lede size. That is why the pages read as one size of text: a
+ * reader's eye has nothing to enter on and nothing to settle into, and the section becomes a
+ * slab. `:first-of-type` rather than a class so it holds for generated and hand-written blocks
+ * alike, and so nobody has to remember it.
+ */
 .prose p {
   font-family: var(--serif);
-  font-size: clamp(1.375rem, 2.7vw, 2.25rem);
-  line-height: 1.3;
-  margin: 0 0 1.5rem;
+  font-size: var(--t-body);
+  line-height: 1.55;
+  color: var(--g-80);
+  max-width: 68ch;
+  margin: 0 0 1.15rem;
+}
+
+.prose > p:first-of-type {
+  font-size: var(--t-lede);
+  line-height: 1.32;
+  color: var(--white);
+  max-width: 44ch;
+  margin-bottom: 1.75rem;
 }
 
 /*
@@ -951,13 +1003,14 @@ body.has-canvas .field {
 
 .doc-head {
   padding: clamp(7rem, 18vh, 12rem) 0 0;
+  margin-inline: auto;
   max-width: 62rem;
 }
 
 .doc-head h1 {
   font-family: var(--sans);
   font-weight: 200;
-  font-size: clamp(2.75rem, 9vw, 7rem);
+  font-size: var(--t-display);
   line-height: 1;
   letter-spacing: -0.02em;
   margin: 0 0 1rem;
@@ -1030,7 +1083,15 @@ body.has-canvas .field {
 .steps {
   list-style: none;
   padding: 0;
-  margin: 0;
+  /*
+   * Centred, like `.prose` and `.warnings` and unlike its former self.
+   *
+   * Every content block on a page is 62rem, but some carried `margin-inline: auto` and some did
+   * not, so a reader scrolling one page saw the column jump from the gutter to the centre and
+   * back. **That reads as misalignment rather than as two deliberate positions** — it is most of
+   * what "the layout is flat" means when the type is otherwise fine.
+   */
+  margin: 0 auto;
   max-width: 62rem;
   counter-reset: step;
 }

@@ -26,12 +26,25 @@ export function Section({
         <span className="section-number" aria-hidden>
           {n}
         </span>
-        <h2 className="section-title" id={`${id}-title`}>
-          {title}
-        </h2>
-        <span className="section-tick" aria-hidden>
-          SEC-{n}
-        </span>
+        {/*
+          The title is BRACKETED BY TWO RULES rather than straddling one, and the tick lives
+          inside that band.
+
+          The earlier arrangement ran a single rule under the title and knocked a black box out
+          of it so the tick would not sit on the line. That works on paper and fails here: the
+          box is a hole punched through the ASCII field behind it, and against a moving
+          background a hole reads as a rendering fault rather than as type. Two rules give the
+          same ruled-band structure with nothing to knock out — which is why the reference's
+          rules run unbroken from margin to margin.
+        */}
+        <div className="section-band">
+          <span className="section-tick" aria-hidden>
+            SEC-{n}
+          </span>
+          <h2 className="section-title" id={`${id}-title`}>
+            {title}
+          </h2>
+        </div>
       </div>
       {children}
     </section>
