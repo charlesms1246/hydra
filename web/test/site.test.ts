@@ -601,7 +601,8 @@ test("every terminal block on the site is output the tool actually produced", ()
  * Both lists are empty and the assertion is effectively absolute. Anything new fails; anything
  * listed that is no longer said also fails, so this cannot rot into fiction.
  */
-const KNOWN_CLI_LANGUAGE: Record<string, string[]> = {
+type Forbidden = (typeof SITE.forbidden)[number];
+const KNOWN_CLI_LANGUAGE: Record<string, Forbidden[]> = {
   hydra: [],
   "hydra-dev": [],
 };
