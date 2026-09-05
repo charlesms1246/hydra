@@ -581,7 +581,12 @@ body.has-canvas .field {
   font-family: var(--serif);
   font-size: 1.125rem;
   font-weight: 400;
-  text-align: center;
+  /*
+   * Left, over a left-aligned list. It was centred, which is mine rather than the reference's —
+   * the reference has no footer rules at all — and centred over rows that all start at the
+   * column's left edge it reads as a heading that has come loose from its list rather than as a
+   * deliberate caption.
+   */
   margin: 0 0 1rem;
   color: var(--g-80);
 }
@@ -1436,6 +1441,24 @@ html[data-build="public"] .wordmark {
   width: clamp(15rem, 24vw, 20rem);
   margin: clamp(3rem, 8vh, 5rem) auto clamp(1rem, 3vh, 2rem);
   opacity: 0.5;
+  grid-column: 1 / -1;
+}
+
+/*
+ * Wide enough for a third column: the mark stops being a block underneath and becomes the column
+ * the link lists do not fill. "Read" has six rows and `SITE.links` has two, so the right-hand
+ * side was empty from its second row down — the drawing goes there.
+ */
+@media (min-width: 64rem) {
+  .footer-cols {
+    grid-template-columns: 1fr 1fr minmax(15rem, 20rem);
+  }
+
+  .footer-mark {
+    grid-column: 3;
+    width: 100%;
+    margin: 0 0 0 auto;
+  }
 }
 
 .footer-mark .panel {

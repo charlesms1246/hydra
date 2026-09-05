@@ -44,12 +44,19 @@ export function Footer() {
             ))}
           </ul>
         </div>
-      </div>
 
-      {/* The reference sets an ASCII mark in the middle of its footer. This is the same drawing
-          the rest of the site uses, small and faint — a printer's device rather than a logo. */}
-      <div className="footer-mark" aria-hidden>
-        <AsciiPanel cols={64} rows={26} blur={2.2} gain={1.1} />
+        {/* The reference sets an ASCII mark in its footer. This is the same drawing the rest of
+            the site uses, small and faint — a printer's device rather than a logo.
+
+            **It is a grid child, not a sibling below the grid**, because `SITE.links` has two
+            entries and "Read" has six: as a centred block underneath, it left the right-hand
+            column empty from its second row down and put 75px of nothing above itself. In the
+            grid it fills that column at wide widths and falls back to a full-width row when
+            there is no third column to sit in. The dead space was the finding; this is the
+            drawing occupying it rather than a smaller gap. */}
+        <div className="footer-mark" aria-hidden>
+          <AsciiPanel cols={64} rows={26} blur={2.2} gain={1.1} />
+        </div>
       </div>
 
       <div className="footer-note">
