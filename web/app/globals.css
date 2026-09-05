@@ -2119,3 +2119,240 @@ html[data-build="public"] .wordmark {
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------------------------
+ * The session page. See `components/Session.tsx`.
+ * ------------------------------------------------------------------------------------------ */
+
+.session {
+  margin-top: clamp(2.5rem, 6vh, 4rem);
+  max-width: var(--measure);
+}
+
+.session-connect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--g-12);
+}
+
+.session-connect label {
+  display: block;
+  flex: 1 1 22rem;
+}
+
+.session-connect input {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--g-4);
+  border: 1px solid var(--g-20);
+  color: var(--white);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+}
+
+.session-connect input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.session-connect button {
+  padding: 0.65rem 1.5rem;
+  background: none;
+  border: 1px solid var(--g-32);
+  color: var(--white);
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.2em;
+  cursor: pointer;
+}
+
+.session-connect button:hover,
+.session-connect button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.session-block {
+  margin-top: clamp(2rem, 5vh, 3rem);
+}
+
+.session-block h2 {
+  font-family: var(--sans);
+  font-weight: 200;
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+  margin: 0 0 1rem;
+}
+
+.session-status {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.session-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.15rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--g-12);
+}
+
+@media (min-width: 48rem) {
+  .session-row {
+    grid-template-columns: 12rem 1fr;
+    gap: 1.5rem;
+  }
+}
+
+.session-row dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--g-80);
+  /* An identity fingerprint and a contract address are long and are meant to be compared. They
+     wrap rather than truncate — a truncated identifier is a different identifier. */
+  overflow-wrap: anywhere;
+}
+
+.session-degraded {
+  margin: 1.25rem 0 0;
+  padding-left: 1rem;
+  border-left: 1px solid var(--accent);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.4;
+  color: var(--g-80);
+}
+
+.session-refusal {
+  margin-top: clamp(2rem, 5vh, 3rem);
+  padding-left: 1rem;
+  border-left: 1px solid var(--accent);
+}
+
+.session-refusal .msg-text {
+  margin: 0.5rem 0;
+}
+
+.session-channels,
+.session-messages {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.session-channels li {
+  border-bottom: 1px solid var(--g-12);
+}
+
+.session-channels button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.25rem 1rem;
+  width: 100%;
+  padding: 0.85rem 0;
+  background: none;
+  border: 0;
+  color: var(--white);
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (min-width: 48rem) {
+  .session-channels button {
+    grid-template-columns: 12rem 1fr auto;
+  }
+}
+
+.ch-name { font-family: var(--sans); font-size: 0.9375rem; }
+.ch-peer { font-family: var(--mono); font-size: 0.75rem; color: var(--g-48); overflow-wrap: anywhere; }
+.ch-count { font-family: var(--mono); font-size: 0.75rem; color: var(--g-48); }
+
+.ch-removed {
+  display: block;
+  padding-bottom: 0.75rem;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.15em;
+  color: var(--accent);
+}
+
+.msg {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--g-12);
+}
+
+.msg-text {
+  font-family: var(--serif);
+  font-size: 1.125rem;
+  line-height: 1.4;
+  color: var(--white);
+  margin: 0;
+}
+
+/*
+ * ⛔ THE BASIS LINE MUST NOT TRUNCATE OR CLIP AT ANY WIDTH.
+ *
+ * The anchored basis carries a 66-character Starknet address, and that is exactly the string that
+ * pushed the TUI's equivalent qualification past column 110, where it appeared at no width at
+ * all. **An attribution claim that loses its qualification reads as a stronger check than the
+ * code performed**, which is worse than showing nothing.
+ *
+ * So: no `text-overflow`, no `white-space: nowrap`, no fixed height. It wraps, and
+ * `overflow-wrap: anywhere` is what lets a 66-character unbroken token wrap instead of forcing
+ * the line wider than its column. `scripts/figure-geometry.ts` fails the build if any of this
+ * regresses.
+ */
+.msg-basis {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--g-64);
+}
+
+.msg-mark {
+  flex: none;
+  color: var(--accent);
+}
+
+.msg-basis-text {
+  overflow-wrap: anywhere;
+}
+
+.session-legend {
+  margin: 0 0 1.5rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--g-12);
+  display: grid;
+  gap: 0.4rem;
+}
+
+.session-legend > div {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.75rem;
+}
+
+.session-legend dt {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--accent);
+}
+
+.session-legend dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  color: var(--g-64);
+}

@@ -509,12 +509,21 @@ test("nothing reaches identity or vault-client", () => {
  */
 test("nothing sent to a browser reaches identity or vault-client", () => {
   const client = clientReachable(WEB);
-  // A vacuous pass is the failure mode here: if the directive is spelled differently, or the
-  // components stop being reached from a page, this finds nothing and reports success. There are
-  // client components — the background and the write-on text — and the check has to see them.
+  /*
+   * A vacuous pass is the failure mode here: if the directive is spelled differently, or the
+   * components stop being reached from a page, this finds nothing and reports success.
+   *
+   * ⛔ It was passing vacuously for most of a page. `entryPoints` named three files by hand and
+   * one of them — `app/disclosures/page.tsx` — had not existed since that route moved, so the
+   * walk covered the home page and the layout and **five routes were never checked at all**. The
+   * pages are discovered from the filesystem now. The floor below is a floor, not a count: it
+   * asserts the walk found the boundary, not how big the boundary is.
+   */
   assert.ok(
-    client.size > 0,
-    "found no client component at all — the client boundary check is not looking at anything",
+    client.size >= 4,
+    `found ${client.size} client-reachable modules; the site has more than that. The boundary `
+    + "check is looking at a fraction of the graph, which makes every clean result below a "
+    + "statement about that fraction rather than about the site",
   );
   const bad = [...client]
     .map((f) => f.replace(`${ROOT}/`, ""))
@@ -769,6 +778,93 @@ function locate(token: string): string | null {
  * A `from` pointing at a file that moved is this design lying in the most expensive way
  * available to it: confidently, in the column that exists to prove the sentence next to it.
  */
+/**
+ * I7 on the session page: attribution is signature-backed or displayed as unverifiable.
+ *
+ * ⛔ **The claim is three-valued and the mark is two-valued**, and that gap is the whole reason
+ * this test exists. `attributionLabel` returns three bases — unverifiable, signed under a key
+ * that is not published, and signed under one that is — and the two signed cases share `✓`. A
+ * page that draws a tick from `attribution` alone shows the strongest reading of a claim that may
+ * be the weaker one, which is the same failure as a claim truncated before its caveat.
+ *
+ * **What this can and cannot reach.** The messages are live data from a local API, so no built
+ * page contains one and no test here can render three real messages. What it CAN assert is the
+ * two things that make the three branches survivable, and both are properties of the source:
+ *
+ *   1. `basis` is rendered as a TEXT CHILD, not as a `title`, `aria-label`, class or colour. A
+ *      tooltip is absent for a touch reader, a colour for a colour-blind one, and a class for
+ *      everybody.
+ *   2. Neither mark glyph is typed into this repository. They come from the API, which takes them
+ *      from `commands.ts` — a `✓` written here is a copy that drifts silently.
+ *
+ * The legend is checked separately, in the built markup, where it actually ships.
+ */
+test("the session page renders the generated basis rather than a mark alone", () => {
+  const src = readFileSync(join(WEB, "components/Session.tsx"), "utf8");
+
+  // Vacuity: if the component stopped rendering messages this would pass by absence.
+  assert.match(
+    src,
+    /m\.basis/,
+    "components/Session.tsx no longer mentions `basis` — either the message renderer is gone or "
+    + "the attribution claim is being drawn from something else",
+  );
+
+  assert.match(
+    src,
+    /<span className="msg-basis-text">\{m\.basis\}<\/span>/,
+    "`basis` must be rendered as a text child. It carries the qualification that separates a "
+    + "signature under a published key from one under a key nobody can look up, and the two share "
+    + "a mark — so a tooltip, a title attribute or a class hides exactly the half that matters.",
+  );
+
+  /*
+   * The marks are `SIGNED_MARK` and `UNVERIFIABLE_MARK` in `commands.ts`, documented there as
+   * "not decorative and not interchangeable: a surface that showed the same glyph for both, or
+   * none at all, would be a surface where a forgery reads exactly like a signature." This file
+   * must not hold a second copy of either.
+   */
+  /*
+   * Comments are stripped first. A glyph named in a docstring cannot drift into the interface,
+   * and the first version of this check failed on this file's own explanation of the rule —
+   * which would have taught the next person to delete the sentence rather than keep the rule.
+   */
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  for (const glyph of ["\u2713", "\u2714"]) {
+    assert.ok(
+      !code.includes(glyph),
+      `components/Session.tsx contains a literal ${JSON.stringify(glyph)}. The mark comes from `
+      + "the API so it cannot drift from `commands.ts`; typing one here creates a second copy "
+      + "that can.",
+    );
+  }
+});
+
+/**
+ * The legend ships, and it says the thing the marks cannot.
+ *
+ * A mark with no key is a mark a reader invents a meaning for, and for a tick they invent the
+ * strongest one. The legend has to be in the markup — not conditional on a fetch — and it has to
+ * state that one glyph covers more than one case, which is the fact the three-branch rule exists
+ * to keep visible.
+ */
+test("the session page ships an attribution legend that admits the mark is ambiguous", () => {
+  const html = readFileSync(join(OUT, "session/index.html"), "utf8");
+  const text = html.replace(/<[^>]*>/g, " ").replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, " ");
+
+  assert.match(
+    text,
+    /the same glyph covers more than one case/,
+    "the session page must say that a mark does not settle which kind of signature it is — "
+    + "otherwise a reader reads a tick as the strongest available meaning",
+  );
+  assert.match(
+    text,
+    /Read that, not the glyph/,
+    "the legend must point the reader at the per-message basis rather than at the mark",
+  );
+});
+
 test("every citation resolves to a file that exists", () => {
   const paths = citedPaths();
   assert.ok(paths.length >= 15, `expected the tables to be cited throughout, found ${paths.length}`);

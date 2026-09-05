@@ -147,9 +147,17 @@ export const SITE = {
     + "sender and private contact discovery beat anything that puts a pointer on a public "
     + "chain. This is a different product with different properties, and if what you want is a "
     + "messenger, use that one.",
-    "A graphical client, a web client or a mobile client. None exists. The interface is a "
-    + "terminal application, and the page you are reading is the only web surface this project "
-    + "has.",
+    /*
+     * ⛔ This sentence changed when `/session/` shipped, and the previous wording is the reason
+     * to be careful with it. It said *"the page you are reading is the only web surface this
+     * project has"*, which was true until a page existed that drives the client — and it would
+     * then have been false in the direction this project must not be wrong in, which is
+     * under-stating what exists. It was not changed before the page shipped either: that would
+     * have made it wrong the other way for as long as the page took.
+     */
+    "A graphical client or a mobile client. The interface is a terminal application. There is a "
+    + "page on this site that drives a client already running on your own machine, over a local "
+    + "connection you start and stop; it renders that client and replaces none of it.",
     "A hosted service. The vault has never bound to anything but localhost. There is nothing to "
     + "sign up for, nothing running that you could send a message through, and no server here "
     + "holding anyone's bytes.",
@@ -406,6 +414,19 @@ export const SITE = {
       "It is not a company, and the section below says exactly what that means rather than "
       + "repeating it here. One statement of a thing is a statement; two is a slogan, and this "
       + "project has one place where each fact lives.",
+    ],
+  },
+
+  /** The session page. Copy only — every claim on that page comes from the local API. */
+  session: {
+    lede: "A page that drives the client already running on your machine. Nothing here is "
+      + "fetched from this site, and nothing leaves the machine.",
+    body: [
+      "The client runs on your own computer and answers on a local address that only that "
+      + "computer can reach. This page asks it questions and draws the answers.",
+      "It reads. It does not send messages, it does not fetch new ones, and it never receives an "
+      + "invite code — only a count of how many are left. Every sentence it shows about a "
+      + "message comes from the client, in the client's own words.",
     ],
   },
 

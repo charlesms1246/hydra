@@ -22,13 +22,14 @@
 import { asciiBlock } from "../scripts/ascii-block.ts";
 import { isPublicBuild } from "../scripts/build-mode.ts";
 
-export type Page = "home" | "pitch" | "demo" | "install" | "about";
+export type Page = "home" | "pitch" | "demo" | "install" | "about" | "session";
 
 const LINKS: { id: Page; href: string; label: string }[] = [
   { id: "home", href: "/", label: "HOME" },
   { id: "pitch", href: "/pitch/", label: "PITCH" },
   { id: "demo", href: "/demo/", label: "DEMO" },
   { id: "install", href: "/install/", label: "INSTALL" },
+  { id: "session", href: "/session/", label: "SESSION" },
   { id: "about", href: "/about/", label: "ABOUT" },
 ];
 

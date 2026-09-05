@@ -16,8 +16,8 @@
  * of it. The graph is where the answer is.
  */
 
-import { readFileSync, existsSync, statSync } from "node:fs";
-import { dirname, resolve, relative } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 
 /** Every specifier this file imports, re-exports included. Comments stripped first. */
 function specifiersOf(source: string): string[] {
@@ -110,19 +110,54 @@ export function boundaryCrossings(root: string, entries: string[]): Crossing[] {
   return out.sort((a, b) => a.file.localeCompare(b.file));
 }
 
-/** The files the bundler starts from. Everything either page renders is reachable from these. */
+/**
+ * The files the bundler starts from: the root layout and **every** route's page.
+ *
+ * ⛔ **DISCOVERED, NOT LISTED, AND THE PREVIOUS VERSION IS THE REASON.**
+ *
+ * This used to name three files by hand — `app/layout.tsx`, `app/page.tsx` and
+ * `app/disclosures/page.tsx`. The site has nine pages. `app/disclosures/page.tsx` had not existed
+ * since the disclosure statement moved to `app/about/disclosure/`, so one of the three resolved to
+ * nothing, and the walk covered the home page and the layout alone.
+ *
+ * **Everything downstream inherits that scope.** `boundaryCrossings` reported zero crossings into
+ * `identity` and `vault-client`, and `clientReachable` reported the client components it could
+ * see — both true statements about two pages, read as statements about the site. **A negative
+ * result from a scoped search is a statement about the scope**, and a hand-maintained list of
+ * entry points is a scope that silently narrows every time a route is added and every time one
+ * moves.
+ *
+ * So it walks the directory. A new page is covered the moment it exists rather than the moment
+ * somebody remembers this file, and a moved page cannot leave a hole behind it.
+ */
 export function entryPoints(webRoot: string): string[] {
-  return [
-    resolve(webRoot, "app/layout.tsx"),
-    resolve(webRoot, "app/page.tsx"),
-    resolve(webRoot, "app/disclosures/page.tsx"),
-  ];
+  const app = resolve(webRoot, "app");
+  const pages: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name === "page.tsx") pages.push(p);
+    }
+  };
+  walk(app);
+
+  /*
+   * Vacuity: a walk that finds no pages would make every check downstream pass by finding
+   * nothing, which is the failure this rewrite exists to close. The layout is required rather
+   * than assumed for the same reason.
+   */
+  const layout = resolve(webRoot, "app/layout.tsx");
+  if (!existsSync(layout)) throw new Error(`${layout} is missing — the module graph has no root`);
+  if (pages.length === 0) throw new Error(`no page.tsx under ${app} — nothing would be checked`);
+
+  return [layout, ...pages.sort()];
 }
 
 /**
  * The files that actually reach a BROWSER, as opposed to the build.
  *
- * Every component here is a server component except one, so almost nothing in the graph above is
+ * Almost every component here is a server component, so almost nothing in the graph above is
  * sent to a reader — `statement()` and its imports run at build time on the machine doing the
  * build. That distinction is the only reason the known crossings below are survivable, and it is
  * a distinction one `"use client"` directive erases without an error or a warning.

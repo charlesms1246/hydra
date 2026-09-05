@@ -55,6 +55,7 @@ const ROUTES = [
   "/demo/hydra/",
   "/demo/hydra-dev/",
   "/install/",
+  "/session/",
   "/about/",
   "/about/disclosure/",
 ];
@@ -419,9 +420,105 @@ for (const width of DECK_WIDTHS) {
   }
 }
 
+/* ---------------------------------------------------------------------------------------------
+ * I7 point 4: the attribution basis must not clip at any width.
+ *
+ * ⛔ **The anchored basis carries a 66-character Starknet address**, and that is the string shape
+ * that pushed the TUI's equivalent qualification past column 110, where it appeared at no width at
+ * all. An attribution claim that loses its qualification reads as a **stronger** check than the
+ * code performed, which is worse than showing nothing.
+ *
+ * The messages are live data from a local API, so no built page contains one. This injects a
+ * synthetic basis of the worst realistic shape into the real markup and measures it — the CSS
+ * under test is the CSS that ships, and the address is an unbroken 66-character token, which is
+ * the case a naive `overflow: hidden` or `white-space: nowrap` fails.
+ * ------------------------------------------------------------------------------------------ */
+
+const WORST_BASIS =
+  "signed \u2014 their key is published at " +
+  "0x06ea776549f898490b11aca1d49af58498d6a5246f3847ad4fa163f97ffcb0c6";
+
+let basisChecked = 0;
+
+for (const width of [360, 390, 768, 1024, 1440]) {
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width, height: 900, deviceScaleFactor: 1, mobile: false,
+  }, sessionId);
+  await cdp.send("Page.navigate", { url: `${site.origin}/session/` }, sessionId);
+  await new Promise((r) => setTimeout(r, 260));
+
+  const { result } = await cdp.send("Runtime.evaluate", {
+    expression: `(() => {
+      const host = document.querySelector(".session");
+      if (!host) return { ok: false, why: "no .session on the page" };
+      const probe = document.createElement("ol");
+      probe.className = "session-messages";
+      probe.innerHTML =
+        '<li class="msg"><p class="msg-text">x</p>' +
+        '<p class="msg-basis"><span class="msg-mark">M</span>' +
+        '<span class="msg-basis-text">' + ${JSON.stringify(WORST_BASIS)} + '</span></p></li>';
+      host.appendChild(probe);
+      const span = probe.querySelector(".msg-basis-text");
+      const line = probe.querySelector(".msg-basis");
+      const cs = getComputedStyle(span);
+      const r = span.getBoundingClientRect();
+      const lr = line.getBoundingClientRect();
+      const out = {
+        ok: true,
+        rendered: span.textContent.length,
+        // Wider than its own line box means it is spilling rather than wrapping.
+        pastLine: Math.round(r.right - lr.right),
+        pastViewport: Math.round(r.right - window.innerWidth),
+        clipping: cs.textOverflow === "ellipsis" || cs.whiteSpace === "nowrap" ||
+                  cs.overflow === "hidden",
+        lines: Math.round(r.height / parseFloat(cs.lineHeight || "16")),
+      };
+      probe.remove();
+      return out;
+    })()`,
+    returnByValue: true,
+  }, sessionId);
+
+  const b = result.value as {
+    ok: boolean; why?: string; rendered: number; pastLine: number;
+    pastViewport: number; clipping: boolean; lines: number;
+  };
+
+  if (!b.ok) {
+    console.error(`::error::${width}px: cannot check the attribution basis — ${b.why}`);
+    failures++;
+    continue;
+  }
+  // Vacuity: the probe must have rendered the whole string, or it is measuring nothing.
+  if (b.rendered !== WORST_BASIS.length) {
+    console.error(
+      `::error::${width}px: the basis probe rendered ${b.rendered} of ${WORST_BASIS.length} ` +
+      "characters — the measurement is not of the string it claims to be.",
+    );
+    failures++;
+    continue;
+  }
+  basisChecked++;
+  if (b.clipping || b.pastLine > 1 || b.pastViewport > 1) {
+    failures++;
+    console.error(
+      `::error::${width}px: the attribution basis is clipped or overflowing ` +
+      `(past its line by ${b.pastLine}px, past the viewport by ${b.pastViewport}px, ` +
+      `clipping styles: ${b.clipping}). The qualification is what separates a signature under a ` +
+      "published key from one under a key nobody can look up; losing it reads as the stronger " +
+      "claim.",
+    );
+  }
+}
+
 cdp.close();
 await chrome.kill();
 site.close();
+
+if (basisChecked < 5) {
+  console.error(`::error::the attribution basis was measured at only ${basisChecked} widths.`);
+  failures++;
+}
 
 if (deckChecked < DECK_WIDTHS.length * DECK_HEIGHTS.length * 0.5) {
   console.error(
