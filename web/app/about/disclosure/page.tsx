@@ -8,6 +8,7 @@ import { Section } from "../../../components/Section.tsx";
 import { ClaimList } from "../../../components/ClaimList.tsx";
 import { Auditor } from "../../../components/Auditor.tsx";
 import { Footer } from "../../../components/Footer.tsx";
+import { Close } from "../../../components/Close.tsx";
 import { DisclosureMap } from "../../../components/viz/DisclosureMap.tsx";
 
 /**
@@ -91,6 +92,12 @@ export default function Disclosures() {
         </Section>
 
       </main>
+
+      <Close
+        line="Every line above names the file that makes it true."
+        primary={{ href: "/install/", label: "Run it" }}
+        secondary={{ href: "/demo/", label: "See it run" }}
+      />
 
       <Footer />
     </>

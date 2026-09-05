@@ -2719,3 +2719,28 @@ html[data-build="public"] .wordmark {
   font-family: var(--mono);
   font-size: 0.9em;
 }
+
+/* --------------------------------------------------------------------------------------------
+ * The closing beat. See `components/Close.tsx`.
+ * ------------------------------------------------------------------------------------------ */
+
+.close {
+  padding-block: clamp(5rem, 14vh, 10rem);
+  text-align: center;
+}
+
+.close-line {
+  font-family: var(--serif);
+  font-size: clamp(1.5rem, 3.4vw, 3rem);
+  line-height: 1.15;
+  color: var(--white);
+  max-width: 30ch;
+  margin: 0 auto clamp(2rem, 5vh, 3rem);
+}
+
+.close-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}

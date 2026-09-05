@@ -7,6 +7,7 @@ import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Code } from "../../components/Code.tsx";
 import { Footer } from "../../components/Footer.tsx";
+import { Close } from "../../components/Close.tsx";
 
 /**
  * How to actually run this, which today means from a checkout.
@@ -96,6 +97,12 @@ export default function Install() {
           </ul>
         </Section>
       </main>
+
+      <Close
+        line="What you get at the end of it is a working client and a local privacy stack."
+        primary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
+        secondary={{ href: "/demo/", label: "See it run" }}
+      />
 
       <Footer />
     </>

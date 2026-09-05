@@ -54,13 +54,22 @@ export function Reveal({
       return;
     }
 
-    // The nearest ancestor that actually scrolls. `null` means the viewport, which is what
-    // `IntersectionObserver` wants for an ordinary page.
-    let root: Element | null = null;
-    for (let p = el.parentElement; p; p = p.parentElement) {
-      const o = getComputedStyle(p).overflowX + getComputedStyle(p).overflowY;
-      if (/auto|scroll/.test(o)) { root = p; break; }
-    }
+    /*
+     * ⛔ THE DECK, EXPLICITLY. Do not go back to "nearest scrollable ancestor".
+     *
+     * That is what this did, and it was wrong twice over. Walking up for any `overflow: auto`
+     * finds `.slide` first — which has `overflow-y: auto` for tall content — so a figure was
+     * measured against its own slide and intersected immediately. On an ordinary page it found
+     * `body`, whose computed overflow is `hidden auto`, and a root the height of the whole
+     * document means everything intersects at load.
+     *
+     * **Both bugs presented as success**: the probe counted five revealed elements and reported
+     * five, which is what a working reveal also looks like. What separated them was asking
+     * WHEN — all five had fired on slide one. A count is not a measurement of staging.
+     *
+     * `[data-deck]` or the viewport. Two cases, named, no inference.
+     */
+    const root: Element | null = el.closest("[data-deck]");
 
     el.classList.add("is-hidden");
     const io = new IntersectionObserver(

@@ -4,6 +4,7 @@ import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
+import { Close } from "../../components/Close.tsx";
 import { Session, AttributionLegend } from "../../components/Session.tsx";
 
 /**
@@ -56,6 +57,12 @@ export default function SessionPage() {
           <AttributionLegend />
         </Section>
       </main>
+
+      <Close
+        line="Everything this page shows comes from the client on your own machine."
+        primary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
+        secondary={{ href: "/install/", label: "Run it" }}
+      />
 
       <Footer />
     </>

@@ -4,6 +4,7 @@ import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
+import { Close } from "../../components/Close.tsx";
 
 /**
  * The demo index: two tools, two pages, and a page that sends you to the right one.
@@ -47,6 +48,12 @@ export default function Demo() {
           </div>
         </Section>
       </main>
+
+      <Close
+        line="Both run in a terminal, on your machine, from a checkout."
+        primary={{ href: "/install/", label: "Run it" }}
+        secondary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
+      />
 
       <Footer />
     </>

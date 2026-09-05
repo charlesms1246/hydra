@@ -5,6 +5,7 @@ import { Nav } from "../../components/Nav.tsx";
 import { Section } from "../../components/Section.tsx";
 import { WriteOn } from "../../components/WriteOn.tsx";
 import { Footer } from "../../components/Footer.tsx";
+import { Close } from "../../components/Close.tsx";
 
 /**
  * About, and the page the disclosure statement hangs off.
@@ -80,6 +81,12 @@ export default function About() {
         </Section>
 
       </main>
+
+      <Close
+        line="Two tools, one argument: the disclosures are computed rather than described."
+        primary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
+        secondary={{ href: "/demo/", label: "See it run" }}
+      />
 
       <Footer />
     </>

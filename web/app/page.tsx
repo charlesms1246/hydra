@@ -2,6 +2,7 @@ import { SITE } from "../content.ts";
 import { Nav } from "../components/Nav.tsx";
 import { Section } from "../components/Section.tsx";
 import { Footer } from "../components/Footer.tsx";
+import { Close } from "../components/Close.tsx";
 import { WriteOn } from "../components/WriteOn.tsx";
 import { Develop } from "../components/Develop.tsx";
 import { Reveal } from "../components/Reveal.tsx";
@@ -134,6 +135,12 @@ export default function Home() {
           </p>
         </Section>
       </main>
+
+      <Close
+        line="It is a terminal client you run yourself, and every claim it makes is one you can go and check."
+        primary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
+        secondary={{ href: "/install/", label: "Run it" }}
+      />
 
       <Footer />
     </>
