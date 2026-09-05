@@ -164,6 +164,26 @@ test("AND THE TUI PUTS THAT LIMIT BEFORE THE 66-CHARACTER ADDRESS", () => {
     + `the reader keeps the claim and loses the limit:\n  ${message}`);
 });
 
+test("BOTH FRONT ENDS DESCRIBE AN UNREACHABLE VAULT, and neither owns the sentence", () => {
+  // **THE INVENTORY SAID THIS WAS SHARED AND IT WAS NOT.** `describeFailure` was module-private to
+  // `tui/src/effects.ts`, so `cli.ts`'s `die()` printed `e.message` raw — same state, same command,
+  // same dead vault, and the TUI named the host and the remedy while the CLI said `fetch failed`.
+  // The row claimed "asserted over two effects" and both effects were the TUI's: two effects is
+  // not two front ends.
+  for (const { name, file } of FRONT_ENDS) {
+    const code = codeOf(readFileSync(file, "utf8"));
+    assert.match(code, /describeFailure\s*\(/,
+      `${name} does not use the shared failure description, so an unreachable vault reads `
+      + "differently depending on which front end the user happens to be in");
+  }
+  // AND NEITHER DEFINES IT. A second copy is the drift this row already suffered once.
+  for (const { name, file } of FRONT_ENDS) {
+    const code = codeOf(readFileSync(file, "utf8"));
+    assert.ok(!/function describeFailure/.test(code),
+      `${name} defines its own describeFailure rather than importing the shared one`);
+  }
+});
+
 test("THE TUI INJECTS ITS FETCH — a front end that reaches the real network in tests", () => {
   // Caught by the suite going from seconds to minutes. `ensureFromBlock(next)` without
   // `deps.fetchImpl` used the global `fetch`, so the TUI's own tests started bisecting a live

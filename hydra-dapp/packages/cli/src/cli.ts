@@ -57,7 +57,8 @@ import {
   fingerprint, vaultRootOf, rotatePrekey, nextOneTime, foreignSends, forget, attributionLabel,
   myRecord, anchorPeer, anchorOf, recordFelts, drain, linkabilityOf, post, fetchPosts,
   bundleFromChain,
-  encodeWire as encode, decodeWire as decode, ensureFromBlock } from "./commands.ts";
+  encodeWire as encode, decodeWire as decode, ensureFromBlock,
+  describeFailure } from "./commands.ts";
 import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
@@ -131,7 +132,16 @@ const usage = () => {
  * client; everybody else is trying to send a message.
  */
 const die = (e: unknown): never => {
-  console.error(e instanceof Error ? e.message : String(e));
+  // **SHARED WITH THE TUI NOW.** This printed `e.message` raw while the TUI named the host and the
+  // remedy, so the same command against the same dead vault said `fetch failed` here and something
+  // useful there. `describeFailure` was module-private to `tui/src/effects.ts`; it lives in
+  // `commands.ts` with everything else both front ends need.
+  //
+  // The vault address is read best-effort: an error handler must not be the thing that throws, and
+  // without it the sentence still names the failure and the remedy, just not the host.
+  let vaultUrl: string | undefined;
+  try { if (exists()) vaultUrl = load().vaultUrl; } catch { /* no state, or locked: say less */ }
+  console.error(describeFailure(e, vaultUrl));
   if (has("debug")) console.error(e);
   process.exit(1);
 };
