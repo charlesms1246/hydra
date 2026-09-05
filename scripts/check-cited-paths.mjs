@@ -44,6 +44,19 @@
  * a clean run. Make the held marker never match and the 13 marked citations become 27 failures.
  * A guard that cannot fail is the defect this repository spent a day on.
  *
+ * AND IT CAN NEVER RUN IN CI, WHICH IS NOT A GAP TO BE CLOSED LATER.
+ *
+ * `claude-docs/` is gitignored. On any clone the documents this checks are ABSENT, so a CI run
+ * would scan nothing, find nothing and pass. **A guard whose subject is "can a person holding
+ * only a clone open this" cannot itself run in that world, because in that world its inputs do
+ * not exist.** The vacuity check below turns that into an exit 2 rather than a green tick, which
+ * is the most this file can do about it — but the next person to reach for CI should read this
+ * paragraph first and not spend an afternoon on a run that passes for the wrong reason. The
+ * publishing runbook's checklist is the correct home, and it is the only one.
+ *
+ * If `claude-docs/decisions/` is ever published, the part of this that matters most could run in
+ * CI. That is a reason to publish them, not a reason to fake the coverage.
+ *
  * NOTHING RUNS THIS AUTOMATICALLY YET, and saying so is better than implying otherwise. There is
  * no repo-root `package.json`, and `.github/workflows/web.yml` belongs to the site lane. It is a
  * step in the publishing runbook and it exits non-zero, so it is one line away from any CI that
