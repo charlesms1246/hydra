@@ -569,12 +569,21 @@ body.has-canvas .field {
  * The ruled band. Both rules belong to the band itself rather than being positioned lines, so
  * they cannot drift out of register with the type across breakpoints.
  */
+/*
+ * ⛔ The rules stop at the CONTAINER, not the viewport. Do not make them full-bleed again.
+ *
+ * They were `margin-inline: calc(var(--gutter) * -1)`, which ran them edge to edge. The reference
+ * puts its band inside `Container`, so the rules run margin to margin — the page's margins, which
+ * is where every other line on the page starts and stops. Full-bleed rules make the band a
+ * separate object floating over the layout instead of the top of it.
+ */
 .section-band {
   position: relative;
   border-block: 1px solid var(--g-20);
-  margin-inline: calc(var(--gutter) * -1);
-  padding: 0.15rem var(--gutter) 0.2rem;
+  padding: 0.15rem 0 0.2rem;
   margin-top: 0.35rem;
+  max-width: var(--measure);
+  margin-inline: auto;
 }
 
 .section-number {
@@ -600,7 +609,7 @@ body.has-canvas .field {
 /* The tick. Sits ON the rule, like a plate number in the margin of a printed figure. */
 .section-tick {
   position: absolute;
-  left: var(--gutter);
+  left: 0;
   /* Inside the band, sitting on the lower rule. No backing — see `Section.tsx`. */
   bottom: 0.35rem;
   color: var(--g-48);
@@ -2743,4 +2752,132 @@ html[data-build="public"] .wordmark {
   flex-wrap: wrap;
   gap: 0.75rem;
   justify-content: center;
+}
+
+/* --------------------------------------------------------------------------------------------
+ * The demo lander: a routing question, answered in one screen. See `app/demo/page.tsx`.
+ * ------------------------------------------------------------------------------------------ */
+
+.lander {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(2.5rem, 6vh, 4rem);
+  align-content: center;
+  min-height: 100svh;
+  max-width: var(--measure);
+  margin-inline: auto;
+  padding-block: clamp(7rem, 16vh, 10rem) clamp(3rem, 8vh, 5rem);
+}
+
+@media (min-width: 60rem) {
+  .lander {
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: clamp(3rem, 6vw, 6rem);
+  }
+}
+
+.lander-head h1 {
+  font-family: var(--sans);
+  font-weight: 200;
+  font-size: var(--t-display);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.25rem;
+}
+
+.lander-head .tagline {
+  max-width: 30ch;
+}
+
+/* Stacked, and each one a whole target rather than a card with a link in it. */
+.lander-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--g-12);
+  border: 1px solid var(--g-12);
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "who go" "name go" "body go";
+  gap: 0.5rem 1.5rem;
+  align-items: center;
+  padding: 1.75rem;
+  background: var(--black);
+  text-decoration: none;
+  transition: background 200ms;
+}
+
+.choice:hover,
+.choice:focus-visible {
+  background: var(--g-4);
+}
+
+.choice .label { grid-area: who; color: var(--accent); }
+
+.choice-name {
+  grid-area: name;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(1.5rem, 2.6vw, 2.25rem);
+  line-height: 1;
+  color: var(--white);
+}
+
+.choice-body {
+  grid-area: body;
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--g-64);
+  max-width: 42ch;
+}
+
+.choice-go {
+  grid-area: go;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 1.25rem;
+  color: var(--g-32);
+  transition: color 200ms, transform 200ms;
+}
+
+.choice:hover .choice-go,
+.choice:focus-visible .choice-go {
+  color: var(--accent);
+  transform: translateX(0.25rem);
+}
+
+/*
+ * A figure centred in its column, for the one case where the drawing IS the section rather than
+ * an aside to it — see section 03 on the home page.
+ */
+.fig-centre {
+  display: flex;
+  justify-content: center;
+}
+
+.fig-centre .fig {
+  margin-inline: auto;
+  /* Wider than the default figure measure: this one is the section's subject, not its aside. */
+  max-width: 52rem;
+  width: 100%;
+}
+
+/* A `Reveal` used as a grid item has to keep its span. */
+.reveal.col-9 { grid-column: span 9; }
+
+/* Centred statement-lead when it opens a centred section. */
+.statement-lead:not(.col-7) {
+  max-width: 56ch;
+}
+
+/* The count in `DisclosureMap` — the one number in a figure that is meant to be read first. */
+.fig-count {
+  font-family: var(--mono);
+  font-size: 17px;
+  letter-spacing: -0.02em;
 }

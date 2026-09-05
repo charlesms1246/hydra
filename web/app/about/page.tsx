@@ -83,9 +83,9 @@ export default function About() {
       </main>
 
       <Close
-        line="Two tools, one argument: the disclosures are computed rather than described."
-        primary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
-        secondary={{ href: "/demo/", label: "See it run" }}
+        line="Two tools, both in a terminal, both on your own machine."
+        primary={{ href: "/demo/", label: "See it run" }}
+        secondary={{ href: "/install/", label: "Run it" }}
       />
 
       <Footer />

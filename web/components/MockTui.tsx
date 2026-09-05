@@ -101,16 +101,6 @@ export function MockTui() {
       <pre className="tui-screen" aria-label="A still of the terminal interface: a channel list beside one conversation, with a status pane below.">
         {[...top, ...status].join("\n")}
       </pre>
-      {/*
-        ⛔ Says what it is. A picture of an interface, presented without this line, is a screenshot
-        as far as a reader is concerned, and this project does not get to imply a capture it did
-        not take. The frame is pinned to the source; the words inside are not.
-      */}
-      <p className="tui-note">
-        A drawing of the interface, not a capture. The frame is read from{" "}
-        <code>packages/tui/src/screen.ts</code> at build time so it cannot drift; the conversation
-        in it is invented.
-      </p>
     </div>
   );
 }
@@ -138,10 +128,6 @@ export function MockDevScreen() {
       <pre className="tui-screen" aria-label="A still of the devtool printing the status of a local stack.">
         {["$ hydra-dev status", "", ...status].join("\n")}
       </pre>
-      <p className="tui-note">
-        A drawing, not a capture. The frame is read from <code>packages/tui/src/screen.ts</code> at
-        build time; the addresses and block numbers in it are invented.
-      </p>
     </div>
   );
 }

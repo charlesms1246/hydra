@@ -99,9 +99,9 @@ export default function Install() {
       </main>
 
       <Close
-        line="What you get at the end of it is a working client and a local privacy stack."
-        primary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
-        secondary={{ href: "/demo/", label: "See it run" }}
+        line="What you get is a working client and a local privacy stack."
+        primary={{ href: "/demo/", label: "See it run" }}
+        secondary={{ href: "/session/", label: "Drive your session" }}
       />
 
       <Footer />

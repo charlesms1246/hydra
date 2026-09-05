@@ -66,7 +66,9 @@ export default function Home() {
 
           <div className="grid-12 step">
             <span className="col-note prose-label">METHOD</span>
-            <p className="col-9 prose-body">{SITE.what[1]}</p>
+            <Reveal className="col-9">
+              <p className="prose-body">{SITE.what[1]}</p>
+            </Reveal>
           </div>
         </Section>
 
@@ -99,7 +101,7 @@ export default function Home() {
                 </Develop>
                 <span className="why-label">{w.label}</span>
                 <h3>{w.title}</h3>
-                <WriteOn text={w.body} />
+                <p>{w.body}</p>
               </article>
             ))}
           </div>
@@ -118,13 +120,15 @@ export default function Home() {
           is the loudest thing here.
         */}
         <Section n="03" id="before" title="WHAT EVERY PARTY CAN SEE">
-          <p className="statement-lead col-7">
-            Forty things a party to this system can see, seven it protects with a measurement
-            attached, and eleven it does not expose. All of it is generated from the code, and all
-            of it is on one page.
-          </p>
+          <Reveal>
+            <p className="statement-lead">
+              Forty things a party to this system can see, seven it protects with a measurement
+              attached, and eleven it does not expose. All of it is generated from the code, and
+              all of it is on one page.
+            </p>
+          </Reveal>
 
-          <div className="fig-map">
+          <div className="fig-map fig-centre">
             <Reveal>
               <DisclosureMap />
             </Reveal>
@@ -137,9 +141,9 @@ export default function Home() {
       </main>
 
       <Close
-        line="It is a terminal client you run yourself, and every claim it makes is one you can go and check."
-        primary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
-        secondary={{ href: "/install/", label: "Run it" }}
+        line="It is a terminal client you run yourself, on your own machine."
+        primary={{ href: "/install/", label: "Run it" }}
+        secondary={{ href: "/demo/", label: "See it run" }}
       />
 
       <Footer />

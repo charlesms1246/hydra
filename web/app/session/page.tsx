@@ -60,8 +60,8 @@ export default function SessionPage() {
 
       <Close
         line="Everything this page shows comes from the client on your own machine."
-        primary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
-        secondary={{ href: "/install/", label: "Run it" }}
+        primary={{ href: "/install/", label: "Run it" }}
+        secondary={{ href: "/demo/", label: "See it run" }}
       />
 
       <Footer />

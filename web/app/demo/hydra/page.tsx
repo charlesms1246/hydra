@@ -46,10 +46,6 @@ export default function Page() {
         </Section>
 
         <Section n="02" id="commands" title="EVERY COMMAND">
-          <p className="capture-note">
-            Captured from the binary when this page was built. It is what the tool prints today,
-            not a description of it.
-          </p>
           <CommandSurface tool="hydra" />
         </Section>
       </main>

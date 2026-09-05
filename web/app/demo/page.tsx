@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
-import { Section } from "../../components/Section.tsx";
 import { Footer } from "../../components/Footer.tsx";
-import { Close } from "../../components/Close.tsx";
 
 /**
  * The demo index: two tools, two pages, and a page that sends you to the right one.
@@ -25,35 +23,29 @@ export default function Demo() {
       <Nav current="demo" />
 
       <main className="page">
-        <header className="doc-head">
-          <h1>See it run</h1>
-          <p className="tagline">{SITE.demo.lede}</p>
-        </header>
+        {/*
+          ⛔ The lander is a routing question, not a page of prose: two tools, and a reader wants
+          one of them. Title on the left, the two choices stacked on the right, and nothing
+          between them to read first — the fastest arrangement for a decision that has two answers.
+        */}
+        <section className="lander">
+          <div className="lander-head">
+            <h1>See it run</h1>
+            <p className="tagline">{SITE.demo.lede}</p>
+          </div>
 
-
-        <Section n="01" id="tools" title="TWO TOOLS">
-          <div className="why two">
+          <div className="lander-choices">
             {SITE.demo.tools.map((t) => (
-              <article key={t.id}>
-                <span className="why-label">{t.who}</span>
-                <h3>
-                  <a href={t.href}>{t.name}</a>
-                </h3>
-                <p>{t.body}</p>
-                <p className="cta cta-inline">
-                  <a href={t.href}>See {t.name} &rarr;</a>
-                </p>
-              </article>
+              <a className="choice" key={t.id} href={t.href}>
+                <span className="label">{t.who}</span>
+                <span className="choice-name">{t.name}</span>
+                <span className="choice-body">{t.body}</span>
+                <span className="choice-go" aria-hidden>&rarr;</span>
+              </a>
             ))}
           </div>
-        </Section>
+        </section>
       </main>
-
-      <Close
-        line="Both run in a terminal, on your machine, from a checkout."
-        primary={{ href: "/install/", label: "Run it" }}
-        secondary={{ href: "/about/disclosure/", label: "Read what every party can see" }}
-      />
 
       <Footer />
     </>
