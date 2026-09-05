@@ -24,7 +24,10 @@ import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 
 import { guiServer, type StateSource } from "./server.ts";
-import { load, locked, currentPassphrase, resolvePassphrase, STATE_FILE }
+import { serialise } from "./serialise.ts";
+import { chainFor } from "../../cli/src/chain.ts";
+import { flush, FLUSH_LIMIT } from "../../cli/src/commands.ts";
+import { load, locked, currentPassphrase, resolvePassphrase, save, STATE_FILE }
   from "../../cli/src/state.ts";
 
 const args = process.argv.slice(2);
@@ -61,7 +64,45 @@ function stateNow(): StateSource {
 }
 
 const token = randomBytes(16).toString("hex");
-const server = guiServer({ token, stateNow });
+
+/**
+ * The one lock, shared by the HTTP handlers and the ticker below.
+ *
+ * Not one per entry point: a flush landing mid-send is the same interleaving as two sends, from
+ * the other direction. See `serialise.ts`.
+ */
+const exclusive = serialise();
+
+const server = guiServer({
+  token, stateNow, save, chainFor, now: () => Date.now(), exclusive,
+});
+
+/**
+ * Uploads go up on a clock, not on a request — the same reason the TUI is resident.
+ *
+ * **WITHOUT THIS, A MESSAGE SENT THROUGH THE API IS NEVER UPLOADED.** `send` publishes the chain
+ * event and queues the objects for a jittered moment later; something has to be running then.
+ * `decisions/0022` is why the resident client exists at all, and an API process is resident.
+ *
+ * IT SKIPS RATHER THAN QUEUES when something else holds the lock, exactly as the TUI's ticker
+ * does: a slow publish must not build a backlog of flushes that all fire when it finishes, because
+ * that is the burst `upload.burst` exists to prevent.
+ */
+const TICK_MS = 1000;
+const ticker = setInterval(() => {
+  void exclusive("flush", async () => {
+    const now = stateNow();
+    if (now.t !== "ready") return;
+    const due = now.state.pending.filter((p) => p.uploadAt <= Date.now()).length;
+    if (due === 0) return;
+    await flush(now.state, Date.now(), undefined, FLUSH_LIMIT);
+    save(now.state);
+  }).catch(() => {
+    // A vault that is down must not take the process with it. The next tick tries again, and the
+    // page sees the queue standing still on `status`, which is the honest signal.
+  });
+}, TICK_MS);
+ticker.unref();
 
 // 0 MEANS "ANY FREE PORT", which is the default because a fixed one collides and because nothing
 // should be discoverable at a known address without the token anyway.
@@ -97,5 +138,5 @@ server.listen(port, "127.0.0.1", () => {
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => { server.close(); process.exit(0); });
+  process.on(signal, () => { clearInterval(ticker); server.close(); process.exit(0); });
 }

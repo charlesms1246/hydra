@@ -26,6 +26,7 @@ import { codeOf } from "../src/prose.ts";
 import { randomBytes } from "node:crypto";
 
 import { guiServer, type StateSource } from "../../gui/src/server.ts";
+import { serialise, type Exclusive } from "../../gui/src/serialise.ts";
 import { init, publishBundle, open, accept, sendMessage, readChannel, flush,
   SIGNED_MARK, UNVERIFIABLE_MARK } from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
@@ -67,14 +68,25 @@ async function conversed(): Promise<{ alice: State; bob: State; close: () => voi
   return { alice, bob, close: () => server.close() };
 }
 
-async function running(source: StateSource, token = TOKEN) {
-  const server = guiServer({ token, stateNow: () => source });
+async function running(source: StateSource, token = TOKEN, over: Partial<{
+  chainFor: (s: State) => never; now: () => number; exclusive: Exclusive;
+}> = {}) {
+  const saved: State[] = [];
+  const server = guiServer({
+    token,
+    stateNow: () => source,
+    save: (s) => { saved.push(s); },
+    chainFor: (s) => memoryChain() as never,
+    now: () => T0,
+    exclusive: serialise(),
+    ...over,
+  });
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
   const { port } = server.address() as AddressInfo;
   const base = `http://127.0.0.1:${port}`;
   const get = (path: string, init: RequestInit = {}) =>
     fetch(`${base}${path}`, { headers: { "x-hydra-token": token }, ...init });
-  return { server, base, get, close: () => server.close() };
+  return { server, base, saved, get, close: () => server.close() };
 }
 
 const ROUTES = (channel: string) =>
@@ -454,4 +466,142 @@ test("THE TOKEN IS COMPARED IN CONSTANT TIME — asserted against the source, de
     + "sooner for a token that shares a prefix and the secret can be recovered a byte at a time");
   assert.ok(!/===\s*expected|expected\s*===/.test(compare),
     `the comparison short-circuits on equality:\n  ${compare}`);
+});
+
+// ---------------------------------------------------------------------------
+// Writes. The lock is the reason this surface is harder than the read-only one.
+// ---------------------------------------------------------------------------
+
+const post = (base: string, path: string, body?: unknown, token = TOKEN) =>
+  fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { "x-hydra-token": token, "content-type": "application/json" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+test("SEND PUBLISHES AND QUEUES, and says which of the two verbs it was", async () => {
+  const { alice, close: closeVault } = await conversed();
+  const api = await running({ t: "ready", state: alice, file: FILE });
+  try {
+    const res = await post(api.base, "/v1/gui/channels/with-bob/send", { text: "over the api" });
+    // READ ONCE. `assert.equal(res.status, 200, await res.text())` consumes the body even when the
+    // assertion PASSES — the message argument is evaluated eagerly — so the next `.json()` threw
+    // "Body has already been read" and the test failed for a reason that was not the product's.
+    const body = await res.json() as Record<string, unknown>;
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.match(String(body.txHash), /^0x[0-9a-f]+$/);
+    assert.equal(body.signed, false, "a send defaulted to signed, which is the wrong default");
+    assert.equal(typeof body.uploadAt, "number");
+    assert.ok(api.saved.length > 0, "a write did not persist the state it changed");
+
+    const signed = await post(api.base, "/v1/gui/channels/with-bob/send",
+      { text: "and this one signed", signed: true });
+    assert.equal(((await signed.json()) as { signed: boolean }).signed, true);
+  } finally { api.close(); closeVault(); }
+});
+
+test("TWO SENDS AT ONCE: one runs, the other is refused and says nothing was lost", async () => {
+  // **THE CASE THE LOCK EXISTS FOR, and the one no single-threaded test finds by accident.** Every
+  // effect mutates `State` and persists it, so two in flight interleave two writes to one file and
+  // the loser's sequence number or spent invite vanishes silently. The TUI gets this from a reducer
+  // that refuses while busy; an HTTP server refuses nothing for you.
+  const { alice, close: closeVault } = await conversed();
+  // **A SLOW PUBLISH, BECAUSE OTHERWISE THERE IS NO CONCURRENCY TO CATCH.** The first version used
+  // `memoryChain`, whose `publish` resolves immediately, so the first request finished before the
+  // second was parsed and BOTH returned 200 — a test that asserted the lock works while never
+  // putting two operations in flight. A real send publishes to a chain over a network and takes
+  // long enough for a second request to arrive, which is the case the lock exists for.
+  const slow = () => {
+    const inner = memoryChain();
+    return {
+      ...inner,
+      publish: async (calldata: readonly [bigint, bigint]) => {
+        await new Promise((ok) => setTimeout(ok, 60));
+        return inner.publish(calldata);
+      },
+    };
+  };
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN,
+    { chainFor: () => slow() as never });
+  try {
+    const both = await Promise.all([
+      post(api.base, "/v1/gui/channels/with-bob/send", { text: "first" }),
+      post(api.base, "/v1/gui/channels/with-bob/send", { text: "second" }),
+    ]);
+    const codes = both.map((r) => r.status).sort();
+    assert.deepEqual(codes, [200, 409],
+      `two simultaneous sends both got ${JSON.stringify(codes)} — either both wrote, which is the `
+      + "interleaving, or neither did");
+
+    const refused = both.find((r) => r.status === 409)!;
+    const err = (await refused.json() as { error: { code: string; condition: string; remedy: string } }).error;
+    assert.equal(err.code, "busy");
+    assert.match(err.condition, /send is already running/,
+      "the refusal does not say what is running, so the page cannot tell the user what to wait for");
+    assert.match(err.remedy, /nothing has been lost/,
+      "the refusal does not say whether the message was kept, which is the only thing the sender "
+      + "actually wants to know");
+  } finally { api.close(); closeVault(); }
+});
+
+test("THE LOCK IS RELEASED WHEN THE OPERATION THROWS", async () => {
+  // A publish that fails while holding a lock released only on success bricks the client until it
+  // is restarted — a worse failure than the one that caused it, and one a user cannot diagnose.
+  const { alice, close: closeVault } = await conversed();
+  const exploding = { chainFor: () => { throw new Error("the chain refused the transaction"); } };
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, exploding as never);
+  try {
+    const first = await post(api.base, "/v1/gui/channels/with-bob/send", { text: "boom" });
+    assert.equal(first.status, 500);
+    assert.match(String(((await first.json()) as { error: { condition: string } }).error.condition),
+      /refused the transaction/, "a failed write does not say what failed");
+
+    // AND THE NEXT ONE IS NOT REFUSED AS BUSY.
+    const second = await post(api.base, "/v1/gui/channels/with-bob/send", { text: "again" });
+    assert.notEqual(second.status, 409,
+      "a throw left the lock held, so the client is bricked until it is restarted");
+  } finally { api.close(); closeVault(); }
+});
+
+test("A WRITE IS POST AND NOT GET", async () => {
+  // A `GET` that publishes to a chain is reachable by prefetch, by link preview and by history
+  // replay — three ways a message gets published that nobody chose.
+  const { alice, close: closeVault } = await conversed();
+  const api = await running({ t: "ready", state: alice, file: FILE });
+  try {
+    for (const path of ["/v1/gui/channels/with-bob/send", "/v1/gui/channels/with-bob/read",
+      "/v1/gui/flush"]) {
+      const res = await api.get(path);
+      assert.equal(res.status, 404, `${path} answers a GET, so a prefetch can trigger it`);
+    }
+  } finally { api.close(); closeVault(); }
+});
+
+test("A SEND WITH NO TEXT, AND AN UNKNOWN CHANNEL, EACH NAME A REMEDY", async () => {
+  const { alice, close: closeVault } = await conversed();
+  const api = await running({ t: "ready", state: alice, file: FILE });
+  try {
+    for (const [body, code] of [[{}, "no_text"], [{ text: "  " }, "no_text"]] as const) {
+      const res = await post(api.base, "/v1/gui/channels/with-bob/send", body);
+      const err = (await res.json() as { error: { code: string; remedy: string } }).error;
+      assert.equal(err.code, code);
+      assert.ok(err.remedy.length > 10, `${code} names no remedy`);
+    }
+    const nowhere = await post(api.base, "/v1/gui/channels/nobody/send", { text: "x" });
+    assert.equal(nowhere.status, 404);
+    assert.equal((await nowhere.json() as { error: { code: string } }).error.code, "no_such_channel");
+  } finally { api.close(); closeVault(); }
+});
+
+test("FLUSH REPORTS WHAT WENT AND WHAT IS STILL WAITING", async () => {
+  const { alice, close: closeVault } = await conversed();
+  const api = await running({ t: "ready", state: alice, file: FILE });
+  try {
+    await post(api.base, "/v1/gui/channels/with-bob/send", { text: "queue something" });
+    const res = await post(api.base, "/v1/gui/flush");
+    const body = await res.json() as { uploaded: number; waiting: number };
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(typeof body.uploaded, "number");
+    assert.equal(typeof body.waiting, "number");
+  } finally { api.close(); closeVault(); }
 });

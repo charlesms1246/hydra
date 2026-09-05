@@ -32,8 +32,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 
-import { anchorOf, attributionLabel, fingerprint, publishBundle }
-  from "../../cli/src/commands.ts";
+import { anchorOf, attributionLabel, fingerprint, publishBundle, sendMessage, readChannel, flush,
+  FLUSH_LIMIT } from "../../cli/src/commands.ts";
+import { BUSY, type Exclusive } from "./serialise.ts";
+import type { Chain } from "../../cli/src/chain.ts";
 import { oneTimeRemaining } from "../../handshake/src/prekeys.ts";
 import type { State } from "../../cli/src/state.ts";
 
@@ -50,6 +52,13 @@ export type GuiDeps = {
   readonly token: string;
   /** Re-read per request, so a client that changes state on another surface is not served stale. */
   readonly stateNow: () => StateSource;
+  /** Persist after a write. The same `save` the other two front ends use. */
+  readonly save: (state: State) => void;
+  /** Injected so a test can drive a write without a chain. */
+  readonly chainFor: (state: State) => Chain;
+  readonly now: () => number;
+  /** Shared with the flush ticker — see `serialise.ts`. One lock, not one per entry point. */
+  readonly exclusive: Exclusive;
 };
 
 type Fail = { status: number; code: string; condition: string; remedy: string };
@@ -77,7 +86,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
     "access-control-allow-headers": "x-hydra-token, content-type",
-    "access-control-allow-methods": "GET, OPTIONS",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
     // **SENT THOUGH CHROME 151 NEVER ASKS FOR IT.** Measured: `Access-Control-Request-Private-Network`
     // was absent from every request including the preflights that succeeded, so this cannot be what
     // makes the API reachable there. It is one line and it is correct for a browser still on the
@@ -87,6 +96,26 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     "cache-control": "no-store",
   });
   res.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+/** A message is text, and a bound stops an unauthenticated body filling memory before the token. */
+const MAX_BODY = 64 * 1024;
+
+/** The request body, or `null` if it went over {@link MAX_BODY}. Never buffers past the bound. */
+function readBody(req: IncomingMessage): Promise<string | null> {
+  return new Promise((resolve) => {
+    let text = "";
+    let over = false;
+    req.on("data", (chunk: Buffer) => {
+      if (over) return;
+      text += chunk.toString("utf8");
+      // Checked as it arrives rather than at the end: a `content-length` a caller supplies is a
+      // number a caller supplies, and the point of the bound is to not hold the bytes.
+      if (text.length > MAX_BODY) { over = true; text = ""; }
+    });
+    req.on("end", () => resolve(over ? null : text));
+    req.on("error", () => resolve(null));
+  });
 }
 
 /** The state, or the reason there is not one, in the vocabulary the page branches on. */
@@ -153,6 +182,28 @@ function channels(state: State): unknown {
   };
 }
 
+/**
+ * A channel's stored messages as the page sees them.
+ *
+ * **ONE RENDERER FOR `GET …/messages` AND `POST …/read`**, because two would be two descriptions
+ * of the same message and this repository has spent a week on what that costs. `read` fetches and
+ * then returns what is stored, so the shapes are not merely similar — they are the same thing.
+ */
+function rendered(state: State, name: string, _n: number): unknown[] {
+  const channel = state.channels[name];
+  if (!channel) return [];
+  return channel.history.map((m) => ({
+    id: m.id,
+    seq: m.seq,
+    at: m.at,
+    mine: m.mine,
+    attribution: m.attribution,
+    mark: attributionLabel(m, name, anchorOf(state, name)).mark,
+    basis: attributionLabel(m, name, anchorOf(state, name)).basis,
+    text: m.text,
+  }));
+}
+
 function messages(state: State, name: string): unknown | Fail {
   const channel = state.channels[name];
   if (!channel) {
@@ -162,58 +213,10 @@ function messages(state: State, name: string): unknown | Fail {
   }
   return {
     channel: name,
-    // STORED HISTORY, NO NETWORK. Fetching new messages is `read`, and it is a different verb
-    // because it costs a chain scan and a vault batch. A GET that quietly did that would be a GET
-    // that takes a hundred seconds on a client whose discovery failed.
-    messages: channel.history.map((m) => ({
-      id: m.id,
-      seq: m.seq,
-      at: m.at,
-      mine: m.mine,
-      // **TWO-VALUED, AND THE CLAIM IS THREE-VALUED.** Kept because a page wants a compact
-      // indicator, and it is the right signal for one — but it is NOT enough to state the claim,
-      // which is why `basis` is below. Shipping this alone was a defect: see the note there.
-      attribution: m.attribution,
-      /**
-       * **THE QUALIFICATION, GENERATED — and shipping without it was an I7 defect of mine.**
-       *
-       * `attributionLabel` returns THREE bases where the mark has two values: unverifiable,
-       * signed under a published key, and signed under a key that is NOT published. Its own
-       * comment says why the third matters — the signature proves the author is whoever answered
-       * the handshake, *"a real guarantee and a weaker one than a reader assumes when a tick is
-       * all they are shown"*. An API that sent only `attribution` handed a page the tick and
-       * withheld what qualifies it, so a correct page drew the strongest reading of a claim that
-       * might be the weaker one. That is the same defect as an attribution claim truncated before
-       * its caveat, one surface over.
-       *
-       * GENERATED, NOT INVENTED, and that is the second reason it is here. A page that renders
-       * attribution IS a front end, and `no-invented-claims.test.ts` holds that no front end makes
-       * a privacy claim in its own words — because a hand-written sentence drifts and four of them
-       * have already been false. Without this field the page would have to write one.
-       *
-       * **`mark` TRAVELS WITH IT, WHICH REVERSES WHAT THIS COMMENT FIRST SAID.** The first version
-       * withheld the glyph on the grounds that a page's indicator is its own design, and that
-       * sending it invites a page to use the mark INSTEAD of the basis. The argument that changed
-       * it is hydra-18's and it is better: a `✓` typed into their file is a copy that drifts from
-       * this one silently, and `commands.ts` says why that is not cosmetic — *"a surface that
-       * showed the same glyph for both, or none at all, would be a surface where a forgery reads
-       * exactly like a signature."*
-       *
-       * They cannot import it. `web/` DOES import from `hydra-dapp` — `claims/src/statement.ts`,
-       * which `next.config.ts` is configured for — so the obstacle is not the repository boundary
-       * but this module: importing `commands.ts` would pull the client's state handling and crypto
-       * into a marketing bundle, which is the import-graph hazard the web lane already tests for.
-       * So sending it is the only route that neither drifts nor bundles.
-       *
-       * The under-use risk is real and is answered on their side rather than by withholding: their
-       * spec requires the qualification in RENDERED TEXT, and their geometry checker fails on a
-       * clipped one. A control that works is better than a field withheld in the hope it forces
-       * one.
-       */
-      mark: attributionLabel(m, name, anchorOf(state, name)).mark,
-      basis: attributionLabel(m, name, anchorOf(state, name)).basis,
-      text: m.text,
-    })),
+    // STORED HISTORY, NO NETWORK. Fetching new messages is `POST …/read`, and it is a different
+    // verb because it costs a chain scan and a vault batch. A GET that quietly did that would be a
+    // GET that takes a hundred seconds on a client whose discovery failed.
+    messages: rendered(state, name, 0),
   };
 }
 
@@ -267,9 +270,93 @@ export function guiServer(deps: GuiDeps): Server {
       return isFail(body) ? refuse(res, body) : send(res, 200, body);
     }
 
+    // -----------------------------------------------------------------------------------------
+    // Writes. `POST`, never `GET` — a `GET` that publishes to a chain is reachable by prefetch,
+    // link preview and history replay, which are three ways a message gets published that nobody
+    // chose. Every one of them goes through `deps.exclusive`.
+    // -----------------------------------------------------------------------------------------
+
+    const sendTo = /^\/v1\/gui\/channels\/([^/]+)\/send$/.exec(path);
+    const readFrom = /^\/v1\/gui\/channels\/([^/]+)\/read$/.exec(path);
+
+    if (req.method === "POST" && (sendTo || readFrom || path === "/v1/gui/flush")) {
+      void (async () => {
+        const channel = decodeURIComponent((sendTo ?? readFrom)?.[1] ?? "");
+        if ((sendTo || readFrom) && !state.channels[channel]) {
+          return refuse(res, { status: 404, code: "no_such_channel",
+            condition: `there is no channel called ${JSON.stringify(channel)}`,
+            remedy: "list them at /v1/gui/channels — the name is the one you gave when you "
+              + "opened it" });
+        }
+
+        let body: { text?: unknown; signed?: unknown } = {};
+        if (sendTo) {
+          const raw = await readBody(req);
+          if (raw === null) {
+            return refuse(res, { status: 413, code: "body_too_large",
+              condition: `a request body over ${MAX_BODY} bytes arrived`,
+              remedy: "a message is text; send a shorter one" });
+          }
+          try { body = raw === "" ? {} : JSON.parse(raw) as typeof body; } catch {
+            return refuse(res, { status: 400, code: "not_json",
+              condition: "the request body is not JSON",
+              remedy: `send { "text": "…", "signed": false }` });
+          }
+          if (typeof body.text !== "string" || body.text.trim() === "") {
+            return refuse(res, { status: 400, code: "no_text",
+              condition: "the request carried no message text",
+              remedy: `send { "text": "…" } — an empty message is not a message` });
+          }
+        }
+
+        const what = sendTo ? "send" : readFrom ? "read" : "flush";
+        const done = await deps.exclusive(what, async () => {
+          if (sendTo) {
+            // SIGNED IS EXPLICIT AND DEFAULTS TO DENIABLE, the way both other front ends have it:
+            // `send` and `publish` are two verbs rather than a flag, because a user who cannot
+            // tell which they just did has neither.
+            const signed = body.signed === true;
+            const r = await sendMessage(state, deps.chainFor(state), channel,
+              signed ? "signed" : "ephemeral", body.text as string, deps.now());
+            deps.save(state);
+            return { op: "send", channel, signed, ...r };
+          }
+          if (readFrom) {
+            const messages = await readChannel(state, deps.chainFor(state), channel);
+            deps.save(state);
+            return { op: "read", channel, messages: rendered(state, channel, messages.length) };
+          }
+          const r = await flush(state, deps.now(), undefined, FLUSH_LIMIT);
+          deps.save(state);
+          return { op: "flush", ...r };
+        });
+
+        if (done === BUSY) {
+          // **REFUSES RATHER THAN QUEUES** — see `serialise.ts`. The page can say "still sending"
+          // and ask again; a queue would turn a slow publish into the burst the timing defence
+          // exists to prevent.
+          return refuse(res, { status: 409, code: "busy",
+            condition: `${deps.exclusive.running() ?? "another operation"} is already running, and `
+              + "two at once would interleave two writes to one state file",
+            remedy: "wait for it to finish and send this again — nothing has been lost" });
+        }
+        send(res, 200, done);
+      })().catch((e: unknown) => {
+        // A THROWN WRITE IS STILL A SENTENCE. The lock is released by `serialise`'s `finally`
+        // whatever happens here.
+        refuse(res, { status: 500, code: "failed",
+          condition: e instanceof Error ? e.message : String(e),
+          remedy: "nothing was saved unless the message above says otherwise — check the vault "
+            + "and the node named on /v1/gui/status" });
+      });
+      return;
+    }
+
     refuse(res, { status: 404, code: "no_such_route",
       condition: `${req.method} ${path} is not a route this API serves`,
       remedy: "the routes are /v1/gui/status, /v1/gui/channels and "
-        + "/v1/gui/channels/<name>/messages. There is no general command endpoint, deliberately" });
+        + "/v1/gui/channels/<name>/messages, and POST to "
+        + "/v1/gui/channels/<name>/send, /v1/gui/channels/<name>/read and /v1/gui/flush. There is "
+        + "no general command endpoint, deliberately" });
   });
 }
