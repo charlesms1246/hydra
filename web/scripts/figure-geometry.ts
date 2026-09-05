@@ -331,9 +331,6 @@ for (const width of WIDTHS) {
   sawTexts = Math.max(sawTexts, widthTexts);
 }
 
-cdp.close();
-await chrome.kill();
-site.close();
 
 /*
  * ⛔ The vacuity assertions. A run that measured nothing must not read as a run that found nothing
@@ -348,6 +345,92 @@ if (sawFigures < MIN_FIGURES || sawTexts < MIN_TEXTS) {
   process.exit(1);
 }
 
+/* ---------------------------------------------------------------------------------------------
+ * The deck: does every slide's argument fit its slide?
+ *
+ * ⛔ **A slide is the one layout where content that does not fit is content nobody reads**, and it
+ * fails looking deliberate. When this was written the deck overflowed on **22 of 84** viewport
+ * sizes, and on slide 06 the two things below the fold were the closing sentence the copy spec
+ * moved there for being the strongest on the site, and the only link out of the deck.
+ *
+ * It is checked over a grid of widths AND heights because the first pass measured five sizes and
+ * reported zero. The bug was there the whole time: a slide is height-constrained, so a viewport
+ * sweep that varies only width cannot see the defect at all. That is the same understatement as
+ * measuring one page width and concluding the columns were aligned.
+ *
+ * Below the size at which the deck unwinds into a vertical page there is nothing to check, and
+ * this asserts it really did unwind rather than skipping quietly.
+ * ------------------------------------------------------------------------------------------ */
+
+const DECK_WIDTHS = [360, 390, 414, 600, 768, 834, 1024, 1280, 1440, 1920];
+const DECK_HEIGHTS = [560, 640, 700, 768, 800, 900, 1024];
+
+let deckChecked = 0;
+
+for (const width of DECK_WIDTHS) {
+  for (const height of DECK_HEIGHTS) {
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width, height, deviceScaleFactor: 1, mobile: false,
+    }, sessionId);
+    await cdp.send("Page.navigate", { url: `${site.origin}/pitch/` }, sessionId);
+    await new Promise((r) => setTimeout(r, 260));
+
+    const { result } = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const slides = [...document.querySelectorAll("[data-slide]")];
+        const deck = document.querySelector("[data-deck]");
+        // Unwound into a vertical page: the slides are a page's sections and may be any height.
+        const unwound = deck && getComputedStyle(deck).display === "block";
+        return {
+          slides: slides.length,
+          unwound,
+          over: unwound ? [] : slides
+            .map((s) => ({ label: s.getAttribute("aria-label"), by: s.scrollHeight - s.clientHeight }))
+            .filter((o) => o.by > 2),
+        };
+      })()`,
+      returnByValue: true,
+    }, sessionId);
+
+    const out = result.value as {
+      slides: number; unwound: boolean; over: { label: string; by: number }[];
+    };
+
+    // Vacuity: a run that found no slides proves nothing about whether they fit.
+    if (out.slides < 6) {
+      console.error(
+        `::error::${width}x${height}: found ${out.slides} slides, expected at least 6 — the ` +
+        "selector stopped matching or the deck is gone; either way this check is not looking at " +
+        "the deck.",
+      );
+      failures++;
+      continue;
+    }
+
+    deckChecked++;
+    for (const o of out.over) {
+      failures++;
+      console.error(
+        `::error::${width}x${height}: slide "${o.label}" overflows its own box by ${o.by}px. A ` +
+        "reader reaches the tail only by scrolling vertically inside a slide that just taught " +
+        "them movement is horizontal.",
+      );
+    }
+  }
+}
+
+cdp.close();
+await chrome.kill();
+site.close();
+
+if (deckChecked < DECK_WIDTHS.length * DECK_HEIGHTS.length * 0.5) {
+  console.error(
+    `::error::only ${deckChecked} viewport(s) actually measured a laid-out deck. Too many ` +
+    "unwound or found no slides for this check to mean anything.",
+  );
+  failures++;
+}
+
 if (failures) {
   console.error(`\n${failures} geometry violation(s) across ${WIDTHS.length} widths.`);
   process.exit(1);
@@ -355,5 +438,6 @@ if (failures) {
 
 console.log(
   `figure geometry clean: ${sawFigures} figures, ${sawTexts} labels, ` +
-  `${ROUTES.length} routes x ${WIDTHS.length} widths, rendered in ${exe.split("/").pop()}.`,
+  `${ROUTES.length} routes x ${WIDTHS.length} widths; deck clean across ${deckChecked} of ` +
+  `${DECK_WIDTHS.length * DECK_HEIGHTS.length} viewport sizes. Rendered in ${exe.split("/").pop()}.`,
 );

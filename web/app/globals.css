@@ -1634,7 +1634,51 @@ html[data-build="public"] .wordmark {
   min-height: 100%;
   max-width: var(--measure);
   margin-inline: auto;
-  padding-block: clamp(5rem, 12vh, 8rem) clamp(3rem, 8vh, 5rem);
+  /*
+   * Padding scales with viewport HEIGHT, because a slide is a height-constrained box and the rest
+   * of this site is not. The old `clamp(5rem, 12vh, 8rem)` had a 5rem floor, so on a 700px-tall
+   * viewport it spent 140px of a 700px box on air while the copy overflowed underneath.
+   */
+  padding-block: clamp(3.5rem, 9vh, 7rem) clamp(2rem, 5vh, 4rem);
+}
+
+/*
+ * Beside on a wide screen, under on a narrow one. See `Slide` in `Deck.tsx` — the figure was the
+ * tallest item in a fixed-height box while half the slide sat empty beside it.
+ *
+ * Gated on height as well as width: a short landscape window needs the two columns most, and a
+ * tall narrow one has the room to stack.
+ */
+/*
+ * ⛔ The predicate is ASPECT RATIO, not width, and a width breakpoint alone was measurably wrong.
+ *
+ * Split at `min-width: 64rem` looked fine at the five sizes first checked. A sweep of 84 found
+ * **22 with an overflowing slide**, all of them between 600px and 1024px wide — wide enough that
+ * the copy runs long, narrow enough that the figure was still stacked under it. The question was
+ * never "is this a desktop" but "is this box wider than it is tall", because that is the box the
+ * figure has to fit beside the copy in. A short landscape window needs the columns most and is
+ * the case a width threshold gets exactly backwards.
+ *
+ * The `min-width` that remains is a floor, not a device test: below it two columns are each too
+ * narrow to hold a figure and a line of serif, and those viewports are tall anyway.
+ */
+@media (min-width: 34rem) and (min-aspect-ratio: 4 / 5) {
+  .slide-inner.is-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(2rem, 4vw, 4rem);
+    max-width: min(96rem, 100%);
+  }
+
+  .slide-inner.is-split .slide-copy {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .slide-inner.is-split .fig {
+    margin-top: 0;
+  }
 }
 
 .slide-tick {
@@ -1645,23 +1689,56 @@ html[data-build="public"] .wordmark {
   margin-bottom: 1.5rem;
 }
 
+/*
+ * ⛔ Slide type is sized by the SMALLER of width and height, and that is the whole trick.
+ *
+ * Everything else on this site scales with `vw`, because a page is width-constrained and can grow
+ * downwards. A slide cannot: it is exactly one viewport tall, so type that only watches width
+ * overflows the moment a reader has browser chrome. `min(4.2vw, 6.4vh)` makes a short window
+ * behave like a narrow one, which is what it is.
+ */
 .slide h2 {
   font-family: var(--sans);
   font-weight: 200;
-  font-size: clamp(1.75rem, 4.5vw, 3.5rem);
-  line-height: 1.02;
+  font-size: clamp(1.6rem, min(4.2vw, 6.4vh), 3.25rem);
+  line-height: 1.04;
   letter-spacing: -0.02em;
-  margin: 0 0 1.5rem;
+  margin: 0 0 clamp(0.75rem, 2vh, 1.5rem);
   max-width: 20ch;
 }
 
 .slide p {
   font-family: var(--serif);
-  font-size: var(--t-lede);
+  font-size: clamp(1.0625rem, min(2.4vw, 3.1vh), 1.9rem);
   line-height: 1.35;
   color: var(--g-80);
   max-width: 46ch;
-  margin: 0 0 1rem;
+  margin: 0 0 clamp(0.6rem, 1.6vh, 1rem);
+}
+
+.slide-tick {
+  margin-bottom: clamp(0.75rem, 2.5vh, 1.5rem);
+}
+
+/*
+ * The generated auditor block, sized for a slide rather than for a page.
+ *
+ * ⛔ Presentation only — not one word is dropped. It is the honest core of the deck and standing
+ * rule 5 says it is never a footnote; on a 700px slide the page-scale type made it 629px tall and
+ * pushed it off the bottom, which is a more effective way of hiding it than shrinking it.
+ */
+.slide .auditor-lead {
+  font-size: clamp(1.125rem, min(2.3vw, 3.2vh), 1.75rem);
+  margin-bottom: clamp(1rem, 2.5vh, 1.75rem);
+}
+
+.slide .auditor-rest {
+  gap: clamp(0.75rem, 2vh, 1.5rem) 2.5rem;
+}
+
+.slide .auditor-rest p {
+  font-size: clamp(0.9375rem, min(1.6vw, 2.2vh), 1.25rem);
+  line-height: 1.3;
 }
 
 .slide .accent {
@@ -1746,7 +1823,18 @@ html[data-build="public"] .wordmark {
 }
 
 /*
- * ⛔ NO SCRIPT: the deck becomes a vertical page.
+ * ⛔ NO SCRIPT, OR NO ROOM: the deck becomes a vertical page.
+ *
+ * **Two predicates, one implementation, because they are the same judgement.** A deck works when
+ * one screen can hold one claim. Without a script it cannot be advanced discoverably; below about
+ * 512x576 it cannot hold the claim at all — measured, at 360x560 the generated auditor claim is
+ * 194px of a 500px box before its setup, and standing rule 5 forbids shrinking that to a
+ * footnote. Both times the answer is the same: stop pretending to be a deck.
+ *
+ * A comma-separated media query rather than two blocks, so the fallback cannot drift into two
+ * different fallbacks.
+ *
+ * The original note follows.
  *
  * Every slide is reachable without this — the track is CSS — but only by horizontal scrolling,
  * which on a desktop is shift-wheel and is not discoverable. A deck that hides five of six slides
@@ -1759,7 +1847,7 @@ html[data-build="public"] .wordmark {
  * and it was false; the probe found six rail buttons in the no-script render. **A dead navigation
  * control is worse than no control**, and a comment asserting a fallback is not the fallback.
  */
-@media (scripting: none) {
+@media (scripting: none), (max-height: 36rem) and (max-width: 32rem) {
   .deck-rail,
   .deck-count {
     display: none;
@@ -1778,5 +1866,32 @@ html[data-build="public"] .wordmark {
     min-height: 100svh;
     overflow: visible;
     border-bottom: 1px solid var(--g-12);
+  }
+}
+
+/*
+ * Very short boxes. Reached by a small window rather than by a device, but a slide that overflows
+ * is a slide with an unread tail whatever produced the viewport.
+ */
+@media (max-height: 40rem) {
+  .slide-inner {
+    padding-block: clamp(2.5rem, 6vh, 4rem) clamp(1.25rem, 3vh, 2rem);
+  }
+
+  .slide p {
+    margin-bottom: 0.5rem;
+  }
+
+  .slide .auditor-rest {
+    gap: 0.6rem 2rem;
+  }
+
+  /*
+   * A stacked figure in a short box competes with the copy for the same scarce axis. Capping the
+   * SVG's height rather than its width keeps the drawing's own proportions — `preserveAspectRatio`
+   * fits it inside the shorter box — and costs the figure its side margins rather than its shape.
+   */
+  .slide-aside .fig svg {
+    max-height: 22vh;
   }
 }

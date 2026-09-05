@@ -162,23 +162,49 @@ export function Deck({
   );
 }
 
-/** One slide: exactly one viewport wide, full height, and its own vertical scroller. */
+/**
+ * One slide: exactly one viewport wide, full height, and its own vertical scroller.
+ *
+ * ⛔ **A slide's argument has to fit its slide, and `aside` is how a figure stops fighting it.**
+ *
+ * Measured before this existed: at 1440x700 — an ordinary laptop with browser chrome — **all six
+ * slides overflowed**, and on slide 06 the two things below the fold were `pitch.lede`, the
+ * sentence the copy spec moved here precisely because it is the strongest close on the site, and
+ * the only link out of the deck. The tail was reachable by scrolling *vertically inside a slide
+ * that had just taught the reader movement is sideways*, which is less discoverable than the
+ * horizontal scrolling this deck already refuses to rely on.
+ *
+ * A figure passed as `aside` moves beside the copy on a wide screen instead of under it, which
+ * removes the tallest item from the vertical stack and uses the empty half of the slide the
+ * measurement showed was there. Below that width it falls back under the copy, where the
+ * viewport is tall relative to its width and there is room.
+ *
+ * **The fix is layout, not a scroll affordance.** Signposting a scroll treats a discoverability
+ * problem as a labelling one, and the whole reason a deck is one screen per claim is to not have
+ * that problem.
+ */
 export function Slide({
   n,
   label,
+  aside,
   children,
 }: {
   n: string;
   label: string;
+  /** A figure or generated block. Sits beside the copy on a wide screen, under it otherwise. */
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="slide" data-slide aria-label={label}>
-      <div className="slide-inner">
-        <span className="slide-tick" aria-hidden>
-          {n} — {label}
-        </span>
-        {children}
+      <div className={aside ? "slide-inner is-split" : "slide-inner"}>
+        <div className="slide-copy">
+          <span className="slide-tick" aria-hidden>
+            {n} — {label}
+          </span>
+          {children}
+        </div>
+        {aside && <div className="slide-aside">{aside}</div>}
       </div>
     </section>
   );
