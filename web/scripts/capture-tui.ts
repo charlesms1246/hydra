@@ -250,6 +250,38 @@ const VIEW_KEYS = [
 const CLIENT_KEYS = [
   "identity", "channels", "pending", "vaultUrl", "rpcUrl", "contract", "fromBlock", "invites",
   "lockedAtRest", "controlUrl", "poolAccount",
+  /*
+   * `gaps` — admitted, and this one took an actual check rather than a reading.
+   *
+   * `readonly gaps: readonly SetupGap[]` from `claims/src/setup.ts`: what a client still cannot do
+   * and what nobody chose. **Unlike `help` and `helpScroll` this carries STRINGS**, four per entry,
+   * and strings are where a path, a URL or an address gets interpolated without anybody deciding
+   * to publish one. So the question was not whether the field looks harmless.
+   *
+   * **1. IT CANNOT CARRY A STATE VALUE, BY CONSTRUCTION.** The only two interpolations in
+   * `setup.ts` are `${DEVNET_VAULT}` and `${DEVNET_RPC}` — module constants, never
+   * `state.vaultUrl` — and every `why` and `remedy` is a literal. The state is read in the four
+   * conditions and nowhere in the output. No gap names a state file path either, deliberately:
+   * each surface knows where its own is, so none is interpolated in the shared module.
+   *
+   * That is a stronger position than `statePath` two lists up, which is safe by two build-failing
+   * guards rather than by construction. **It is now also guarded**: `setup-gaps.test.ts` asserts no
+   * gap string contains a value from the state, demonstrated against the plausible future gap
+   * ("your vault did not answer: ${state.vaultUrl}"), under which it fails naming the URL.
+   *
+   * **2. THE LIVE RENDER NEEDS IT**, the same answer `help` got: `view.ts` `status` branches on it,
+   * so a `View` without it renders a different page from the one the client draws.
+   *
+   * **3. AND IT IS NOT EMPTY HERE, WHICH IS THE PART WORTH READING TWICE.** The expectation when
+   * this was routed was that a configured fixture would produce an empty array. `FIXTURE_STATE`
+   * uses `127.0.0.1:8080`, `127.0.0.1:5050` and no invites, so it produces **three** gaps — and
+   * the demo's Status page now opens with "no upload invites, so nothing can be uploaded" and two
+   * "never chosen" rows. Every word of that is TRUE of this fixture. Whether a page selling the
+   * product should lead with it is a fixture question and belongs to this lane, not to the client:
+   * giving the fixture a real-looking vault URL and an invite would empty the array and show a
+   * working client. Recorded here rather than decided quietly in either direction.
+   */
+  "gaps",
 ];
 
 for (const [what, got, want] of [

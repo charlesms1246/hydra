@@ -113,3 +113,48 @@ test("ALL THREE SURFACES USE THE SAME SENTENCES, RATHER THAN THEIR OWN", () => {
   assert.deepEqual(setupGaps({ contract: "0x1", invites: 1, vaultUrl: "x", rpcUrl: "y" }), [],
     "the narrow entry point disagrees with the State projection");
 });
+
+test("NO GAP STRING CARRIES A VALUE OUT OF THE STATE", () => {
+  /*
+   * **THE QUESTION `capture-tui.ts` ASKED, ANSWERED AS A PROPERTY RATHER THAN AS AN OPINION.**
+   *
+   * `Client.gaps` is serialised into an artifact `web/` publishes. `help` and `helpScroll` were
+   * easy — a boolean and an integer. `gaps` carries four strings per entry, and strings are where
+   * a path, a URL or an address gets interpolated without anyone deciding to publish one.
+   *
+   * Today it cannot happen, and the reason is structural rather than careful: the only two
+   * interpolations in `setup.ts` are `${DEVNET_VAULT}` and `${DEVNET_RPC}` — **module constants,
+   * never `state.vaultUrl`** — and every `why` and `remedy` is a literal. The state is read in the
+   * four conditions and nowhere in the output. That is why no gap names the state file path
+   * either: each surface knows where its own is.
+   *
+   * **THIS TEST CANNOT FAIL TODAY, AND THAT IS SAID RATHER THAN GLOSSED.** Every gap fires only
+   * when its field is empty or equals a constant, so there is no state value available to leak
+   * even if a string tried. It is a regression guard for the gap somebody adds next — "your vault
+   * did not answer: ${state.vaultUrl}" is the shape, and it would be a reasonable thing to want.
+   * Demonstrated by adding exactly that gap in a mutation, under which this fails naming the URL.
+   * Same treatment as the `unlock` read-back in `key-at-rest.test.ts`: `ERRORS.md` E-DOC04 is the
+   * entry about guards that cannot fail in the world they protect, and the answer is to write down
+   * which kind you have.
+   */
+  const secrets = {
+    contract: "0xDEADBEEFCAFE1234567890",
+    vaultUrl: "https://vault.private.example",
+    rpcUrl: "https://node.private.example",
+  };
+  for (const invites of [0, 3]) {
+    const serialised = JSON.stringify(setupGaps({ ...secrets, invites }));
+    for (const [field, value] of Object.entries(secrets)) {
+      assert.ok(!serialised.includes(value),
+        `a gap string carries the state's ${field} into an object web/ publishes: ${value}`);
+    }
+  }
+  // And with the defaults in place, the URLs that DO appear are the constants exactly — not a
+  // copy of the state that happens to match them today.
+  const defaults = JSON.stringify(
+    setupGaps({ contract: "", invites: 0, vaultUrl: DEVNET_VAULT, rpcUrl: DEVNET_RPC }));
+  assert.ok(defaults.includes(DEVNET_VAULT) && defaults.includes(DEVNET_RPC),
+    "the unchosen gaps stopped naming the default they are about, so this measures nothing");
+  assert.doesNotMatch(defaults, /\/home\/|\.hydra-msg|state\.json/,
+    "a gap names a state file path — each surface should name its own, so none belongs in here");
+});
