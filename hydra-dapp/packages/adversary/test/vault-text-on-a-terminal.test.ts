@@ -24,7 +24,7 @@ import { readFileSync } from "node:fs";
 import { vaultSaid } from "../../vault-client/src/errors.ts";
 
 const VAULT = "http://127.0.0.1:8080";
-const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/;
 
 /**
  * A status this client does not recognise — the one branch that quotes the server's own prose.
@@ -46,6 +46,13 @@ test("NO CONTROL CHARACTER FROM A VAULT REACHES A TERMINAL", () => {
     ["a bare escape", "\x1bc"],
     ["a C1 control some terminals still act on", "a\u009bb"],
     ["NUL", "before\u0000after"],
+    // **DISPLAY CONTROL, WHICH IS A SECOND CLASS.** No cursor moves and nothing is overwritten;
+    // the string simply renders as text it does not contain. A right-to-left override turns
+    // `gnp.exe` into `exe.gnp` on screen, in a terminal and in a browser alike.
+    ["right-to-left override", "safe \u202egnp.exe\u202c tail"],
+    ["zero-width space", "aa\u200bbb"],
+    ["a bidi isolate", "x\u2066y\u2069z"],
+    ["byte order mark mid-string", "one\ufefftwo"],
   ];
   for (const [what, body] of attacks) {
     const said = vaultSaid(VAULT, UNRECOGNISED, body, "read");

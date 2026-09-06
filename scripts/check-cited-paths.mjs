@@ -243,6 +243,33 @@ const OUTWARD = [
  * can open it. Nothing else is exempt.
  */
 const SELF = "scripts/check-cited-paths.mjs";
+
+/**
+ * Citation formats this repository defines, as opposed to any string that happens to hold a slash.
+ *
+ * An unresolved one of these is a broken promise. An unresolved `foo/bar` is probably not a path
+ * at all, which is why the two are handled differently below.
+ */
+const DEFINED_FORMAT = /^(?:claude-docs\/|decisions\/\d{4})/;
+
+/**
+ * Whether a citation sits in code rather than in a comment — which is the difference between a
+ * citation a USER meets and one only a developer does.
+ *
+ * The user's ruling is scoped to what a reader actually meets: printed CLI output, the generated
+ * documents, README. Internal comments stay cited for now. So the guard has to tell them apart, or
+ * it is either red on 173 lines nobody agreed to change — which is how a guard gets ignored — or
+ * silent on the ones that matter.
+ *
+ * Line-oriented and therefore approximate: a citation inside a string that begins mid-line after
+ * `//` would be misread. It errs toward calling things comments, which is the direction that
+ * under-reports rather than the one that cries wolf, and the outward-facing set was established by
+ * rendering the surfaces rather than by trusting this.
+ */
+function inCode(lines, index, text) {
+  const line = text.slice(0, index).split("\n").length - 1;
+  return !/^\s*(\/\/|\*|\/\*)/.test(lines[line] ?? "");
+}
 const SOURCE_EXT = /\.(md|ts|tsx|mjs|cjs|js|jsx|cairo|rs|toml|ya?ml|sh|css)$/;
 
 const all = process.argv.includes("--all");
@@ -264,11 +291,37 @@ const failures = [];
 
 for (const file of files) {
   const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
   for (const c of citations(text, source)) {
     const full = resolve(c.path);
-    // Names nothing in this tree — a shape that looked like a path and is not, or a file that
-    // has been deleted. The second is a real defect and a different one; the site's citation
-    // test is what covers dangling paths. Counted, so the number is visible rather than hidden.
+    // **A CITATION IN A FORMAT THIS REPOSITORY DEFINES IS NEVER "not a path".** `decisions/NNNN`
+    // and `claude-docs/…` are ours; one that resolves to nothing is a defect, not an unrecognised
+    // shape, and the discard below is exactly the branch that swallowed it.
+    //
+    // THE DISCARD IS RIGHT IN A CLONE AND THAT IS WHY IT WAS INVISIBLE. `resolve` asks the
+    // filesystem, so on this machine `claude-docs/decisions/0035` exists and resolves. In a clone
+    // it does not — so **every citation this guard exists for resolved to nothing and every one
+    // was discarded**, and the run reported problems that were not citations. Measured on a fresh
+    // clone: 193 extracted, 193 discarded, 0 reported. A guard that cannot fail in the world it
+    // protects is the one shape this repository has spent a week on.
+    if (DEFINED_FORMAT.test(c.path)) {
+      if (!isTracked(full ?? c.path)) {
+        unmarked++;
+        failures.push({ file: file.slice(ROOT.length + 1), path: c.path, full: full ?? c.path,
+          inCode: inCode(lines, c.index, text) });
+      } else { ok++; }
+      continue;
+    }
+    // Names nothing in this tree — a shape that looked like a path and is not, or a file that has
+    // been deleted.
+    //
+    // **AND THE DEFERRAL HERE USED TO NAME A SCOPE IT DOES NOT HAVE.** It said "the site's
+    // citation test is what covers dangling paths". `citations-resolve.test.ts` does catch
+    // `claude-docs/` citations and its forbidden list is the right shape — but its subject is
+    // `claims()`, the generated claim set, not the source tree. All-source coverage and
+    // this-format coverage live in different tools, and a deferral to a scope narrower than the
+    // reader assumes is how both of these stayed invisible. Dangling paths in source are covered
+    // by nothing; that is a gap, stated rather than deferred.
     if (full === null) { unresolvable++; continue; }
     // Build outputs and installed dependencies are ARTEFACTS being described, not sources being
     // cited: `node_modules/.bin contains one entry`, `pages.yml publishes web/out/`. A reader is
@@ -303,10 +356,40 @@ if (source && files.length < 50) {
 }
 // Source is mostly code, so backticked identifiers that name nothing are the common case rather
 // than a sign the matcher slipped. The ceiling is per-corpus for that reason.
-if (unresolvable > (source ? 40_000 : 400)) problems.push(`${unresolvable} candidates resolved to nothing — the matcher is too loose`);
+// Source is mostly code, so backticked identifiers that name nothing are the common case rather
+// than a sign the matcher slipped. The ceiling is per-corpus for that reason — and the source one
+// was 40,000 against an observed 773, which is fifty times headroom and therefore not a guard at
+// all. Set from the measurement, with room for the tree to grow and not for it to change shape.
+if (unresolvable > (source ? 2_000 : 400)) problems.push(`${unresolvable} candidates resolved to nothing — the matcher is too loose`);
 if (ok + markedHeld + unmarked < 10) problems.push(`only ${ok + markedHeld + unmarked} citations found`);
 if (ok === 0) problems.push("no citation resolved to a tracked file — the resolver is broken");
 if (!source && markedHeld === 0 && unmarked === 0) problems.push("no untracked citation seen — nothing exercised the held path");
+
+/**
+ * **THE SOURCE-MODE FLOOR, AND IT IS A SELF-TEST RATHER THAN A COUNT.**
+ *
+ * The held-path floor above was written for a corpus that HAS a held concept and was then gated
+ * off in source mode, which does not — without anybody asking what the equivalent floor would be
+ * there. That is the shape worth naming: an exclusion justified by one real difference between two
+ * corpora, applied to a check whose PURPOSE survived the difference. The result was a mode that
+ * would pass a repository in which every file cited a document no reader can open.
+ *
+ * The obvious repair — require `unmarked > 0` in source mode — is a landmine, because the whole
+ * point of the cleanup is to drive that number to zero, and the day it succeeds the guard starts
+ * failing and somebody deletes it. So the floor does not ask the corpus anything. It runs a known
+ * bad citation through the same extractor and classifier the loop uses and asserts it comes out a
+ * failure. That cannot go stale, and it fails if either half is broken.
+ */
+if (source) {
+  const sample = "a comment citing `decisions/9999-invented.md` and claude-docs/NO-SUCH-FILE.md";
+  const found = citations(sample, true).filter((c) => DEFINED_FORMAT.test(c.path));
+  if (found.length < 2) {
+    problems.push(`the extractor found ${found.length} of 2 citations in a known-bad sample — `
+      + "it would not see a real one either");
+  } else if (found.some((c) => isTracked(resolve(c.path) ?? c.path))) {
+    problems.push("a known-bad citation classified as tracked — the classifier passes anything");
+  }
+}
 if (tracked.size < 100) problems.push(`git ls-files returned only ${tracked.size} paths`);
 
 console.log(source
@@ -323,10 +406,45 @@ if (problems.length) {
   process.exit(2);
 }
 
-if (failures.length) {
+// **SPLIT, AND ONLY ONE HALF FAILS.** A citation in a printed string is one a USER meets; one in a
+// comment is one only a developer does. The ruling covers the first and defers the second, so a
+// guard that fails on both is red on 173 lines nobody agreed to change, and a guard that is always
+// red is one people stop reading — which is one of the two ways this went unnoticed.
+/**
+ * A test file's code is code a DEVELOPER meets and a user never does.
+ *
+ * The third category, and it is not a nicety: 13 of these are assertion messages — the string
+ * printed when a test fails. A developer running the suite reads them; nobody else can. Same
+ * standing as a comment under the ruling, and lumping them with printed CLI output would have made
+ * the guard red on lines the ruling deliberately defers.
+ */
+const isTest = (f) => /(^|\/)tests?\/|\.test\.[cm]?[jt]sx?$/.test(f);
+
+const inCodeFailures = source
+  ? failures.filter((f) => f.inCode && !isTest(f.file))
+  : failures;
+const inTests = source ? failures.filter((f) => f.inCode && isTest(f.file)) : [];
+const inComments = source ? failures.filter((f) => !f.inCode) : [];
+
+if (source) {
+  console.log(`printed  ${inCodeFailures.length} sit in shipped code — a user can meet these`);
+  console.log(`tests    ${inTests.length} sit in test code — a developer meets these`);
+  console.log(`comments ${inComments.length} sit in comments`);
+}
+
+const deferred = [...inComments, ...inTests];
+if (deferred.length) {
+  const by = new Set(deferred.map((f) => f.file));
+  console.log(`\nDeferred: ${inComments.length} in comments and ${inTests.length} in test code, `
+    + `across ${by.size} files.`);
+  console.log("Counted rather than failed: the ruling covers what a reader meets. See");
+  console.log("`claude-docs/CITATION-CLEANUP.md` for the scope and what remains.");
+}
+
+if (inCodeFailures.length) {
   console.log("\nCitations a reader of the repository cannot open, and which do not say so:\n");
   const by = new Map();
-  for (const f of failures) {
+  for (const f of inCodeFailures) {
     if (!by.has(f.file)) by.set(f.file, new Set());
     by.get(f.file).add(f.path);
   }
@@ -353,4 +471,4 @@ if (overMarked.length) {
   for (const o of [...new Set(overMarked)].sort().slice(0, 10)) console.log(`  ${o}`);
 }
 
-process.exit(failures.length ? 1 : 0);
+process.exit(inCodeFailures.length ? 1 : 0);

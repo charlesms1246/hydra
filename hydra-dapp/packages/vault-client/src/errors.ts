@@ -44,12 +44,26 @@
  * `\x1b` itself leaves `[31m` as inert letters: ugly in a message nobody wants to read anyway, and
  * it cannot move a cursor.
  *
+ * **AND DISPLAY CONTROL, WHICH IS A SECOND CLASS AND WAS MISSED BY CALLING THE FIRST ONE DONE.**
+ * The C0 range does not contain the bidirectional overrides or the zero-width characters, so
+ * `U+202E` survived and a vault could send `safe ‹RLO›gnp.exe` to render as `safe exe.gnp` — text
+ * that is not what the string contains. Weaker than the ANSI case: nothing moves a cursor and
+ * nothing overwrites the client's own output. Same shape, one range over. The isolates
+ * (`U+2066`–`U+2069`) do the same job as the embeddings and go with them, or they are simply the
+ * next range somebody finds.
+ *
+ * **THE LIMIT, BECAUSE "the shapes were walked" HAS MEANT "the shapes I thought of" THREE TIMES
+ * HERE** — C0 after markup, then bidi and zero-width after C0. This class covers control
+ * characters and display control. It is the set walked so far and it is not a proof of
+ * completeness; a rendering trick outside these ranges passes. What bounds the damage is that the
+ * string is short, quoted into one line, and only reached on a status this client cannot interpret.
+ *
  * Every caller must go through this. One did not — `commands.ts` interpolated a vault body raw —
  * and finding it is what surfaced that the other four were incompletely protected as well.
  */
 function gist(body: string, cap = 60): string {
   const text = body
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, " ")
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();

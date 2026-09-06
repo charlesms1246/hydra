@@ -8,7 +8,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "npm run typecheck && node --test packages/identity/test/*.test.ts $(ls packages/adversary/test/*.test.ts | grep -v '/live-')",
+    "test": "npm run typecheck && npm run check:citations && node --test packages/identity/test/*.test.ts $(ls packages/adversary/test/*.test.ts | grep -v '/live-')",
+    "check:citations": "node ../scripts/check-cited-paths.mjs --source",
     "test:live": "node --test packages/adversary/test/live-*.test.ts",
     "redeploy": "node scripts/redeploy.ts",
     "tui": "node packages/tui/src/main.ts",
