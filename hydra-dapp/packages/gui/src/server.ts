@@ -150,6 +150,29 @@ export type FlushAttempt = {
  * test written to be the backstop for exactly this: a peer added a base64url field to the fixture
  * and all 25 tests passed while that value went through here into a browser-bound sentence.
  */
+/**
+ * Characters that make a rendering disagree with its bytes, removed before anything judges the
+ * string — **including the credential filter below, which is the reason this is here and not at
+ * the page.**
+ *
+ * Rendering was the obvious harm and the smaller one: `U+202E` makes `gnp.exe` read as `exe.png`
+ * in a terminal and a browser alike. The harm that matters is that one zero-width character
+ * inside a 32-character invite code splits it into two 16-character runs, and
+ * {@link CREDENTIAL_SHAPED} then matches neither — so the credential the filter exists to stop
+ * goes to the page, and a browser drops the character again the moment a reader copies it.
+ * Measured: clean code withheld, same code plus one `U+200B` forwarded verbatim.
+ *
+ * **Deleted rather than spaced, and stripped BEFORE the test rather than after.** A space leaves
+ * the halves apart and the filter still blind; stripping after the test is a filter that already
+ * said yes. `vault-client/src/errors.ts` does the same thing for the same reason one function
+ * upstream — both placements are needed, because `gist` never sees the uncoded branch here.
+ *
+ * C0 and C1 are spaced rather than deleted, matching `gist`: those occupy width and joining the
+ * words either side of a newline invents text nobody wrote.
+ */
+const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
+
 const CREDENTIAL_SHAPED =
   /[0-9a-f]{32,}|[A-Za-z0-9+/_-]{32,}={0,2}|\benc:|\/\/[^/@\s]+:[^/@\s]+@/i;
 
@@ -159,9 +182,11 @@ export function problemOf(e: unknown, vaultUrl?: string): string {
   // sentence unchecked, and that sentence interpolates the vault URL — so a URL carrying a
   // credential went to the page through the one path that skipped the check. A bound with a
   // bypass in its shortest branch is not a bound.
-  const said = code
+  const said = (code
     ? describeFailure(e, vaultUrl)
-    : e instanceof Error ? e.message : String(e);
+    : e instanceof Error ? e.message : String(e))
+    .replace(INVISIBLE, "")
+    .replace(CONTROL, " ");
   if (!CREDENTIAL_SHAPED.test(said)) return said;
   return "the client could not complete that, and the reason it gave carries something that must "
     + "not go to a browser — `hydra gui` has printed the detail in its own terminal";

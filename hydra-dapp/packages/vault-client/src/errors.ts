@@ -63,7 +63,17 @@
  */
 function gist(body: string, cap = 60): string {
   const text = body
-    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, " ")
+    // **DELETED, NOT SPACED, AND THE DIFFERENCE IS THE WHOLE FIX.** These render at no width, so a
+    // space in their place is a character the reader never saw — and it SPLITS a value the
+    // credential filter downstream is looking for. One `U+200B` inside a 32-character invite code
+    // arrived here as `16hex 16hex`, which `CREDENTIAL_SHAPED` does not match, and the code went to
+    // the page. Stripping the character is not enough on its own: what is stripped has to leave the
+    // two halves adjacent, or the guard one function along is looking at a value that no longer
+    // has the shape it was written to recognise.
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "")
+    // Spaced, because these DO occupy width: a newline or a tab separated two words, and a reader
+    // shown them joined is reading something nobody wrote.
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();

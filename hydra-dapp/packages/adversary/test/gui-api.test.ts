@@ -467,6 +467,24 @@ test("EVERY LONG STRING IN THE STATE, INSIDE AN ERROR, IS KEPT OUT OF THE SENTEN
       assert.ok(!said.includes(secret),
         `a ${secret.length}-character value from the state passed through problemOf into a `
         + `sentence bound for a browser: ${secret.slice(0, 28)}…`);
+
+      // **AND THE SAME VALUE WITH ONE INVISIBLE CHARACTER IN THE MIDDLE OF IT.**
+      //
+      // A `U+200B` occupies no width, so nothing on screen changes and a reader cannot see it.
+      // What it does is split the value into two shorter runs, and every shape in
+      // `CREDENTIAL_SHAPED` is length-bounded — so the filter matches neither half and forwards
+      // the credential. Measured before the fix: a clean 32-character invite code was withheld
+      // and the same code carrying one zero-width character went to the page verbatim.
+      //
+      // **The assertion strips the character back out before looking**, because that is what a
+      // browser does when the reader copies the text. A guard that leaves a credential on the
+      // page in a form that rejoins itself on copy has not withheld anything.
+      const half = Math.floor(secret.length / 2);
+      const split = `${secret.slice(0, half)}\u200b${secret.slice(half)}`;
+      const onSplit = problemOf(new Error(`the vault refused the read: ${split} was rejected`));
+      assert.ok(!onSplit.replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "").includes(secret),
+        `one zero-width character walked a ${secret.length}-character credential past the shape `
+        + `check: ${secret.slice(0, 28)}…`);
     }
 
     // **AND base64url, WHICH IS WHAT THE SHAPE LIST MISSED.** `-` and `_` are not in the standard
