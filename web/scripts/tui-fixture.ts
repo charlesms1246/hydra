@@ -94,3 +94,30 @@ export function identityNeedles(homeDir: string, user: string): [string, string]
     ...(user.length > 2 ? ([["username", user]] as [string, string][]) : []),
   ];
 }
+
+/**
+ * Any machine's home directory, not just this one's.
+ *
+ * ⛔ **`View.statePath` is safe by CONVENTION, and `seedHex` is safe by CONSTRUCTION.** hydra-1f
+ * drew the distinction and it is the important one: `clientOf` never copies `seedHex` or
+ * `prekeys`, and the compiler enforces that — no edit to a fixture can put them back. `statePath`
+ * is `process.env.HYDRA_HOME ?? join(homedir(), …)`, so it is *present* by construction and only
+ * its **value** is safe, enforced by somebody setting an env var before an import.
+ *
+ * `identityNeedles` catches the failure on the machine that runs the check. It cannot catch a
+ * payload generated somewhere else and committed, or a colleague's path arriving through a
+ * different string — and the value can reach the JSON through any field, not only the one we know
+ * about, so a field-name check would miss it the moment something else interpolates it.
+ *
+ * This is the shape rather than the value: an absolute home path from anywhere. A guard that only
+ * knows the current operator's username is a guard calibrated to whoever happens to be running it.
+ *
+ * `63b8495` is the precedent — the geometry gate named a person's home directory, same class, same
+ * day, different generator.
+ */
+export function homePathNeedles(): [string, string][] {
+  return [
+    ["a Linux home path", "/home/"],
+    ["a macOS home path", "/Users/"],
+  ];
+}

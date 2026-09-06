@@ -57,6 +57,7 @@ import { spans } from "./ansi.ts";
 import {
   FIXTURE_HOME,
   FIXTURE_STATE,
+  homePathNeedles,
   identityNeedles,
   renderOnlyNeedles,
 } from "./tui-fixture.ts";
@@ -145,6 +146,28 @@ for (const [what, value] of renderOnlyNeedles()) {
     throw new Error(
       `the rendered terminal frame contains ${what}. The renderer is printing state it should `
       + "not, and this script is the last thing between that and a public page.",
+    );
+  }
+}
+
+/*
+ * ⛔ Any home path, from any machine, in anything served.
+ *
+ * `identityNeedles` below catches this operator's. This catches the shape — see
+ * `homePathNeedles`. `statePath` is safe only because `HYDRA_HOME` is set at the top of this file,
+ * which is a convention rather than a guarantee, and a payload generated on another machine and
+ * committed would pass every by-value check here.
+ *
+ * `FIXTURE_HOME` is `/home/you/…` and would trip this, so it is excluded by exact match — the one
+ * placeholder that is deliberately shaped like the thing being caught.
+ */
+const servedWithoutPlaceholder = rendered.split(FIXTURE_HOME).join("«fixture-home»");
+for (const [what, value] of homePathNeedles()) {
+  if (servedWithoutPlaceholder.includes(value)) {
+    throw new Error(
+      `something served to readers contains ${what} (${value}). Only \`${FIXTURE_HOME}\` is `
+      + "allowed — set HYDRA_HOME before the renderer is imported, and check whether a new field "
+      + "is interpolating a path.",
     );
   }
 }
