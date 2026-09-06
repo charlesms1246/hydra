@@ -23,7 +23,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 
-import { guiServer, type StateSource } from "./server.ts";
+import { guiServer, problemOf, type FlushAttempt, type StateSource } from "./server.ts";
 import { serialise } from "./serialise.ts";
 import { chainFor } from "../../cli/src/chain.ts";
 import { flush, FLUSH_LIMIT } from "../../cli/src/commands.ts";
@@ -73,8 +73,22 @@ const token = randomBytes(16).toString("hex");
  */
 const exclusive = serialise();
 
+/**
+ * The last upload attempt the ticker made, and the run of failures behind it.
+ *
+ * **THIS PROCESS IS THE ONLY THING THAT KNOWS.** The ticker must swallow a vault failure or one
+ * dead vault takes the client down, and until this existed the swallowing was total: `status` is
+ * derived entirely from the state file, so its payload for a client whose uploads have been
+ * failing for an hour was identical to one whose vault is fine. Kept here rather than in the state
+ * file because it describes this run, not the identity, and a save on every failed tick is a write
+ * amplification nobody asked for.
+ */
+let lastFlush: FlushAttempt | null = null;
+let consecutiveFailures = 0;
+
 const server = guiServer({
   token, stateNow, save, chainFor, now: () => Date.now(), exclusive,
+  lastFlush: () => lastFlush,
 });
 
 /**
@@ -94,12 +108,30 @@ const ticker = setInterval(() => {
     const now = stateNow();
     if (now.t !== "ready") return;
     const due = now.state.pending.filter((p) => p.uploadAt <= Date.now()).length;
+    // **NOT AN ATTEMPT, SO NOT COUNTED.** The ticker runs every second and mostly finds nothing
+    // due. Counting these would report a vault as failing when it was never asked, which is the
+    // over-claim in the frightening direction and still an over-claim.
     if (due === 0) return;
-    await flush(now.state, Date.now(), undefined, FLUSH_LIMIT);
-    save(now.state);
-  }).catch(() => {
-    // A vault that is down must not take the process with it. The next tick tries again, and the
-    // page sees the queue standing still on `status`, which is the honest signal.
+    try {
+      const r = await flush(now.state, Date.now(), undefined, FLUSH_LIMIT);
+      save(now.state);
+      consecutiveFailures = 0;
+      lastFlush = { at: Date.now(), ok: true, uploaded: r.uploaded, consecutiveFailures: 0,
+        problem: null };
+    } catch (e) {
+      consecutiveFailures += 1;
+      lastFlush = { at: Date.now(), ok: false, uploaded: 0, consecutiveFailures,
+        problem: problemOf(e, now.state.vaultUrl) };
+      throw e;
+    }
+  }).catch((e: unknown) => {
+    // **A VAULT THAT IS DOWN MUST NOT TAKE THE PROCESS WITH IT — AND THAT IS NOT THE SAME AS
+    // SAYING NOTHING.** This used to point at the queue on `status` as "the honest signal". The
+    // queue was not a signal: it stands still identically whether the vault is dead or the next
+    // upload is simply not due, and `status` carried nothing else. It does now, and the detail
+    // that is too unbounded to send to a browser is printed here, where a user running
+    // `hydra gui` can see it.
+    console.error("hydra gui: upload attempt failed:", e);
   });
 }, TICK_MS);
 ticker.unref();

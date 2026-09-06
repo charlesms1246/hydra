@@ -32,8 +32,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 
-import { anchorOf, attributionLabel, fingerprint, publishBundle, sendMessage, readChannel, flush,
-  linkabilityOf, FLUSH_LIMIT } from "../../cli/src/commands.ts";
+import { anchorOf, attributionLabel, describeFailure, fingerprint, publishBundle, sendMessage,
+  readChannel, flush, linkabilityOf, FLUSH_LIMIT } from "../../cli/src/commands.ts";
 import { describe as describeLinkability } from "../../channel/src/crowd.ts";
 import { BUSY, type Exclusive } from "./serialise.ts";
 import type { Chain } from "../../cli/src/chain.ts";
@@ -60,7 +60,67 @@ export type GuiDeps = {
   readonly now: () => number;
   /** Shared with the flush ticker — see `serialise.ts`. One lock, not one per entry point. */
   readonly exclusive: Exclusive;
+  /**
+   * The last background upload attempt, or `null` if none has been made yet.
+   *
+   * Owned by whoever runs the ticker — `main.ts` — because the ticker is the only thing that can
+   * fail where nobody is looking. Every other write reports its own failure to the caller that
+   * asked for it.
+   */
+  readonly lastFlush: () => FlushAttempt | null;
 };
+
+/**
+ * What happened the last time the client tried to upload.
+ *
+ * **A COUNT OF ATTEMPTS, NOT OF TICKS.** The ticker runs every second and mostly finds nothing due;
+ * counting those would report a vault as failing when it was never asked. An attempt is a `flush`
+ * that was actually called.
+ */
+export type FlushAttempt = {
+  readonly at: number;
+  readonly ok: boolean;
+  readonly uploaded: number;
+  readonly consecutiveFailures: number;
+  /** A bounded sentence, or `null` when the attempt succeeded. Never a raw error message. */
+  readonly problem: string | null;
+};
+
+/**
+ * A failure as a sentence a page may be shown — the shared one where there is a shared one.
+ *
+ * `describeFailure` is `commands.ts`'s, and the CLI's `die()` and the TUI's effects already print
+ * it: same dead vault, same words, third front end. Before this, the 500 handler here passed
+ * `e.message` through raw, so a page said `fetch failed` where a terminal said which host did not
+ * answer and asked whether it was running.
+ *
+ * **AND BOUNDED, WHICH IS THE PART THAT IS NOT SHARED.** `describeFailure` falls back to the raw
+ * message when the error carries no `cause.code` — right for a terminal the user owns, and a risk
+ * for a browser, because an error raised deeper in the client can interpolate a blob id or an
+ * invite code, and an invite is the one credential that undoes every other protection.
+ *
+ * **NOT A BLANKET BAN, AND THE FIRST ATTEMPT WAS ONE.** Refusing every uncoded message deleted a
+ * property this API already had and a test already asserted: a failed write says WHAT failed, so
+ * `the chain refused the transaction` reaches the page instead of a shrug. Most of these messages
+ * are the client's own prose, written to be read. Withholding all of them to bound a few is the
+ * safe-looking choice that makes the surface less useful without making it safer.
+ *
+ * So the bound is on the two shapes actually enumerated as reachable — a run of hex long enough to
+ * be a credential, and a blob id — and **it claims nothing more than that.** It is not a general
+ * secret filter and must not be read as one; what checks I6 by value is `gui-api.test.ts`, which
+ * hunts the real secrets out of a real state through every route including these. This is the
+ * cheap guard in front of that, not a replacement for it.
+ */
+const CREDENTIAL_SHAPED = /[0-9a-f]{32,}|\benc:/i;
+
+export function problemOf(e: unknown, vaultUrl?: string): string {
+  const code = (e as { cause?: { code?: string } })?.cause?.code;
+  if (code) return describeFailure(e, vaultUrl);
+  const message = e instanceof Error ? e.message : String(e);
+  if (!CREDENTIAL_SHAPED.test(message)) return message;
+  return "the client could not complete that, and the reason it gave carries something that must "
+    + "not go to a browser — `hydra gui` has printed the detail in its own terminal";
+}
 
 type Fail = { status: number; code: string; condition: string; remedy: string };
 
@@ -140,7 +200,7 @@ const isFail = (v: unknown): v is Fail =>
 // The routes. Read-only in this pass: no network, no writes, nothing destructible.
 // ---------------------------------------------------------------------------
 
-function status(state: State, file: string): unknown {
+function status(state: State, file: string, lastFlush: FlushAttempt | null): unknown {
   return {
     fingerprint: fingerprint(publishBundle(state)),
     stateFile: file,
@@ -162,6 +222,18 @@ function status(state: State, file: string): unknown {
       nextUploadAt: state.pending.length
         ? Math.min(...state.pending.map((p) => p.uploadAt))
         : null,
+      // **A DEAD VAULT USED TO BE INVISIBLE HERE, AND THE COMMENT THAT SAID OTHERWISE WAS THE
+      // DEFECT.** The ticker swallows an upload failure — it must, or one dead vault takes the
+      // process down — and `main.ts` said the page "sees the queue standing still on `status`,
+      // which is the honest signal". It did not. Every field above is derived from the state
+      // file, `nextUploadAt` sits in the past whether uploads are working or not, and the payload
+      // for a client with a dead vault was BYTE-IDENTICAL to the payload for a healthy one.
+      //
+      // So a user watched a queue that looked about to drain, indefinitely, and believed their
+      // messages were going out. That is the failure direction that matters: telling somebody
+      // they are in better shape than they are. A comment asserting an observable the payload
+      // never carried is worse than no comment, because it stops the next reader looking.
+      lastAttempt: lastFlush,
     },
     prekeys: { epoch: state.prekeys.epoch, oneTimeLeft: oneTimeRemaining(state.prekeys) },
   };
@@ -321,7 +393,7 @@ export function guiServer(deps: GuiDeps): Server {
     if (isFail(got)) return refuse(res, got);
 
     if (req.method === "GET" && path === "/v1/gui/status") {
-      return send(res, 200, status(got.state, got.file));
+      return send(res, 200, status(got.state, got.file, deps.lastFlush()));
     }
     if (req.method === "GET" && path === "/v1/gui/channels") {
       return send(res, 200, channels(got.state));
@@ -343,6 +415,9 @@ export function guiServer(deps: GuiDeps): Server {
     const readFrom = /^\/v1\/gui\/channels\/([^/]+)\/read$/.exec(path);
 
     if (req.method === "POST" && (sendTo || readFrom || path === "/v1/gui/flush")) {
+      // Named out here because the `catch` below needs it too, and an operator-side log that does
+      // not say which operation failed is a log that costs a reader the one thing it had.
+      const what = sendTo ? "send" : readFrom ? "read" : "flush";
       void (async () => {
         const channel = decodeURIComponent((sendTo ?? readFrom)?.[1] ?? "");
 
@@ -369,7 +444,6 @@ export function guiServer(deps: GuiDeps): Server {
           }
         }
 
-        const what = sendTo ? "send" : readFrom ? "read" : "flush";
         const done = await deps.exclusive(what, async () => {
           // **THE SNAPSHOT IS TAKEN HERE, INSIDE THE LOCK. THIS LINE IS THE FIX (G1).** It used to
           // use the one taken at dispatch, above — before `readBody` awaited the request body.
@@ -433,10 +507,19 @@ export function guiServer(deps: GuiDeps): Server {
       })().catch((e: unknown) => {
         // A THROWN WRITE IS STILL A SENTENCE. The lock is released by `serialise`'s `finally`
         // whatever happens here.
+        //
+        // **THE DETAIL GOES TO THE TERMINAL AND THE SENTENCE GOES TO THE PAGE**, which is what
+        // lets `problemOf` refuse to forward a message it does not recognise without losing it.
+        console.error(`hydra gui: ${what} failed:`, e);
         refuse(res, { status: 500, code: "failed",
-          condition: e instanceof Error ? e.message : String(e),
-          remedy: "nothing was saved unless the message above says otherwise — check the vault "
-            + "and the node named on /v1/gui/status" });
+          condition: problemOf(e, got.state.vaultUrl),
+          // **NOT "NOTHING WAS SAVED".** That was written when a 200 did not guarantee a save
+          // either, and it was covering for G1. What is actually true: this operation did not
+          // reach its `save`, so the client's record is whatever the last successful save holds —
+          // and anything it had already put on the chain or in the vault before it threw stays
+          // there. A retry is safe; the queue on /v1/gui/status is what to read afterwards.
+          remedy: "this did not finish, and the client's record of it is whatever "
+            + "/v1/gui/status shows. Sending it again is safe" });
       });
       return;
     }

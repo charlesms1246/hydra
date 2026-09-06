@@ -25,7 +25,8 @@ import { readFileSync } from "node:fs";
 import { codeOf } from "../src/prose.ts";
 import { randomBytes } from "node:crypto";
 
-import { guiServer, type StateSource } from "../../gui/src/server.ts";
+import { guiServer, problemOf, type FlushAttempt, type StateSource }
+  from "../../gui/src/server.ts";
 import { serialise, type Exclusive } from "../../gui/src/serialise.ts";
 import { init, publishBundle, open, accept, sendMessage, readChannel, flush,
   SIGNED_MARK, UNVERIFIABLE_MARK } from "../../cli/src/commands.ts";
@@ -72,6 +73,7 @@ async function conversed(): Promise<{ alice: State; bob: State; close: () => voi
 async function running(source: StateSource, token = TOKEN, over: Partial<{
   chainFor: (s: State) => never; now: () => number; exclusive: Exclusive;
   stateNow: () => StateSource; save: (s: State) => void;
+  lastFlush: () => FlushAttempt | null;
 }> = {}) {
   const saved: State[] = [];
   // Every `stateNow` the server takes, in order. A concurrency test needs to know WHEN a handler
@@ -84,6 +86,7 @@ async function running(source: StateSource, token = TOKEN, over: Partial<{
     chainFor: (s) => memoryChain() as never,
     now: () => T0,
     exclusive: serialise(),
+    lastFlush: () => null,
     ...over,
     stateNow: () => { const got = base_.stateNow(); snapshots.push(got); return got; },
     save: base_.save,
@@ -96,8 +99,25 @@ async function running(source: StateSource, token = TOKEN, over: Partial<{
   return { server, base, saved, snapshots, get, close: () => server.close() };
 }
 
-const ROUTES = (channel: string) =>
-  ["/v1/gui/status", "/v1/gui/channels", `/v1/gui/channels/${channel}/messages`];
+/**
+ * Every route, with the method that reaches it.
+ *
+ * **THE WRITE ROUTES WERE MISSING AND THAT IS THE GUARD GAP, NOT A LEAK.** Swept by hand against
+ * the real secrets when they were added: nothing leaked. But `send`, `read` and `flush` are the
+ * routes whose responses are BUILT from a fresh operation rather than from stored state — a read
+ * returns what just came off the vault, a send returns what `sendMessage` just produced — so they
+ * are where a new field carrying key material would first appear, and they were the three the
+ * sweep did not look at. Same shape as an entry-point list that had quietly stopped covering seven
+ * pages: the check was not wrong, it had stopped being complete.
+ */
+const ROUTES = (channel: string): [string, string, unknown?][] => [
+  ["GET", "/v1/gui/status"],
+  ["GET", "/v1/gui/channels"],
+  ["GET", `/v1/gui/channels/${channel}/messages`],
+  ["POST", `/v1/gui/channels/${channel}/send`, { text: "swept" }],
+  ["POST", `/v1/gui/channels/${channel}/read`],
+  ["POST", "/v1/gui/flush"],
+];
 
 /** Every string in the state long enough to be key material. Recursive, so nothing is missed. */
 function longStrings(value: unknown, out: string[] = []): string[] {
@@ -118,8 +138,15 @@ test("I6: NO RESPONSE CARRIES KEY MATERIAL — searched by value, not by field n
   const api = await running({ t: "ready", state: alice, file: FILE });
   try {
     const bodies: string[] = [];
-    for (const route of ROUTES("with-bob")) bodies.push(await (await api.get(route)).text());
+    for (const [method, route, payload] of ROUTES("with-bob")) {
+      bodies.push(await (await api.get(route, method === "GET" ? {} : {
+        method, ...(payload ? { body: JSON.stringify(payload) } : {}),
+      })).text());
+    }
     const all = bodies.join("\n");
+    // A sweep of six empty bodies proves nothing, and a route that 500s returns a short one.
+    assert.ok(all.length > 1000, `the six routes returned ${all.length} characters between them, `
+      + "which is too little to have exercised them — the sweep would pass on nothing");
 
     // The named secrets, taken as VALUES out of the state this API is serving.
     const named: [string, string][] = [
@@ -154,6 +181,17 @@ test("I6: NO RESPONSE CARRIES KEY MATERIAL — searched by value, not by field n
       ...Object.values(alice.channels).map((c) => c.peer),
       // A BLOB ID IS THE PUBLIC HANDLE the vault is asked for by anyone fetching the object, and
       // `vault-server/src/observations.ts` already publishes that the operator sees it.
+      //
+      // **AND THAT REASON IS NOT SUFFICIENT ON ITS OWN, WHICH IS WHY THE REAL ONE IS WRITTEN
+      // HERE.** `deletion.ts:9` says a blob id is not a delete capability and is public by
+      // construction — true, and it does not settle this, because a vault object's id IS the
+      // address you present to fetch it, so "public" and "harmless in a browser" are two claims
+      // and only the first was made. The exclusion is justified by I6 itself: an id is safe in a
+      // page precisely because what makes the object READABLE is the content key, and the content
+      // key is the thing I6 forbids ever reaching the browser — which is asserted directly, by
+      // value, a few lines above. Take that assertion away and this exclusion stops being true.
+      // Written out because an exclusion resting on its own conclusion is the kind that survives
+      // a review and should not.
       ...Object.values(alice.channels).flatMap((c) => c.history.map((h) => h.id)),
     ]);
     for (const s of longStrings(alice)) {
@@ -332,6 +370,81 @@ test("THE CLAIM IS THREE-VALUED AND THE MARK IS TWO — every message carries it
   } finally { closeVault(); }
 });
 
+test("A CLIENT WHOSE UPLOADS ARE FAILING DOES NOT LOOK LIKE A HEALTHY ONE", async () => {
+  // **THE DEFECT: with the vault down for five seconds, `status` was BYTE-IDENTICAL to healthy.**
+  // Not a sampling artefact — structural. Every field was derived from the state file, and
+  // `nextUploadAt` sits in the past whether uploads are going out or not. The ticker swallows the
+  // failure, as it must, and `main.ts` pointed at the queue as *"the honest signal"*: a comment
+  // asserting an observable the payload never carried.
+  //
+  // What that costs a user: a queue that looks about to drain, indefinitely, while they believe
+  // their messages are going out. The failure direction is telling somebody they are in better
+  // shape than they are, which is the direction this client refuses everywhere else.
+  const { alice, close: closeVault } = await conversed();
+  const source = { t: "ready", state: alice, file: FILE } as const;
+  const at = T0 + 5_000;
+  const bodyOf = async (lastFlush: FlushAttempt | null) => {
+    const api = await running(source, TOKEN, { lastFlush: () => lastFlush });
+    try { return await (await api.get("/v1/gui/status")).text(); } finally { api.close(); }
+  };
+
+  try {
+    const healthy = await bodyOf(
+      { at, ok: true, uploaded: 2, consecutiveFailures: 0, problem: null });
+    const failing = await bodyOf({ at, ok: false, uploaded: 0, consecutiveFailures: 7,
+      problem: problemOf(Object.assign(new Error("fetch failed"),
+        { cause: { code: "ECONNREFUSED" } }), alice.vaultUrl) });
+
+    assert.notEqual(failing, healthy,
+      "the status payload for a client whose last seven upload attempts failed is identical to "
+      + "one whose vault is answering. A page cannot render a difference it was not sent");
+
+    const shown = JSON.parse(failing) as
+      { queue: { lastAttempt: { ok: boolean; consecutiveFailures: number; problem: string } } };
+    assert.equal(shown.queue.lastAttempt.ok, false);
+    assert.equal(shown.queue.lastAttempt.consecutiveFailures, 7,
+      "a run of failures is what distinguishes a vault that is down from one request that lost a "
+      + "race, and it is the number a page needs to decide whether to say anything");
+    // THE SHARED SENTENCE, not `fetch failed`. The CLI and the TUI both name the host and ask
+    // whether it is running; this is the third front end saying it too.
+    assert.match(shown.queue.lastAttempt.problem, /did not answer \(ECONNREFUSED\)/);
+    assert.match(shown.queue.lastAttempt.problem, /is it running\?/);
+
+    // AND NEVER HAVING TRIED IS NOT THE SAME AS HAVING SUCCEEDED. A client that has just started
+    // has no evidence either way, and reporting that as healthy is the same over-claim in
+    // miniature.
+    const fresh = JSON.parse(await bodyOf(null)) as { queue: { lastAttempt: unknown } };
+    assert.equal(fresh.queue.lastAttempt, null);
+  } finally { closeVault(); }
+});
+
+test("A FAILURE SENTENCE NEVER CARRIES A CREDENTIAL, AND IS NOT GAGGED FOR IT", async () => {
+  // Two ways to get this wrong and the first attempt took the second one.
+  //
+  // The message may not carry an invite code or a blob id: `status` is careful enough to send a
+  // COUNT of invites and never the codes, and an error string is the obvious way around that.
+  const withInvite = problemOf(new Error(
+    "invite 4f3a9c1de8b7250a6f3a9c1de8b7250a was already spent"));
+  assert.ok(!withInvite.includes("4f3a9c1de8b7250a6f3a9c1de8b7250a"),
+    "an invite code reached the page inside an error message, which is the one credential that "
+    + "undoes every other protection here");
+  assert.ok(!problemOf(new Error("enc:72c9a2f0 is not in this batch")).includes("enc:72c9a2f0"));
+
+  // **AND THE OTHER WAY: A BLANKET BAN.** Refusing every message the client cannot classify was
+  // the first version, and it deleted a property this API already had — a failed write says WHAT
+  // failed. Most of these strings are the client's own prose, written to be read by the person it
+  // happened to. Withholding all of them to bound a few looks safer and is only quieter.
+  assert.equal(problemOf(new Error("the chain refused the transaction")),
+    "the chain refused the transaction",
+    "an ordinary failure was suppressed, so the page can say only that something went wrong");
+
+  // A coded network failure goes through `describeFailure`, which is `commands.ts`'s and is what
+  // the other two front ends print. Third surface, same sentence.
+  const dead = problemOf(Object.assign(new Error("fetch failed"),
+    { cause: { code: "ECONNREFUSED" } }), "http://127.0.0.1:8080");
+  assert.match(dead, /http:\/\/127\.0\.0\.1:8080 did not answer \(ECONNREFUSED\)/);
+});
+
 test("A GET DOES NO NETWORK — the read-only surface cannot become a 106-second read", async () => {
   // `readChannel` scans the chain and fetches a padded vault batch. On a client whose deployment
   // discovery failed that is 179 round trips. A GET that quietly did it would hang a page with no
@@ -345,7 +458,11 @@ test("A GET DOES NO NETWORK — the read-only surface cannot become a 106-second
   }) as typeof fetch;
   const api = await running({ t: "ready", state: bob, file: FILE });
   try {
-    for (const route of ROUTES("with-alice")) assert.equal((await api.get(route)).status, 200);
+    // THE GET ROUTES ONLY, and that filter is the point of the test rather than a detail: `read`
+    // and `flush` reach the network deliberately, which is why they are verbs.
+    const reads = ROUTES("with-alice").filter(([method]) => method === "GET");
+    assert.equal(reads.length, 3, "the read-only surface is not three routes any more");
+    for (const [, route] of reads) assert.equal((await api.get(route)).status, 200);
     assert.equal(reached, 0, "a read-only endpoint made a network request");
   } finally { api.close(); closeVault(); globalThis.fetch = realFetch; }
 });

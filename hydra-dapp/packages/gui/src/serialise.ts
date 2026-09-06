@@ -21,6 +21,24 @@
  * once when it drains — the burst `upload.burst` exists to prevent — so it would defeat the timing
  * defence while looking like good engineering. Refusing lets the page say "still sending" and ask
  * again.
+ *
+ * ---
+ *
+ * **THE INVARIANT A CALLER HAS TO KEEP: NO `await` BETWEEN TAKING THE STATE SNAPSHOT AND CALLING
+ * THIS.** `held` is set synchronously below, before the first `await`, so on a single-threaded
+ * loop nothing can interleave across the acquisition — *provided the caller's own gap contains no
+ * yield.* With one, this lock serialises EXECUTION over state that has already moved, which is not
+ * serialisation of anything that matters.
+ *
+ * That is not hypothetical and the lock did not prevent it. `server.ts` took its snapshot at
+ * dispatch and then `await`ed the request body before arriving here; a whole competing send ran in
+ * that gap, and the handler went on to save a state that never contained it — **a message
+ * published to the chain, answered 200, and absent from history.** The fix was to move the
+ * snapshot inside `fn`, and this paragraph is here because the code that broke the rule looked
+ * completely correct: it held the lock over every line that touched the state.
+ *
+ * **AND THIS LOCK IS IN-PROCESS ONLY.** It cannot see `hydra tui` running beside `hydra gui`,
+ * which is a configuration `main.ts` explicitly expects. `decisions/0048`.
  */
 
 /** Returned instead of a result when something else holds the lock. */
