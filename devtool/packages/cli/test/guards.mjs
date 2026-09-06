@@ -28,8 +28,8 @@
  * hides.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { check as doctorCheck } from "../src/doctor.mjs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { check as doctorCheck, upstreamPath } from "../src/doctor.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,6 +42,13 @@ const check_rows = () => doctorCheck().length;
 const check = (name, fn) => {
   try {
     const detail = fn();
+    // A check whose precondition does not hold reports SKIP, never PASS — counting an unexercised
+    // path as green is the false-coverage failure this repo keeps finding. `render.mjs` already
+    // does this; without it here a `{ skip }` return printed `PASS … [object Object]`.
+    if (detail && typeof detail === "object" && detail.skip) {
+      console.log(`SKIP  ${name}  — ${detail.skip}`);
+      return;
+    }
     console.log(`PASS  ${name}${detail ? `  — ${detail}` : ""}`);
   } catch (e) {
     console.log(`FAIL  ${name}  — ${e.message}`);
@@ -195,7 +202,25 @@ check("the refusal wording is shared, and its comment matches its use", () => {
  * present, so the honest version runs it both ways.
  */
 check("the README's doctor row counts are the counts doctor prints", () => {
-  const readme = readFileSync(join(PKGS, "..", "..", "README.md"), "utf8");
+  /*
+   * Two preconditions, both reported as SKIP rather than failed — and the second one cost the
+   * whole suite once. `test-run.mjs` aborts at the FIRST failing file and this is the first file
+   * in its list, so a check that goes red on a missing precondition rather than a real defect
+   * takes the other eight suites with it. It printed "0 of 9 test files ran".
+   *
+   * `README.md` sits at the repository root, above this package. A `git archive HEAD devtool`
+   * does not contain it (the published package gets it from `prepack`).
+   *
+   * And the counts differ by whether an upstream checkout exists — that is what the sentence is
+   * about — so with no checkout the "with" number cannot be produced at all. It printed 8/8 and
+   * the guard read that as the README lying.
+   */
+  const readmePath = join(PKGS, "..", "..", "README.md");
+  if (!existsSync(readmePath)) return { skip: "no README.md above this package" };
+  if (!existsSync(join(upstreamPath(), "Scarb.toml"))) {
+    return { skip: "no upstream checkout, so the with-checkout count cannot be produced" };
+  }
+  const readme = readFileSync(readmePath, "utf8");
   const words = { seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
     thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16 };
   const withText = /\*\*(\w+)\*\* once it does/.exec(readme)?.[1];

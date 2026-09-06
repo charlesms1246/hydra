@@ -5,8 +5,16 @@
  * the step immediately before `npm publish`, where the natural reading is that the package is
  * broken. It is not: `typescript` is declared in `packages/linter/package.json`, a nested
  * `private: true` manifest that npm does not read on install, so `npm install` in this directory
- * does not and cannot provide it. The root manifest declares no dependencies and no workspaces.
- * The suites pass here only because someone once ran `npm install` inside `packages/linter`.
+ * does not and cannot provide it in a TARBALL INSTALL. The root manifest declares no dependencies.
+ *
+ * IT NOW DECLARES `workspaces`, AND THAT CHANGES ONE OF THE TWO CASES. In a CLONE, `npm install`
+ * at this directory installs every nested package's dependencies, so the situation this file was
+ * written to report no longer arises there — which is the point of the three-step setup. In a
+ * TARBALL INSTALL nothing changes: npm applies `workspaces` only to the project you run it in,
+ * never to a package being installed as a dependency. Verified by packing and installing the
+ * tarball — one package, `hydra-dev` runs, `packages/tui/node_modules` still absent.
+ *
+ * So this file is still needed and its subject has narrowed: it is about the tarball case now.
  *
  * **THE PRODUCT ALREADY HANDLES THIS SITUATION CORRECTLY AND THE TEST RUNNER DID NOT.** From a
  * clean tarball install, `hydra-dev lint` prints *"linter dependencies not installed — run:
