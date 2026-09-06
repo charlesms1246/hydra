@@ -291,12 +291,46 @@ test("a real record lands on chain and reads back byte for byte",
     throw new Error(`${fn} returned no transaction hash in any line:\n${out}`);
   };
 
+  /**
+   * Wait until a transaction is IN A BLOCK, and fail loudly if it reverted.
+   *
+   * **THE FIRST LIVE RUN OF THIS TEST FAILED HERE, AND THE WRITE HAD SUCCEEDED.** `sncast invoke`
+   * returns once the transaction is submitted, not once it is included, so the read-back below ran
+   * against a `latest` that did not contain it yet — and this account already carried a record
+   * from an earlier run, so the read returned **the previous record** and the comparison failed
+   * with a full felt-by-felt diff. Every one of those felts was real; they were simply the old
+   * ones. Verified afterwards: the record this run encoded is on chain, in block 14639481.
+   *
+   * **THE FAILURE MODE THAT MAKES THIS WORTH POLLING RATHER THAN SLEEPING** is the reverse case.
+   * On an account with NO prior record the same race reads an absent slot, which `decodeRecordReply`
+   * reports as `null` — an outcome indistinguishable from a write that genuinely did not land. So
+   * a fixed sleep would have made this test flaky in one direction and quietly wrong in the other.
+   *
+   * A hermetic suite cannot contain this bug: there is no submission-to-inclusion gap in a model
+   * of a chain. It took a real transaction to find, which is the argument for live tests and also
+   * the argument for reading their failures carefully rather than trusting the assertion's story.
+   */
+  const settle = async (hash: string, fn: string): Promise<number> => {
+    for (let i = 0; i < 60; i++) {
+      const r = await rpc("starknet_getTransactionReceipt", [hash]);
+      const receipt = r.result as { block_number?: number; execution_status?: string; revert_reason?: string };
+      if (receipt?.block_number !== undefined) {
+        assert.equal(receipt.execution_status, "SUCCEEDED",
+          `${fn} (${hash}) reverted on chain: ${receipt.revert_reason}`);
+        return receipt.block_number;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error(`${fn} (${hash}) was not included within two minutes — it may still land, so `
+      + "check the account's nonce before re-running or you will spend a second fee");
+  };
+
   // Mint only if this id is free. `owner_from_id` returning 0 means free; minting an owned id
   // reverts with 'ERC721: token already minted', so this is idempotent across runs.
   const ownerOf = okResult(
     await callRaw(contract, OWNER_FROM_ID, [`0x${ID.toString(16)}`]), "owner_from_id");
   if (BigInt(ownerOf[0]) === 0n) {
-    invoke("mint", [`0x${ID.toString(16)}`]);
+    await settle(invoke("mint", [`0x${ID.toString(16)}`]), "mint");
   } else {
     assert.equal(BigInt(ownerOf[0]), owner, "this id is minted and not by us — pick another");
   }
@@ -306,18 +340,43 @@ test("a real record lands on chain and reads back byte for byte",
   // from an address to the id the record lives under, so without it the record is unfindable.
   const mainId = okResult(
     await callRaw(contract, GET_MAIN_ID, [`0x${owner.toString(16)}`]), "get_main_id");
-  if (BigInt(mainId[0]) !== ID) invoke("set_main_id", [`0x${ID.toString(16)}`]);
+  if (BigInt(mainId[0]) !== ID) {
+    await settle(invoke("set_main_id", [`0x${ID.toString(16)}`]), "set_main_id");
+  }
 
   // The exact felts `anchor.ts` builds — id, field, length, the record, then the trailing domain.
-  invoke("set_extended_user_data", writeRecordCalldata(ID, felts));
+  const hash = invoke("set_extended_user_data", writeRecordCalldata(ID, felts));
+  const landedIn = await settle(hash, "set_extended_user_data");
 
-  // Read it back through the real entrypoint and compare against what we encoded. Not "a record
-  // is present" — the same felts, in order.
-  const reply = okResult(await rpc("starknet_call", [readRecordCall(ID, NETWORK), "latest"]),
-    "read-back");
+  /*
+   * Read it back through the real entrypoint and compare against what we encoded. Not "a record is
+   * present" — the same felts, in order.
+   *
+   * **POLLED AT `latest`, AND THE TWO OBVIOUS ALTERNATIVES BOTH FAILED LIVE.** A single read
+   * straight after `invoke` raced inclusion and returned the PREVIOUS run's record. Pinning the
+   * read to the receipt's own `block_number` then failed with `{"code":24,"message":"Block not
+   * found"}` — this node reports a block number on the receipt before that block is queryable by
+   * number, so the fix for the first race introduced a second one.
+   *
+   * So the wait is on the OBSERVABLE the test is about, rather than on a proxy for it: read until
+   * the slot holds what we wrote. `settle` above still runs first and is not redundant — it is
+   * what turns a reverted transaction into a named failure instead of a timeout.
+   *
+   * On timeout it asserts against the LAST value read, so a genuine mismatch reports a felt diff
+   * rather than "timed out" — a polling loop that hides its subject on failure would be worse than
+   * the race it replaced.
+   */
+  let reply: string[] = [];
+  for (let i = 0; i < 45; i++) {
+    reply = okResult(await rpc("starknet_call", [readRecordCall(ID, NETWORK), "latest"]), "read-back");
+    const seen = decodeRecordReply(reply);
+    if (seen && seen.length === felts.length && seen.every((f, j) => f === felts[j])) break;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
   const back = decodeRecordReply(reply);
   assert.ok(back, "the slot read as absent immediately after a successful write");
-  assert.deepEqual(back, felts, "the felts on chain are not the felts we encoded");
+  assert.deepEqual(back, felts,
+    `the felts on chain are not the felts we encoded — ${hash}, reported in block ${landedIn}`);
 
   // And the whole point: the bytes off the chain decode and verify as OUR record at OUR address.
   const record = decodeRecord(back!);
