@@ -5,6 +5,8 @@ import { Nav } from "../../../components/Nav.tsx";
 import { Section } from "../../../components/Section.tsx";
 import { CommandSurface } from "../../../components/CommandSurface.tsx";
 import { Terminal } from "../../../components/Terminal.tsx";
+import { LiveTerminal } from "../../../components/LiveTerminal.tsx";
+import { liveView } from "../../../components/live-view.ts";
 import { Reveal } from "../../../components/Reveal.tsx";
 import { Footer } from "../../../components/Footer.tsx";
 
@@ -41,7 +43,12 @@ export default function Page() {
             a reader what exists; it does not show them the thing. */}
         <Section n="01" id="screen" title="WHAT IT LOOKS LIKE">
           <Reveal>
-            <Terminal frame="chats" />
+            {/* The captured frame is the child, so it is what the markup carries and what a
+                reader without JavaScript keeps. `LiveTerminal` replaces it only once it has
+                measured the reader's width — see that file for why re-rendering beats scaling. */}
+            <LiveTerminal view={liveView()}>
+              <Terminal frame="chats" />
+            </LiveTerminal>
           </Reveal>
         </Section>
 

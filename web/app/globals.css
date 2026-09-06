@@ -2888,3 +2888,15 @@ html[data-build="public"] .wordmark {
   margin: 0;
   max-width: none;
 }
+
+/*
+ * The live render sizes itself by COLUMNS rather than by glyph.
+ *
+ * `.term-screen` above shrinks a fixed 96-column grid to whatever box it is in, which at a phone
+ * width lands near the 5px floor: accurate and unreadable. `LiveTerminal` re-renders at the number
+ * of columns that fit at the size below, so narrowing the window changes what the interface draws
+ * rather than how small it is drawn.
+ */
+.term-live {
+  font-size: clamp(9px, 2.6cqw, 13px);
+}

@@ -30,6 +30,7 @@ import { join } from "node:path";
  */
 
 import type { Span } from "../scripts/ansi.ts";
+import { Screen } from "./Screen.tsx";
 
 type Frames = { chats: Span[][]; status: Span[][] };
 
@@ -56,24 +57,7 @@ export function Terminal({ frame }: { frame: "chats" | "status" }) {
 
   const cols = Math.max(...lines.map((l) => l.reduce((n, s) => n + s.t.length, 0)));
 
-  return (
-    <div className="term">
-      <pre
-        className="term-screen"
-        style={{ ["--cols" as string]: String(cols) }}
-        aria-label="The terminal interface, as it renders."
-      >
-        {lines.map((line, y) => (
-          <span key={y} className="term-line">
-            {line.map((s, i) => (
-              <span key={i} className={s.c.length ? s.c.map((c) => `t-${c}`).join(" ") : undefined}>
-                {s.t}
-              </span>
-            ))}
-            {"\n"}
-          </span>
-        ))}
-      </pre>
-    </div>
-  );
+  // The markup lives in `Screen` because the live render produces the same thing from different
+  // spans, and two copies of it would agree until somebody edited one.
+  return <Screen lines={lines} cols={cols} fit="scale" />;
 }
