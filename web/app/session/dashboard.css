@@ -1,0 +1,279 @@
+/**
+ * The session instrument's layout.
+ *
+ * ⛔ **NOT IN `globals.css`, AND THE REASON IS BOTH STRUCTURAL AND PRACTICAL.**
+ *
+ * Structural: three hundred lines of single-page grid in a sheet every route loads is scope
+ * nobody asked for. Next's App Router scopes a CSS import to the route that imports it, so this
+ * ships with `/session` and nowhere else.
+ *
+ * Practical: `globals.css` is edited by every lane working on this site at once, and there is no
+ * hunk-level staging here — so two lanes touching layout in the same file means one of them
+ * commits the other's half-finished rule or waits. Sequencing only postpones that; moving out
+ * ends it.
+ *
+ * The chrome suppression at the bottom reaches OUTSIDE this page's markup, to elements the root
+ * layout renders for every route. It still belongs here rather than in the global sheet: it is
+ * scoped by `body:has(.dash)`, so it applies only when this page is the one on screen, and it is
+ * a rule ABOUT this route rather than a rule every route needs to know.
+ */
+
+/* ---------------------------------------------------------------------------------------------
+   THE SESSION INSTRUMENT.
+
+   ⛔ ONE SCREEN, NO PAGE SCROLL. The grid is sized from the viewport and every pane scrolls
+   inside itself. That is the defining property: a reader's eye returns to the same physical
+   place for the same number, and nothing reflows underneath them when a message arrives or a
+   queue count changes. `min-height: 0` on the panes and their bodies is the load-bearing detail
+   — without it a grid child refuses to shrink below its content, the pane grows the page, and
+   the whole thing quietly becomes a document again.
+   --------------------------------------------------------------------------------------------- */
+
+.dash {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.dash-chrome {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  height: 2.75rem;
+  padding: 0 0.85rem;
+  border-bottom: 1px solid var(--g-12);
+}
+
+.dash-home {
+  font-family: var(--sans);
+  font-weight: 300;
+  letter-spacing: 0.02em;
+}
+
+.dash-chrome-title {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.2em;
+  color: var(--g-48);
+}
+
+.dash-chrome-link {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--g-64);
+}
+
+.dash-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr) 21rem;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "strip strip strip"
+    "a     b1    c1"
+    "a     b2    c1"
+    "a     b3    c2"
+    "a     b3    c3";
+}
+
+.dash-strip { grid-area: strip; }
+.dash-a { grid-area: a; }
+.dash-b1 { grid-area: b1; }
+.dash-b2 { grid-area: b2; }
+.dash-b3 { grid-area: b3; min-height: 0; overflow: auto; padding: 0 0.85rem 0.85rem; }
+.dash-c1 { grid-area: c1; }
+.dash-c2 { grid-area: c2; }
+.dash-c3 { grid-area: c3; }
+
+.dash-a, .dash-b1, .dash-b2, .dash-b3 { border-right: 1px solid var(--g-12); }
+.dash-b1, .dash-b2, .dash-c1, .dash-c2 { border-bottom: 1px solid var(--g-12); }
+
+/* The connection strip: the same height whether or not a session exists. */
+.dash-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.5rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--g-12);
+}
+
+.dash-connect {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dash-connect .prose-label { margin-bottom: 0; }
+
+.dash-connect input {
+  padding: 0.35rem 0.5rem;
+  background: var(--g-4);
+  border: 1px solid var(--g-20);
+  color: var(--white);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  min-width: 14rem;
+}
+
+.dash-connect input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+.dash-vitals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+  margin: 0;
+}
+
+.dash-vital dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--g-80);
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-vital .prose-label { margin-bottom: 0.15rem; font-size: 0.5625rem; }
+
+/* The pane primitive. */
+.dash-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.dash-pane-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  height: 1.75rem;
+  padding: 0 0.85rem;
+  border-bottom: 1px solid var(--g-12);
+}
+
+.dash-pane-head h2 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--g-48);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-pane-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0.6rem 0.85rem;
+}
+
+.dash-pane-body.is-scroll { overflow: auto; }
+
+.dash-acts { display: flex; gap: 0.5rem; }
+
+.dash-acts button {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--g-64);
+  border: 1px solid var(--g-20);
+  padding: 0.15rem 0.45rem;
+  background: none;
+  cursor: pointer;
+}
+
+.dash-acts button:hover:not(:disabled) { color: var(--white); border-color: var(--g-32); }
+.dash-acts button:disabled { opacity: 0.4; cursor: default; }
+
+.dash-empty {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 0.9375rem;
+  color: var(--g-48);
+}
+
+.session-channels button.is-open { color: var(--white); }
+.session-channels button.is-open .ch-name { color: var(--accent); }
+
+/* In a pane the compose box has the pane's border above it already. */
+.dash-b3 .session-compose { border-top: none; padding-top: 0.6rem; margin-top: 0; }
+.dash-b3 .session-linkability,
+.dash-b3 .session-busy,
+.dash-b3 .session-sent,
+.dash-b3 .session-refusal { margin-top: 0.75rem; }
+
+.dash-foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 2rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--g-12);
+}
+
+.dash-foot p {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--g-48);
+  max-width: 48ch;
+}
+
+/*
+ * ⛔ NARROW SCREENS GET A COLUMN AND THE PAGE SCROLLS.
+ *
+ * A one-screen grid at 380px is nine panes of four lines each, which is not an instrument, it is
+ * a list of stubs. The property worth keeping at this width is ORDER — the conversation and what
+ * qualifies it come before the machine's vitals — not the absence of scrolling.
+ */
+@media (max-width: 60rem) {
+  .dash { height: auto; overflow: visible; }
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: "strip" "a" "b1" "b2" "b3" "c1" "c2" "c3";
+  }
+  .dash-a, .dash-b1, .dash-b2, .dash-b3 { border-right: none; }
+  .dash-a, .dash-b3, .dash-c1, .dash-c2, .dash-c3 { border-bottom: 1px solid var(--g-12); }
+  .dash-pane-body.is-scroll { overflow: visible; }
+  .dash-b3 { overflow: visible; }
+}
+
+/*
+ * ⛔ THE SITE'S CHROME IS SUPPRESSED ON THE INSTRUMENT, AND ONLY THERE.
+ *
+ * `Backdrop` and `PageFrame` are rendered by the root layout for every route: a static glyph
+ * field and four corner letters, which are right for a document and wrong behind a tool. They
+ * sit BEHIND the panes rather than inside them, so they show through every gap and every
+ * transparent body — measured at 1440x900, the machine's status rows were unreadable against
+ * the field.
+ *
+ * Done with `:has()` rather than by editing the layout, because the layout is shared with nine
+ * other pages that want both. One route opting out is a rule about this route; a prop threaded
+ * through the layout would make every future page answer a question it does not have.
+ */
+body:has(.dash) .field,
+body:has(.dash) .frame,
+body:has(.dash) .solids {
+  display: none;
+}
+
+/* Nothing behind the instrument but the page colour. */
+body:has(.dash) {
+  background: var(--black, #000);
+}

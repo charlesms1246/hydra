@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import "./dashboard.css";
+
 import { SITE } from "../../content.ts";
 import { Session } from "../../components/Session.tsx";
 
