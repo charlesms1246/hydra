@@ -523,7 +523,11 @@ function clientOf(state: State): Client {
     identity: identityOf(state),
     lockedAtRest: state.lockedAtRest,
     channels: Object.fromEntries(
-      Object.entries(state.channels).map(([n, c]) => [n, { anchor: c.anchor ?? null }])),
+      Object.entries(state.channels).map(([n, c]) => [n, {
+        anchor: c.anchor ?? null,
+        // The COUNT. `c.removedUnderProcess` is a list of blob ids and they stay on this side.
+        removedUnderProcess: c.removedUnderProcess?.length ?? 0,
+      }])),
     pending: state.pending.map((p) => ({ channel: p.channel, uploadAt: p.uploadAt, real: p.real })),
     vaultUrl: state.vaultUrl,
     rpcUrl: state.rpcUrl,

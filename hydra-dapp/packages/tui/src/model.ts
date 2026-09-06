@@ -193,7 +193,18 @@ export type LogLine = { readonly at: number; readonly text: string; readonly ton
 export type Client = {
   readonly identity: Identity | null;
   readonly lockedAtRest?: boolean;
-  readonly channels: Readonly<Record<string, { readonly anchor: string | null }>>;
+  /**
+   * Per channel: where its signing key is published, and how many of its messages were taken.
+   *
+   * **`removedUnderProcess` IS A COUNT, NOT THE IDS.** This projection exists to keep `view.ts`
+   * out of `vault-client`'s graph, and it was narrowed to `{ anchor }` — which is exactly why the
+   * TUI could not show a compelled removal at all, structurally, while the CLI and the API could.
+   * Widening it back has to stay a narrowing: a count is what a banner needs, the CLI keeps the
+   * ids for the reader who wants to audit them, and a screen that cannot receive an id cannot
+   * leak one. That asymmetry is chosen rather than left — see `FRONT-END-PARITY-INVENTORY.md`.
+   */
+  readonly channels: Readonly<Record<string,
+    { readonly anchor: string | null; readonly removedUnderProcess: number }>>;
   readonly pending: readonly Queued[];
   readonly vaultUrl: string;
   readonly rpcUrl: string;

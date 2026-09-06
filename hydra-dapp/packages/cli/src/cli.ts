@@ -49,7 +49,7 @@
 
 import { describePost, describeFetch } from "../../client/src/public.ts";
 import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED,
-  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES }
+  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES, REMOVED_UNDER_PROCESS }
   from "../../claims/src/warnings.ts";
 import { verifyProof } from "../../vault-server/src/root.ts";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -818,16 +818,14 @@ switch (command) {
     // people it happened to. See DECISIONS-NEEDED.md D6.
     const taken = state.channels[name]?.removedUnderProcess ?? [];
     if (taken.length) {
+      // FROM `claims/src/warnings.ts` since 2026-09-06. It was typed here and nowhere else, which
+      // was survivable only while this was the sole surface that could show it — the TUI's
+      // projection dropped the field entirely. Two surfaces, one source, per standing rule 3.
       console.error("");
-      console.error(`${taken.length} message(s) in this conversation were REMOVED FROM THE VAULT`);
-      console.error("UNDER LEGAL PROCESS. that is not expiry and it is not deletion by either of");
-      console.error("you — an outside party required the operator to remove them, and the operator");
-      console.error("could not read what they were removing.");
-      console.error("");
-      console.error("what this does and does not tell you: the objects are gone from that vault,");
-      console.error("so neither of you can fetch them again. it says nothing about who asked, on");
-      console.error("what grounds, or whether anyone read them — the operator cannot know the last");
-      console.error("one either. if you still hold the plaintext locally, you still hold it.");
+      console.error(`${taken.length} message(s) affected.`);
+      for (const line of REMOVED_UNDER_PROCESS.full) console.error(line);
+      // THE IDS STAY ON THIS SURFACE. A CLI has room and a reader who wants to check a removal
+      // against a published commitment needs them; the TUI takes the count. Chosen, not left.
       for (const id of taken) console.error(`  ${id}`);
     }
     const foreign = foreignSends(state, name);

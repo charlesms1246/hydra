@@ -91,7 +91,10 @@ test("EVERY FRONT END RENDERS THE SAME CLAIMS, from the same place", () => {
     // in `cli.ts` while only one front end had the command; the moment a second surface renders a
     // claim is the moment it can drift, which is what this map exists to prevent.
     "lookup.keyNotPerson": "LOOKUP_KEY_NOT_PERSON", "lookup.noOneTime": "LOOKUP_NO_ONE_TIME",
-    "lookup.nodeSees": "LOOKUP_NODE_SEES" };
+    "lookup.nodeSees": "LOOKUP_NODE_SEES",
+    // The claim the TUI could not make at all until 2026-09-06, because the projection dropped
+    // the field rather than the renderer forgetting it.
+    "channel.removedUnderProcess": "REMOVED_UNDER_PROCESS" };
   for (const w of WARNINGS) {
     const symbol = symbols[w.id as keyof typeof symbols];
     assert.ok(symbol, `${w.id} has no symbol in this guard — add it, or the claim is unchecked`);

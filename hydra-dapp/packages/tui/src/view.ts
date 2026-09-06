@@ -38,7 +38,7 @@ import type { Page, View } from "./model.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
 import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED,
-  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES }
+  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES, REMOVED_UNDER_PROCESS }
   from "../../claims/src/warnings.ts";
 import { RECONFIGURE } from "../../claims/src/setup.ts";
 
@@ -193,6 +193,12 @@ function chats(m: View, size: Size, height: number): string[] {
   const visible = body.slice(Math.max(0, body.length - (top - 2)));
 
   const foreign = current ? m.foreign[current] ?? 0 : 0;
+  // **THE TUI COULD NOT SAY THIS AT ALL UNTIL THE PROJECTION CARRIED IT.** `clientOf` mapped a
+  // channel to `{ anchor }`, so the field never reached the view — the CLI and the API could show
+  // a compelled removal and the surface a source actually uses could not. `GUI-API-CONTRACT.md`
+  // requires it *"because a removal indistinguishable from expiry is invisible to the people it
+  // happened to"*. A count here; the ids stay in the CLI.
+  const taken = (current && m.client?.channels[current]?.removedUnderProcess) || 0;
   // The mode, above the line you are typing on. Which of the two things Enter is about to do is
   // not a setting to be remembered; it is part of the message.
   // FROM `claims/src/warnings.ts`. This line used to say "anyone holding your bundle can prove
@@ -206,6 +212,13 @@ function chats(m: View, size: Size, height: number): string[] {
   // I7 allows. `describe` writes the zero case first because zero is the usual answer.
   const linked = m.linked;
   const compose = [
+    // ABOVE the mode line, because it is the only thing on this page that already happened to
+    // these messages rather than a property of the one being typed. Yellow and unabbreviated:
+    // `short` is a status-bar line and this is the one disclosure a reader must not skim.
+    ...(taken
+      ? wrap(`${taken} message(s) here: ${REMOVED_UNDER_PROCESS.full.join(" ")}`, size.cols - 4)
+        .map((l) => paint(l, "yellow"))
+      : []),
     mode,
     fit(m.fields.compose + (m.typing && m.page === "chats" ? paint("▏", "cyan") : ""), size.cols - 4),
     "",

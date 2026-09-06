@@ -305,8 +305,47 @@ export const LOOKUP_NODE_SEES: Warning = {
   ],
 };
 
+/**
+ * A message taken out of the vault under legal process, which is not expiry and not a deletion.
+ *
+ * **THIS WAS PROSE IN `cli.ts` AND THE TUI COULD NOT SHOW IT AT ALL.** Not a renderer oversight —
+ * a structural one: `clientOf` narrows each channel to `{ anchor }`, so `removedUnderProcess`
+ * never crossed into the view. **The one surface a source actually sits in front of was the one
+ * that could not tell them their message had been taken down.** That narrowing was deliberate, to
+ * keep `view.ts` out of `vault-client`'s graph, and this is the cost of it arriving later.
+ *
+ * `GUI-API-CONTRACT.md` requires it shown *"because a removal indistinguishable from expiry is
+ * invisible to the people it happened to"*, and `DECISIONS-NEEDED.md` D6 is the decision behind it.
+ * The reason it can be invisible is deliberate elsewhere: `read.hit` makes a miss
+ * indistinguishable from an object that expired or was never sent, which is exactly what makes
+ * decoy padding free. That property is right for cover and wrong for this.
+ *
+ * **THE SECOND PARAGRAPH IS NOT PADDING.** A removal notice that said only "these were removed"
+ * would be read as "the operator read them and gave them up". The operator cannot know whether
+ * anyone read them and cannot read them itself, and saying so is the difference between informing
+ * someone and frightening them into a wrong conclusion about what leaked.
+ */
+export const REMOVED_UNDER_PROCESS: Warning = {
+  id: "channel.removedUnderProcess",
+  surfaces: ["cli", "tui"],
+  because: "`read.hit` deliberately makes a miss indistinguishable from expiry so that decoy "
+    + "padding is free, and that same indistinguishability would hide a compelled removal from "
+    + "the people it happened to; `cli/src/commands.ts` records the ids per channel",
+  short: "REMOVED FROM THE VAULT UNDER LEGAL PROCESS — not expiry, and not deleted by either of you",
+  full: [
+    "Message(s) in this conversation were REMOVED FROM THE VAULT UNDER LEGAL PROCESS. That is not",
+    "expiry and it is not deletion by either of you — an outside party required the operator to",
+    "remove them, and the operator could not read what they were removing.",
+    "",
+    "What this does and does not tell you: the objects are gone from that vault, so neither of you",
+    "can fetch them again. It says nothing about who asked, on what grounds, or whether anyone read",
+    "them — the operator cannot know the last one either. If you still hold the plaintext locally,",
+    "you still hold it.",
+  ],
+};
+
 /** Every warning both front ends must render identically. The guard iterates this. */
 export const WARNINGS: readonly Warning[] =
   [SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, TLS_TERMINATION,
     KEY_IN_CLEAR, KEY_LOCKED,
-    LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES];
+    LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES, REMOVED_UNDER_PROCESS];
