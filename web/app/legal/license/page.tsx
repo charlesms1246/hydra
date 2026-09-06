@@ -32,9 +32,11 @@ export const metadata: Metadata = {
  *
  * Two lines rather than the file: the name and the version are the fact, and the rest is the
  * licence itself, which is in the repository and is the authority. **The `copyright` guard is not
- * defensive noise** — line four of the GPL is the FSF's own notice, and pulling it onto a page
- * would trip `test/site.test.ts`'s check that nothing here implies a legal person. It is a real
- * hazard one `slice` away rather than an imagined one.
+ * defensive noise** — it was written when this repository was GPL-3.0, whose fourth line is the
+ * FSF's own notice: one `slice` away from pulling a legal person onto a page that
+ * `test/site.test.ts` fails for implying one. **The licence has since changed to Apache-2.0, whose
+ * opening lines carry no notice, and the guard stays** — it is cheap, and the hazard belongs to
+ * the shape of licence files rather than to any one of them.
  */
 function licenceTitle(): string[] {
   const path = join(process.cwd(), "..", "LICENSE");

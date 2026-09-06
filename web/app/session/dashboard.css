@@ -96,7 +96,11 @@
 .tg-help-body h3 {
   margin: 0 0 0.5rem;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  /* The scale's smallest, not 0.625rem. This is a heading in the panel a reader opens to find out
+     what the marks mean — the one surface on the page that exists to be read. `check:text` found
+     it at 10px, under every size the scale defines, which is what "picked to fit" looks like from
+     the outside. */
+  font-size: var(--t-label);
   font-weight: 400;
   letter-spacing: 0.2em;
   color: var(--g-48);
@@ -127,7 +131,16 @@
 
 .tg-vitals { display: flex; gap: 1.25rem; margin: 0; }
 
-.tg-vitals .prose-label { margin-bottom: 0.1rem; font-size: 0.5rem; }
+/*
+ * The label was 0.5rem — 8px, smaller than the value it labels and under every token in the scale.
+ * The hierarchy it was buying with size is already carried by colour (`--g-48` against the value's
+ * `--g-80`), by case and by family, so it costs nothing to take the size back to the scale.
+ *
+ * ⛔ The other repair was to add an 8px token so the scale would contain it. That would have made
+ * `check:text` green while changing nothing a reader sees, which is the one move that gate cannot
+ * detect and the one it would be worth least after.
+ */
+.tg-vitals .prose-label { margin-bottom: 0.1rem; font-size: var(--t-label); }
 
 .tg-vitals dd {
   margin: 0;
@@ -206,10 +219,14 @@
  * lookup and they arrive as whole paragraphs; clipping one is the single thing a disclosure must
  * not do, and a fold here would be indistinguishable from not shipping it. The sidebar scrolls —
  * `.tg-list` has `overflow: auto` — so the length is absorbed there rather than hidden here.
+ *
+ * ⛔ **AND IT IS A SIBLING OF THE FOLD, NOT A CHILD OF IT.** It sat inside the `<details>` and the
+ * panel closed itself the moment a lookup succeeded — the costs produced and folded away in the
+ * same instant, for the reader who had never seen them. Nothing collapsible may contain one.
  */
 .tg-opened {
   padding: 0 0.85rem 0.85rem;
-  border-top: 1px solid var(--g-12);
+  border-bottom: 1px solid var(--g-12);
 }
 
 .tg-opened-head {
