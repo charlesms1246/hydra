@@ -4,7 +4,7 @@ import { SITE } from "../../../content.ts";
 import { Nav } from "../../../components/Nav.tsx";
 import { Section } from "../../../components/Section.tsx";
 import { CommandSurface } from "../../../components/CommandSurface.tsx";
-import { MockDevScreen } from "../../../components/MockTui.tsx";
+import { Terminal } from "../../../components/Terminal.tsx";
 import { Reveal } from "../../../components/Reveal.tsx";
 import { Footer } from "../../../components/Footer.tsx";
 
@@ -39,7 +39,7 @@ export default function Page() {
 
         <Section n="01" id="screen" title="WHAT IT LOOKS LIKE">
           <Reveal>
-            <MockDevScreen />
+            <Terminal frame="status" />
           </Reveal>
         </Section>
 

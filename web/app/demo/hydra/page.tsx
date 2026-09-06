@@ -4,7 +4,7 @@ import { SITE } from "../../../content.ts";
 import { Nav } from "../../../components/Nav.tsx";
 import { Section } from "../../../components/Section.tsx";
 import { CommandSurface } from "../../../components/CommandSurface.tsx";
-import { MockTui } from "../../../components/MockTui.tsx";
+import { Terminal } from "../../../components/Terminal.tsx";
 import { Reveal } from "../../../components/Reveal.tsx";
 import { Footer } from "../../../components/Footer.tsx";
 
@@ -41,7 +41,7 @@ export default function Page() {
             a reader what exists; it does not show them the thing. */}
         <Section n="01" id="screen" title="WHAT IT LOOKS LIKE">
           <Reveal>
-            <MockTui />
+            <Terminal frame="chats" />
           </Reveal>
         </Section>
 

@@ -9,12 +9,13 @@
   "description": "The marketing site. Statically exported, self-hosted fonts, no third-party requests \u2014 see README.md.",
   "scripts": {
     "preflight": "node scripts/preflight.ts",
-    "dev": "npm run preflight && next dev --webpack",
-    "build": "npm run preflight && next build --webpack",
+    "dev": "npm run preflight && npm run capture:tui && next dev --webpack",
+    "build": "npm run preflight && npm run capture:tui && next build --webpack",
     "test": "npm run build && node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check:figures": "node scripts/figure-geometry.ts",
-    "build:public": "HYDRA_PUBLIC=1 npm run preflight && HYDRA_PUBLIC=1 next build --webpack"
+    "build:public": "HYDRA_PUBLIC=1 npm run preflight && npm run capture:tui && HYDRA_PUBLIC=1 next build --webpack",
+    "capture:tui": "node scripts/capture-tui.ts"
   },
   "dependencies": {
     "next": "16.2.12",
