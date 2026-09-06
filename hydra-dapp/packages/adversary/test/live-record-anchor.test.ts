@@ -33,7 +33,7 @@ import {
   identityContract, writeRecordCalldata, readRecordCall, decodeRecordReply,
 } from "../../cli/src/anchor.ts";
 import { RECORD_FELTS, decodeRecord, verifyRecord } from "../../handshake/src/record.ts";
-import { init, myRecord } from "../../cli/src/commands.ts";
+import { init, myRecord, bundleFromChain, fingerprint } from "../../cli/src/commands.ts";
 
 const RPC = process.env.HYDRA_RPC;
 const SEND = process.env.HYDRA_ANCHOR_SEND === "1";
@@ -118,6 +118,90 @@ test("the read entrypoint answers, and an unwritten slot is absent rather than z
   const felts = decodeRecordReply(reply);
   assert.ok(felts === null || felts.length === RECORD_FELTS);
 });
+
+/**
+ * `bundleFromChain` — the function `hydra lookup` and the TUI's `l` are, against a real node.
+ *
+ * **A NETWORK-TOUCHING PATH WHOSE ONLY COVERAGE WAS HERMETIC, WHICH IS THE SHAPE
+ * `live-chain-client.test.ts` EXISTS FOR.** Its header records the fakes audit's sharpest finding:
+ * `events()` and `publishers()` were only ever driven against a model of a node. `lookup` reached
+ * the TUI on 2026-09-06 and arrived in the same condition — the encoding of two `starknet_call`
+ * requests, a reply decoder, and a signature check, none of it having met a real node.
+ *
+ * READ-ONLY, SO IT RUNS IN THE DEFAULT MODE. Two `starknet_call`s cost nothing and write nothing;
+ * this needs no `HYDRA_ANCHOR_SEND` gate and should not have one.
+ *
+ * **IT ASSERTS WHICHEVER ANSWER THE CHAIN ACTUALLY GIVES**, like the slot test above, because a
+ * previous `HYDRA_ANCHOR_SEND=1` run may have landed a record for this account and a test that
+ * demanded "no record" would fail on a chain that is more complete rather than less. Both branches
+ * assert something real, and the vacuity check is that exactly one of them ran.
+ */
+test("THE SHIPPED LOOKUP PATH MEETS A REAL NODE, and refuses or verifies rather than guessing",
+  async () => {
+    const owner = OWNER();
+    const state = init({ rpcUrl: RPC!, network: NETWORK, invites: [] });
+
+    let bundle: Awaited<ReturnType<typeof bundleFromChain>> | null = null;
+    let refusal: Error | null = null;
+    try { bundle = await bundleFromChain(state, owner); }
+    catch (e) { refusal = e as Error; }
+
+    assert.ok((bundle === null) !== (refusal === null),
+      "neither a bundle nor a refusal came back, so nothing here measured the live path");
+
+    if (refusal) {
+      // **THE REFUSAL IS THE CLIENT'S OWN SENTENCE, NOT A PARSE ERROR.** That distinction is the
+      // reason this is worth running live: a node that answers with HTML, or a decoder that let a
+      // zero id through, would surface as `SyntaxError: Unexpected token <` or as a bundle built
+      // from slot zero — the second being the one that matters, because it would be somebody
+      // else's key presented as this address's.
+      assert.match(refusal.message, /published no bundle record|owns identity/,
+        `the live refusal is not the client's: ${refusal.message.slice(0, 200)}`);
+      assert.doesNotMatch(refusal.message, /JSON|Unexpected token|undefined/,
+        "the refusal is a parse failure wearing the client's clothes");
+      return;
+    }
+
+    // A record IS published at this address. Then the whole claim `LOOKUP_KEY_NOT_PERSON` makes
+    // must hold on live bytes: `bundleOf` verifies the anchor signature against THIS address
+    // before returning, so a bundle coming back at all is the check having passed.
+    assert.ok(bundle!.identityKey?.length, "a bundle with no identity key came back");
+    assert.ok(bundle!.signingKey?.length, "a bundle with no signing key came back");
+    assert.equal(fingerprint(bundle!).length, 32, "the fingerprint users read aloud is not 32 hex");
+    // NO ONE-TIME PREKEY — `LOOKUP_NO_ONE_TIME` is the claim, and this is it on real bytes rather
+    // than on the sentence. A record charges per felt and the one-time keys stay in the vault.
+    assert.equal(bundle!.oneTimePrekey, undefined,
+      "a chain record carried a one-time prekey, so LOOKUP_NO_ONE_TIME is now false");
+
+    // **AND THE BINDING, ON THE SAME LIVE BYTES.** A bundle coming back is a weak check on its
+    // own: `bundleOf` verifies inside, so this test would still pass with the verification
+    // deleted. `LOOKUP_KEY_NOT_PERSON` says the record's signature NAMES that address — so the
+    // thing to assert is the refusal, against the same felts and a different owner. That is the
+    // property that stops somebody republishing another party's keys under their own name, and
+    // it is the one claim on the Connect page this file can check against a real chain.
+    const raw = decodeRecordReply(
+      okResult(await rpc("starknet_call", [readRecordCall(ID, NETWORK), "latest"]), "re-read"));
+    assert.ok(raw, "the record read as absent on the second read, so the binding is unchecked");
+    assert.throws(() => verifyRecord(decodeRecord(raw!), owner + 1n),
+      "the live record verifies against an address it does not name — the anchor signature is "
+      + "not binding, and LOOKUP_KEY_NOT_PERSON is false");
+    //
+    // **WHAT THIS DOES NOT PROVE, MEASURED RATHER THAN ASSUMED.** It proves the SIGNATURE is
+    // binding on live bytes. It does not prove `bundleFromChain` checks it: deleting
+    // `verifyRecord(record, owner)` from `bundleOf` in `handshake/src/record.ts` leaves this whole
+    // file green, because the assertion above calls `verifyRecord` itself and the bundle branch
+    // still returns a bundle. Confirmed by running that mutation, not reasoned about.
+    //
+    // **THAT WIRING IS COVERED, AND THIS WAS CHECKED RATHER THAN ASSUMED.** The same mutation run
+    // against the hermetic suite fails `record.test.ts` — *"A RECORD SIGNED FOR ANOTHER ADDRESS IS
+    // REFUSED — the whole attack"*. So the call path has a guard; it is simply not this one, and
+    // it belongs there: the attack needs a record naming a DIFFERENT address than the one it is
+    // read at, which cannot be constructed read-only on a real chain.
+    //
+    // Said here so the next reader does not mistake a passing live run for a check on the call
+    // path — which is the reassurance a live test is most likely to be misread as giving, and the
+    // reason to write down what it does not cover next to what it does.
+  });
 
 test("THE ARGUMENT ORDER IS RIGHT, proven without sending anything", async () => {
   // The write reverts from an unowned caller. WHICH revert is the whole point:
