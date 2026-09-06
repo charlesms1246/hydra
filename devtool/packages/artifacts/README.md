@@ -4,7 +4,7 @@ The Cairo build outputs for **one** revision of
 [`starknet-privacy`](https://github.com/starkware-libs/starknet-privacy), so `hydra-dev up` does
 not have to compile them.
 
-**84 files. 21 MB on disk. 3.9 MB over the wire.** npm serves it compressed and unpacks it plainly,
+**74 files. 20 MB on disk.** npm serves it compressed and unpacks it plainly,
 so the number that matters to your disk is the 21 MB, not the 3.9. It is a separate package for
 that reason: `hydra-dev` itself is 234 kB and starts instantly, and installing this is a choice
 you make to save ten to fifteen minutes of `scarb build`.
@@ -13,13 +13,20 @@ you make to save ten to fifteen minutes of `scarb build`.
 
 | kind | count | what it is |
 | --- | --- | --- |
-| `*.contract_class.json` | 58 | Sierra classes — what a `DECLARE` puts on chain |
+| `*.contract_class.json` | 50 | Sierra classes — what a `DECLARE` puts on chain |
 | `*.compiled_contract_class.json` | 15 | CASM, the compiled form |
-| `*.starknet_artifacts.json` | 11 | Scarb's own manifest of what each build wrote |
+| `*.starknet_artifacts.json` | 9 | Scarb's own manifest of what each build wrote |
 
-They come from five build invocations across five Scarb projects: the workspace (`privacy`,
-`vesu_lending_anonymizer`, `ekubo_swap_anonymizer`, `shadow_account_anonymizer`), the same
-workspace's `-t` test target, and the three standalone projects under `e2e/contracts/`.
+They are **exactly** what the three Cairo commands in `BUILD_HINTS` produce at that revision:
+`scarb build` over the four workspace members, `scarb build -t -p privacy -p
+shadow_account_anonymizer`, and the three standalone projects under `e2e/contracts/`.
+
+**Verified rather than assumed, and the check found something.** Built from a clean clone at the
+pin and compared: **all 74 class hashes are identical** to what this package ships. An earlier
+draft shipped 84 files — the extra ten were `ekubo_swap_anonymizer_unittest` and
+`vesu_lending_anonymizer_unittest` artifacts that no build hint produces and nothing references.
+They were residue of one machine's history, dated a day apart from the documented outputs, and a
+package containing them would have shipped ten classes the pinned source does not build.
 
 They are stored under `artifacts/build/` and `artifacts/e2e/contracts/*/build/` rather than the
 `target/dev/` Scarb writes them to: this repository's `.gitignore` excludes `target/` everywhere,

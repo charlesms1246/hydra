@@ -22,33 +22,6 @@
       "hash": "0x2b293fbc496757f84123a1bc789b3bf92067920b2e37a78f8268c4bdb731e2e"
     },
     {
-      "path": "build/ekubo_swap_anonymizer_unittest.test.starknet_artifacts.json",
-      "dest": "target/dev/ekubo_swap_anonymizer_unittest.test.starknet_artifacts.json",
-      "kind": "index",
-      "sha256": "ca0c89d2e01984c3667d09b086fed95ef897ca30b8f09731487ed4a64c6b91fd"
-    },
-    {
-      "path": "build/ekubo_swap_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
-      "dest": "target/dev/ekubo_swap_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
-      "kind": "sierra",
-      "sha256": "1abcdd30dea3a9e46d6b4b3bd45307c93b00335d9d2c97b625ffe9c1d8994b16",
-      "hash": "0x646380e495296bfbbb665eb60ce204ffc530c1b6d7372e355996bfffffe74da"
-    },
-    {
-      "path": "build/ekubo_swap_anonymizer_unittest_EkuboSwapAnonymizer.test.contract_class.json",
-      "dest": "target/dev/ekubo_swap_anonymizer_unittest_EkuboSwapAnonymizer.test.contract_class.json",
-      "kind": "sierra",
-      "sha256": "253ee539419b73bbe3f96c567d41d6eae4dca198feeec2f1aaa79c3178640cea",
-      "hash": "0x2b293fbc496757f84123a1bc789b3bf92067920b2e37a78f8268c4bdb731e2e"
-    },
-    {
-      "path": "build/ekubo_swap_anonymizer_unittest_MockEkuboAMM.test.contract_class.json",
-      "dest": "target/dev/ekubo_swap_anonymizer_unittest_MockEkuboAMM.test.contract_class.json",
-      "kind": "sierra",
-      "sha256": "f89b8bf19eded90b921652383753eb2f8668eea801c4335a118f7e6fdde67f95",
-      "hash": "0x4b66809809479d12910414fe62536802404d50aca9dae41028b72cc7da809ca"
-    },
-    {
       "path": "build/privacy.starknet_artifacts.json",
       "dest": "target/dev/privacy.starknet_artifacts.json",
       "kind": "index",
@@ -361,47 +334,6 @@
     {
       "path": "build/vesu_lending_anonymizer_VesuLendingAnonymizer.contract_class.json",
       "dest": "target/dev/vesu_lending_anonymizer_VesuLendingAnonymizer.contract_class.json",
-      "kind": "sierra",
-      "sha256": "5839f050e742762db9076d1d732e10a4ad8d5603dd978a06a7439a0cfd01bb0f",
-      "hash": "0x77aa8896e549529f779e8e2c8552bfcf38d008b190c9112094a8d9ba489d7b0"
-    },
-    {
-      "path": "build/vesu_lending_anonymizer_unittest.test.starknet_artifacts.json",
-      "dest": "target/dev/vesu_lending_anonymizer_unittest.test.starknet_artifacts.json",
-      "kind": "index",
-      "sha256": "dd982bdfdec02c365225fd8964ad60d0cbe9867839b09607c0792e4ea4aad583"
-    },
-    {
-      "path": "build/vesu_lending_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
-      "dest": "target/dev/vesu_lending_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
-      "kind": "sierra",
-      "sha256": "1abcdd30dea3a9e46d6b4b3bd45307c93b00335d9d2c97b625ffe9c1d8994b16",
-      "hash": "0x646380e495296bfbbb665eb60ce204ffc530c1b6d7372e355996bfffffe74da"
-    },
-    {
-      "path": "build/vesu_lending_anonymizer_unittest_MockVesuVault.test.contract_class.json",
-      "dest": "target/dev/vesu_lending_anonymizer_unittest_MockVesuVault.test.contract_class.json",
-      "kind": "sierra",
-      "sha256": "6b4d29619a6ea67d2d33f601bd5b6ca663070e61534228dd35bda0ec779ff25e",
-      "hash": "0x19dcd9707667f847f68ecb11b60129ae7d056c62645d5fe8a04a19e864b8ced"
-    },
-    {
-      "path": "build/vesu_lending_anonymizer_unittest_MockVesuVaultNoop.test.contract_class.json",
-      "dest": "target/dev/vesu_lending_anonymizer_unittest_MockVesuVaultNoop.test.contract_class.json",
-      "kind": "sierra",
-      "sha256": "493065746669a3ebc1d2999cb371e534506ee68a901787af6f8fa37b345ae09c",
-      "hash": "0x39829d9913ae075f0f99176a634de45c0a1cdd19facca7d42786c38521536f3"
-    },
-    {
-      "path": "build/vesu_lending_anonymizer_unittest_MockVesuVaultOverflow.test.contract_class.json",
-      "dest": "target/dev/vesu_lending_anonymizer_unittest_MockVesuVaultOverflow.test.contract_class.json",
-      "kind": "sierra",
-      "sha256": "ea18b55b4a864fae5a0a64ee4f47c60c0c8db1511e8af288aab7d05ac5d93df1",
-      "hash": "0x50afdfeac19e9efe46ac107a8ba8ae976d567589d0db48cbcac21eda5bd2574"
-    },
-    {
-      "path": "build/vesu_lending_anonymizer_unittest_VesuLendingAnonymizer.test.contract_class.json",
-      "dest": "target/dev/vesu_lending_anonymizer_unittest_VesuLendingAnonymizer.test.contract_class.json",
       "kind": "sierra",
       "sha256": "5839f050e742762db9076d1d732e10a4ad8d5603dd978a06a7439a0cfd01bb0f",
       "hash": "0x77aa8896e549529f779e8e2c8552bfcf38d008b190c9112094a8d9ba489d7b0"

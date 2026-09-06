@@ -199,7 +199,10 @@ export function check() {
       rows.push({
         status: missing.length === 0 ? OK : BAD,
         name: `artifact: ${key}`,
-        want: cairo ? `${found.expected} files` : "built",
+        // `expected` is counted from the indexes, so an unbuilt tree has none and "want 0 files"
+        // would be a target nobody could aim at. It is the count when there IS one and the plain
+        // word otherwise.
+        want: cairo && found.expected ? `${found.expected} files` : "built",
         // The COUNT and the first missing name. A bare "missing" sent a reader to a build hint
         // without telling them whether one class or a whole Scarb project was absent.
         got: missing.length === 0
