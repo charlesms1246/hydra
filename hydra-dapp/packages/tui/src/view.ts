@@ -416,7 +416,25 @@ function status(m: View, size: Size, height: number): string[] {
   const lines = [
     `${paint("state    ", "gray")}${m.statePath}`,
     `${paint("vault    ", "gray")}${s?.vaultUrl ?? "—"}`,
-    `${paint("chain    ", "gray")}${s?.contract || paint("(none — see below)", "yellow")} via ${s?.rpcUrl ?? "—"}`,
+    /*
+     * **TWO ROWS, BECAUSE ONE ROW LOST THE NODE ON EVERY REAL CLIENT.**
+     *
+     * This was `chain <contract> via <rpc>`. A Starknet address is 66 characters and the label is
+     * 9, so the row is 123–125 on any real deployment and `box` cuts it to the pane width — at 80
+     * columns the RPC arrived as `v…`. Measured against the live Sepolia install.
+     *
+     * **The half that fell off was the disclosing half.** `claims/src/setup.ts` describes the RPC
+     * as deciding *"which node sees every read you make"*; the contract is the same for everyone
+     * on a deployment and is recoverable from `hydra disclose`. So the row was spending its width
+     * on the shared value and clipping the per-user one — and it was invisible to anyone
+     * developing on a wide terminal, which is everyone.
+     *
+     * Split rather than truncated or reordered: each value fits its own row at 80 columns, so
+     * neither is a judgement about which matters more. `screen.ts` has `truncate`, `wrap` and
+     * `fit`, and this row was written without reaching for any of them.
+     */
+    `${paint("contract ", "gray")}${s?.contract || paint("(none — see below)", "yellow")}`,
+    `${paint("node     ", "gray")}${s?.rpcUrl ?? "—"}`,
     // **A SLOW CLIENT THAT DOES NOT SAY IT IS SLOW READS AS A BROKEN ONE.** `fromBlock` is 0 with
     // a contract set exactly when the deployment-block discovery has not succeeded — the node was
     // unreachable at identity creation, or this file predates the discovery existing. Every read

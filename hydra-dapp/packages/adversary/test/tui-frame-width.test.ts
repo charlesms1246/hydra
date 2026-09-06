@@ -132,3 +132,31 @@ test("THE ALTERNATE SCREEN TURNS AUTOWRAP OFF, AND GIVES IT BACK", () => {
   assert.ok(ALT_SCREEN_OFF.includes("\x1b[?7h"),
     "autowrap is never restored, so quitting leaves the user's shell unable to wrap");
 });
+
+test("THE NODE URL SURVIVES ON STATUS AT EVERY REAL WIDTH, WHICH IT DID NOT", () => {
+  /*
+   * **E-TUI01: `chain <contract> via <rpc>` CLIPPED ON EVERY REAL CLIENT.** A Starknet address is
+   * 66 characters and the label is 9, so the row measured 123–125 against the live Sepolia install
+   * and `box` cut it to the pane — at 80 columns the RPC arrived as `v…`.
+   *
+   * **The half that fell off was the disclosing half.** `claims/src/setup.ts` calls the RPC the
+   * thing that decides *"which node sees every read you make"*; the contract is identical for
+   * everyone on a deployment and recoverable from `hydra disclose`. So the row spent its width on
+   * the shared value and clipped the per-user one, invisibly to anyone on a wide terminal.
+   *
+   * Asserted on the RENDERED FRAME rather than on the row builder, because the clipping happened
+   * in `box`, not where the string was made — a test of the builder would have passed throughout.
+   */
+  const state = fresh();
+  state.contract = "0x01551ea15c89b8b7308331eaddf59795c09be5274e59fac03c3d52a90f277a6e";
+  state.rpcUrl = "https://api.cartridge.gg/x/starknet/sepolia";
+  assert.equal(state.contract.length, 66, "the fixture is not a real-length Starknet address");
+
+  for (const cols of [56, 72, 80, 100, 132]) {
+    const frame = render(viewOf({ ...start(state, 0), state, page: "status" }), { rows: 30, cols })
+      .join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+    assert.ok(frame.includes(state.rpcUrl),
+      `at ${cols} columns the Status page does not show the whole node URL — the field that `
+      + "decides who sees every read is the one being cut");
+  }
+});

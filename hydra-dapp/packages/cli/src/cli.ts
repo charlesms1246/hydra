@@ -893,7 +893,11 @@ switch (command) {
     console.log(`vault      ${state.vaultUrl}`);
     // `(unset)` USED TO SIT HERE LOOKING LIKE A SETTING. The condition and its remedy are below,
     // in the block every other refusal in this client uses; this row keeps the shape scripts parse.
-    console.log(`chain      ${state.contract || "(none — see below)"} via ${state.rpcUrl}`);
+    // Two rows, matching the TUI. Split there because one row clipped and lost the node; split
+    // here so the two surfaces do not name the same two values differently. A CLI can afford the
+    // width and that is not the point — a user reading both should see one vocabulary.
+    console.log(`contract   ${state.contract || "(none — see below)"}`);
+    console.log(`node       ${state.rpcUrl}`);
     console.log(`route      ${state.controlUrl ? `pool (${state.poolAccount || "alice"})` : "direct from your own account"}`);
     console.log(`fingerprint ${fingerprint(publishBundle(state))}`);
     console.log(`channels   ${Object.keys(state.channels).join(", ") || "(none)"}`);
