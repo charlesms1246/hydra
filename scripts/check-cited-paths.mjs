@@ -398,7 +398,19 @@ for (const file of files) {
 const RUNNER = /(?:^|[|&;({]\s*|\$\s*)(?:node|bash|sh)\s+(\.{0,2}[\w./-]+\.(?:mjs|cjs|js|ts|sh))/;
 const REPO_DIR = ROOT.slice(ROOT.replace(/\/$/, "").lastIndexOf("/") + 1).replace(/\/$/, "");
 const unrunnable = [];
-for (const file of files) {
+/*
+ * ⚠ DEFAULT MODE ONLY, and the reason is a cost this imposed on other lanes before it was scoped.
+ *
+ * `hydra-dapp`'s `npm test` runs `check:citations` — this script in `--source` mode — FIRST, so
+ * anything red here exits the whole suite before a single test runs. An in-progress version of
+ * this check fired during a `--source` run and took `hydra-dapp` to exit 2 for whoever else was
+ * in the tree.
+ *
+ * Shell blocks in markdown are not what `--source` is asking about: that mode asks whether
+ * shipped SOURCE cites `claude-docs/`. Gating a test suite on a command in a README is the wrong
+ * coupling however correct the check is.
+ */
+for (const file of (source ? [] : files)) {
   const rel = file.slice(ROOT.length + 1);
   // Only documents a clone contains: `claude-docs/` is gitignored, so its shell blocks are
   // instructions to us rather than to a reader standing in a checkout.
@@ -472,7 +484,7 @@ if (!all && !source) {
     problems.push("README.md is not in the derived corpus — the walk is not seeing tracked markdown");
   }
 }
-if (unrunnable.length) {
+if (!source && unrunnable.length) {
   problems.push(`${unrunnable.length} shell command(s) name a path that does not exist in `
     + `the directory their block is run from: `
     + unrunnable.map((u) => `${u.file} (in ${u.cwd}) -> ${u.arg}`).join(", "));
@@ -628,11 +640,18 @@ if (overMarked.length) {
  * ## THE WEAKNESS, WRITTEN DOWN RATHER THAN DISCOVERED
  *
  * **Matched by BASENAME, so this cannot catch a citation pointing at the wrong test that happens
- * to exist.** Path-precise matching would be stronger and is not what this corpus looks like:
- * nearly all 173 citations are bare filenames by long-standing convention, so a path check would
- * fail almost all of them and be switched off within a day. A guard that is turned off catches
- * nothing, and a weaker guard that runs is worth more than a stronger one that does not — but the
- * limit is real and belongs here, not in whoever finds it later.
+ * to exist.**
+ *
+ * **THAT IS A CHOICE, AND THE REASON IS NOT "PATHS ARE HARD".** Path-precise matching is stronger
+ * and would fail nearly all 173 citations in this client, because bare filenames are the
+ * long-standing convention here — `tui-conversation.test.ts`, not `packages/adversary/test/…`. A
+ * guard that reports 170 failures on its first run is a guard somebody switches off that week, and
+ * **a guard that is switched off catches nothing at all.** A weaker check that runs is worth more
+ * than a stronger one that does not, so the weakness buys the thing running.
+ *
+ * The limit is real and it belongs here rather than with whoever finds it later. If the convention
+ * ever changes to full paths, this should tighten with it — and the failure it cannot see today is
+ * a citation naming a real test that does not check what the sentence says it checks.
  */
 const TEST_CITE = /`([A-Za-z0-9_\/.\-]+\.test\.[cm]?[jt]sx?)`/g;
 
