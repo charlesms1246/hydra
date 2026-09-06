@@ -81,3 +81,4 @@ web/tui-frames.json
 # scripts. Three were swept into ab29cd5 that way. Ignoring the directory makes the mistake
 # impossible rather than something to remember.
 web/.tmp/
+web/tui-view.json

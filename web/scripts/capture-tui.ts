@@ -89,6 +89,8 @@ function frames() {
        the pane is mostly empty and reads as a bug rather than as a quiet conversation. */
     chats: render(chats, { cols: 96, rows: 20 }),
     status: render(status, { cols: 96, rows: 16 }),
+    /* The same `View` the chats frame was rendered from — not a second derivation of it. */
+    view: chats,
   };
 }
 
@@ -116,7 +118,25 @@ const out = {
  * about what counts as a leak — and the docstring above no longer has to describe the loop, since
  * the loop is the list.
  */
-const rendered = JSON.stringify(out);
+/*
+ * ⛔ `tui-view.json` IS SERVED, SO IT IS ON THE RENDER SIDE OF BOTH LISTS.
+ *
+ * The live render cannot build its own `View`: only `viewOf` turns a `State` into one, and that
+ * lives in `app.ts`, which reaches `identity` — the exact import the platform lane's split exists
+ * to keep out of a browser. So the `View` is derived here, through the same `viewOf` that produces
+ * the captured frames, and shipped as data.
+ *
+ * **That keeps one fixture rather than two.** A hand-written `View` literal would have been the
+ * second fixture this file exists to avoid, and it would have been the one nothing asserts over.
+ *
+ * It is checked against **both** needle lists, unlike `FIXTURE_STATE`. The fixture is only read at
+ * build time, so it may hold its own fake seed; this file goes to a reader, so the seed must not
+ * be in it for the same reason it must not be in a frame. The risk is not today — it is a field
+ * added to `Client` later that carries something, with nothing looking at this artifact.
+ */
+const view = JSON.stringify(captured.view);
+
+const rendered = JSON.stringify(out) + view;
 const fixture = JSON.stringify(FIXTURE_STATE);
 
 /* The seed is the fixture's own field. What matters is that it never reaches a rendered frame. */
@@ -139,7 +159,66 @@ for (const [what, value] of identityNeedles(homedir(), process.env.USER ?? "")) 
   }
 }
 
+/*
+ * ⛔ THE SHIPPED VIEW'S SHAPE IS PINNED, BECAUSE A NEEDLE LIST CANNOT SEE A FIELD IT DOES NOT KNOW.
+ *
+ * The checks above look for four specific strings. The risk hydra-31 named is different and worse:
+ * a field added to `Client` or `View` upstream that carries something, with nothing looking at this
+ * artifact. A needle list is a search for known secrets; it is silent on an unknown one.
+ *
+ * So the key set is asserted. A new field fails the build and somebody has to decide whether it
+ * belongs in a file served to readers — which is the decision, and it should be made by a person
+ * rather than by whether it happened to match a string.
+ *
+ * **This is not a snapshot test.** It pins names, never values: the fixture's values are meant to
+ * change when the fixture does, and a test that failed on those would be one people update without
+ * reading. Adding a field here is a two-line change and the comment is the reason it is worth it.
+ */
+const VIEW_KEYS = [
+  "page", "client", "statePath", "typing", "field", "fields", "channel", "scroll",
+  "transcript", "foreign", "linked", "log", "busy", "confirm", "cite", "signing", "now",
+];
+/*
+ * ⛔ ELEVEN, NOT THE EIGHT IN THE FILE, AND THE GAP IS THE POINT.
+ *
+ * `Object.keys` on the derived object returns eleven; the written JSON contains eight, because
+ * `JSON.stringify` drops `undefined`. `lockedAtRest`, `controlUrl` and `poolAccount` are unset in
+ * this fixture and therefore invisible in the artifact — **and would ship the moment a fixture or
+ * a real client set them.**
+ *
+ * So this list is checked against the object rather than the bytes. A check against the bytes
+ * would go green on a field that is merely unset today, which is the same silence as not checking
+ * at all, arriving one release later.
+ */
+const CLIENT_KEYS = [
+  "identity", "channels", "pending", "vaultUrl", "rpcUrl", "contract", "fromBlock", "invites",
+  "lockedAtRest", "controlUrl", "poolAccount",
+];
+
+for (const [what, got, want] of [
+  ["View", Object.keys(captured.view as object), VIEW_KEYS],
+  ["Client", Object.keys((captured.view as { client?: object }).client ?? {}), CLIENT_KEYS],
+] as const) {
+  const added = got.filter((k) => !want.includes(k));
+  if (added.length) {
+    throw new Error(
+      `${what} gained ${JSON.stringify(added)}, and this object is SERVED to readers. Decide `
+      + "whether the new field belongs in a public artifact, then add it to the list in "
+      + "scripts/capture-tui.ts. A field nobody listed is a field nobody looked at.",
+    );
+  }
+  // Vacuity: an empty object would pass an "added" check by having nothing to add.
+  if (got.length < want.length - 4) {
+    throw new Error(
+      `${what} has ${got.length} keys and ${want.length} were expected — the view is not being `
+      + "derived, so nothing above measured anything.",
+    );
+  }
+}
+
 writeFileSync(join(import.meta.dirname, "..", "tui-frames.json"), JSON.stringify(out), "utf8");
+writeFileSync(join(import.meta.dirname, "..", "tui-view.json"), view, "utf8");
 console.log(
-  `captured ${out.chats.length} + ${out.status.length} lines from the real renderer.`,
+  `captured ${out.chats.length} + ${out.status.length} lines from the real renderer, `
+  + `and a ${view.length}-byte view for the live one.`,
 );
