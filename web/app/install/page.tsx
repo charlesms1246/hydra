@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
@@ -30,26 +28,13 @@ export const metadata: Metadata = {
   description: SITE.install.lede,
 };
 
-/**
- * The site's own dependency tree, read from `package.json` at build time.
- *
- * Typed out by hand it would describe the tree as it was when somebody last remembered. An
- * install page is a supply-chain surface — it is where somebody gets a command they will paste
- * into a terminal — so what stands behind it is generated from the manifest, like everything
- * else on this site that can be.
+/*
+ * The dependency manifest that used to be generated here now lives on `/legal/license/`, still
+ * generated. It answers a licensing question — whose work is in this, under what terms — and an
+ * install page that also carried it made the reader scroll past a package list to reach a
+ * command. What stays here is what you type.
  */
-function dependencies(): { runtime: string[]; types: string[] } {
-  const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
-  const all = { ...pkg.dependencies, ...pkg.devDependencies } as Record<string, string>;
-  const names = Object.keys(all).sort();
-  return {
-    runtime: names.filter((n) => !n.startsWith("@types/")).map((n) => `${n}@${all[n]}`),
-    types: names.filter((n) => n.startsWith("@types/")).map((n) => `${n}@${all[n]}`),
-  };
-}
-
 export default function Install() {
-  const deps = dependencies();
   return (
     <>
       <Nav current="install" />
@@ -81,18 +66,6 @@ export default function Install() {
           <ul className="warnings">
             {SITE.install.warnings.map((w) => (
               <li key={w}><Code>{w}</Code></li>
-            ))}
-          </ul>
-        </Section>
-
-        <Section n="03" id="supply-chain" title="WHAT STANDS BEHIND THIS PAGE">
-          <p className="statement-lead col-7">{SITE.install.supplyChain}</p>
-          <ul className="deps" data-generated="manifest">
-            {deps.runtime.map((d) => (
-              <li key={d}><code>{d}</code></li>
-            ))}
-            {deps.types.map((d) => (
-              <li key={d} className="dep-types"><code>{d}</code></li>
             ))}
           </ul>
         </Section>

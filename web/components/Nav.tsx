@@ -22,7 +22,15 @@
 import { asciiBlock } from "../scripts/ascii-block.ts";
 import { isPublicBuild } from "../scripts/build-mode.ts";
 
-export type Page = "home" | "pitch" | "demo" | "install" | "about" | "session";
+/**
+ * `"legal"` is a page id with no entry in `LINKS`, and that is deliberate.
+ *
+ * The licence, privacy and terms pages are reached from the footer, not the bar — six dots is
+ * already the width this nav is designed around, and three legal routes are not navigation. A
+ * `current` the list does not contain lights no dot, which is the honest indicator: the reader is
+ * not on any of the six.
+ */
+export type Page = "home" | "pitch" | "demo" | "install" | "about" | "session" | "legal";
 
 const LINKS: { id: Page; href: string; label: string }[] = [
   { id: "home", href: "/", label: "HOME" },

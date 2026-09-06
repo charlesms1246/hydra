@@ -403,6 +403,33 @@ test("nothing is fetched from anywhere else, on a page about who can see what", 
   }
 });
 
+/**
+ * Nothing the site ships can write to a reader's browser.
+ *
+ * `/legal/privacy/` says no cookie is set and no storage is used, and that sentence is worth
+ * exactly as much as the thing that checks it. **The check is on the built JavaScript rather than
+ * on the components**, because what a reader runs is the bundle: a dependency could introduce a
+ * cookie without a line of ours changing, and a grep over `components/` would keep saying no.
+ *
+ * `matchMedia` and `history.replaceState` are used and are deliberately not on this list — one
+ * reads a preference and the other removes a token from the address bar. Neither persists.
+ */
+test("nothing shipped to a browser writes to it", () => {
+  const js = walk(OUT).filter((f) => f.endsWith(".js"));
+  // Vacuity: a static export with no bundle would pass this by having nothing to scan.
+  assert.ok(js.length >= 5, `only ${js.length} scripts in out/ — the scan is not seeing the site`);
+  for (const file of js) {
+    const src = readFileSync(file, "utf8");
+    for (const api of ["localStorage", "sessionStorage", "document.cookie", "indexedDB"]) {
+      assert.ok(
+        !src.includes(api),
+        `${file.replace(`${OUT}/`, "")} uses ${api}, and /legal/privacy/ tells a reader that `
+        + "nothing is written to their browser. Either the page is now wrong or the code is",
+      );
+    }
+  }
+});
+
 test("no analytics or telemetry package is installed", () => {
   const pkg = JSON.parse(readFileSync(join(WEB, "package.json"), "utf8"));
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };

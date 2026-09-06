@@ -101,6 +101,20 @@ export function Footer() {
         </div>
       </div>
 
+      {/*
+        The three legal routes, in the note band rather than as a fourth column.
+
+        They are not a fourth peer of Read / Run / Source — nobody browses a site by its licence —
+        and the column grid above is tuned to three lists plus the mark, so a fourth would have
+        landed in the mark's own cell. A rule under the columns is where this furniture goes on
+        every site that has it, and here it costs one new selector rather than a regrid.
+      */}
+      <nav className="footer-legal" aria-label="Legal">
+        <a href="/legal/license/">License</a>
+        <a href="/legal/privacy/">Privacy</a>
+        <a href="/legal/terms/">Terms of use</a>
+      </nav>
+
       <div className="footer-note">
         <span className="footer-tick" aria-hidden>
           INFO

@@ -920,6 +920,42 @@ body.has-canvas .field {
  * as the four left edges on the pages, reproduced inside one footer. The paragraph keeps its own
  * `52ch` reading measure; what moved is where the block starts.
  */
+/*
+ * The legal row: licence, privacy, terms.
+ *
+ * A new selector rather than a fourth `.footer-col`, because the column grid above is tuned to
+ * three link lists plus the mark and a fourth list would take the mark's cell. Aligned to the
+ * same 90rem band as the columns and the note, so the footer keeps one left edge.
+ */
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  max-width: 90rem;
+  margin: clamp(3rem, 8vh, 5rem) auto 0;
+  border-top: 1px solid var(--g-12);
+  padding-top: 1.25rem;
+}
+
+.footer-legal a {
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  color: var(--g-80);
+  text-decoration: none;
+}
+
+.footer-legal a:hover,
+.footer-legal a:focus-visible {
+  color: var(--accent);
+}
+
+/* The note follows the legal row, so its own top margin would double the gap between them. */
+.footer-legal + .footer-note {
+  margin-top: 1.25rem;
+}
+
 .footer-note {
   max-width: 90rem;
   margin: clamp(3rem, 8vh, 5rem) auto 0;
