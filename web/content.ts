@@ -82,15 +82,15 @@ export const SITE = {
   /**
    * The three cards, on the reference's MECHANICS layout — see `app/page.tsx`.
    *
-   * Each carries a `crop`: a different region of `art.txt`, so the three renders read as three
-   * images rather than one drawing repeated. The reference has three separate source pictures; we
-   * have one drawing and take three parts of it, which is the closest honest equivalent — a
-   * project with one mark does not acquire three by wanting them.
+   * Each names its own source in `public/ascii/` — the reference's three greyscale placeholders,
+   * used on its instruction. They were three crops of `art.txt`, which is one picture cut three
+   * ways and reads as one picture cut three ways.
    */
   why: [
     {
       label: "MEASURED",
-      crop: { x: 0.04, y: 0.02, w: 0.44, h: 0.5 },
+      art: "recycling.png",
+      alt: "A closed ring, lit from above.",
       title: "The numbers come from tests, not from the writer",
       body: "Every guarantee on the disclosure page is derived from a value some test already "
         + "measures. When a protection is partial, the measurement is printed instead of a "
@@ -99,7 +99,8 @@ export const SITE = {
     },
     {
       label: "GENERATED",
-      crop: { x: 0.3, y: 0.26, w: 0.44, h: 0.5 },
+      art: "re-anchoring.png",
+      alt: "A drifting line tied back to a straight reference by regular ties.",
       title: "The site and the software cannot disagree",
       body: "The disclosure page is produced by the same function the client renders on its own "
         + "Disclosure screen. Nobody writes those sentences by hand, here or there, so there is "
@@ -107,7 +108,8 @@ export const SITE = {
     },
     {
       label: "CITED",
-      crop: { x: 0.54, y: 0.46, w: 0.44, h: 0.5 },
+      art: "reduction.png",
+      alt: "A curve losing its amplitude until it is indistinguishable from a flat line.",
       title: "Every line names the file that makes it true",
       body: "Each claim carries the path it came from, and a test fails if that path stops "
         + "resolving to a file in the repository. You are not asked to take any of it on trust; "

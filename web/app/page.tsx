@@ -6,7 +6,7 @@ import { Close } from "../components/Close.tsx";
 import { WriteOn } from "../components/WriteOn.tsx";
 import { Develop } from "../components/Develop.tsx";
 import { Reveal } from "../components/Reveal.tsx";
-import { AsciiPanel } from "../components/viz/AsciiPanel.tsx";
+import { AsciiImage } from "../components/viz/AsciiImage.tsx";
 import { DisclosureMap } from "../components/viz/DisclosureMap.tsx";
 
 /**
@@ -99,7 +99,7 @@ export default function Home() {
                     resolves as the card rises — see `Develop`. `aspect-[5/4]` in the reference;
                     the panel's own grid gives us the same proportion. */}
                 <Develop>
-                  <AsciiPanel cols={70} rows={36} crop={w.crop} blur={2} gain={1.3} />
+                  <AsciiImage file={w.art} alt={w.alt} cols={70} rows={34} gain={1.5} />
                 </Develop>
                 <span className="why-label">{w.label}</span>
                 <h3>{w.title}</h3>

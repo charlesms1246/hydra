@@ -173,3 +173,62 @@ export function runs(row: Cell[]): { text: string; grey: number }[] {
   }
   return out;
 }
+
+/* ---------------------------------------------------------------------------------------------
+ * The same pipeline, from an image instead of from `art.txt`.
+ *
+ * ⛔ **This is Gestalt's `AsciiImage`, moved to build time.** Theirs draws the source into an
+ * offscreen canvas in the browser and reads pixels back per frame; ours decodes once during the
+ * build and ships the glyphs as markup, because everything else here is generated at build time
+ * and a runtime decoder would be the only component that needs the image over the network.
+ *
+ * The steps are theirs and the reasons are theirs:
+ *
+ * 1. **Downsample with the decoder**, not by point-sampling the full-resolution bitmap — a point
+ *    sample takes whatever pixel sits at a cell's corner, which aliases badly on exactly the fine
+ *    detail ASCII is already struggling to carry. `sharp` box-filters on resize.
+ * 2. **Luminance only.** The sources are greyscale already; colour would be discarded anyway.
+ * 3. **Ordered dither, then quantise.** The same 4x4 Bayer the drawing uses, so the two kinds of
+ *    field share a texture rather than looking like two techniques on one page.
+ * 4. **Two channels out** — a glyph from the ramp and a step on the grey scale.
+ * ------------------------------------------------------------------------------------------ */
+
+/** Decoded once per source per build; three cards on one page would otherwise decode three times. */
+const decoded = new Map<string, { data: Buffer; w: number; h: number }>();
+
+async function grey(file: string, cols: number, rows: number) {
+  const key = `${file}:${cols}x${rows}`;
+  const hit = decoded.get(key);
+  if (hit) return hit;
+  const sharp = (await import("sharp")).default;
+  const { data, info } = await sharp(join(process.cwd(), "public", "ascii", file))
+    .greyscale()
+    .resize(cols, rows, { fit: "fill" })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const out = { data, w: info.width, h: info.height };
+  decoded.set(key, out);
+  return out;
+}
+
+export type ImageOptions = { file: string; cols: number; rows: number; gain?: number };
+
+export async function imagePanel({ file, cols, rows, gain = 1 }: ImageOptions): Promise<Cell[][]> {
+  const { data, w } = await grey(file, cols, rows);
+  const out: Cell[][] = [];
+  for (let r = 0; r < rows; r++) {
+    const row: Cell[] = [];
+    for (let c = 0; c < cols; c++) {
+      const v = (data[r * w + c] ?? 0) / 255;
+      const d = Math.min(1, v * gain);
+      const t = BAYER[r % 4][c % 4];
+      const lit = Math.max(0, Math.min(0.999, d + (d > 0 ? (t - 0.5) * 0.22 : 0)));
+      row.push({
+        ch: RAMP[Math.floor(lit * (RAMP.length - 1))],
+        grey: GREYS[Math.min(GREYS.length - 1, Math.floor(lit * GREYS.length))],
+      });
+    }
+    out.push(row);
+  }
+  return out;
+}

@@ -1177,34 +1177,22 @@ body.has-canvas .field {
   margin-inline: auto;
 }
 
-.why article {
-  padding: 2.5rem 0;
-  border-bottom: 1px solid var(--g-12);
-}
-
-@media (min-width: 60rem) {
-  .why {
-    grid-template-columns: repeat(3, 1fr);
-    border-bottom: 1px solid var(--g-12);
-  }
-
-  /* Two cards, not three. Without this the pair sits in a three-column grid and the empty third
-     reads as a card that failed to load rather than as space. */
-  .why.two {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .why article {
-    padding: 2.5rem 2rem;
-    border-bottom: none;
-    border-right: 1px solid var(--g-12);
-  }
-  .why article:last-child {
-    border-right: none;
-  }
-  .why article:first-child {
-    padding-left: 0;
-  }
-}
+/*
+ * ⛔ THE OLD CARD RULES LIVED HERE AND ARE GONE. Do not reinstate them.
+ *
+ * They were written for a grid with no outer border, where the first card aligned flush with the
+ * page margin — so they carried `.why article:first-child { padding-left: 0 }`. The grid now has a
+ * border and hairline gaps (Gestalt's MECHANICS pattern), and a flush-left first card inside a
+ * bordered box is simply **the first card missing its left padding**: measured at 1440, card one's
+ * contents began at 44 while cards two and three began 32px inside their own edges.
+ *
+ * It survived because `:first-child` is more specific than the rule that replaced it, so writing
+ * the new rules later in the file did not override it. **A stale rule with higher specificity is
+ * not overridden by a correct rule written afterwards** — it has to be deleted, and the only thing
+ * that finds it is measuring the rendered box rather than reading the stylesheet.
+ *
+ * The live rules are further down, with the rest of the card grid.
+ */
 
 .why-label {
   color: var(--accent);
