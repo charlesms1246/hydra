@@ -79,23 +79,26 @@ export default function License() {
           </Reveal>
         </header>
 
-        <Section n="01" id="licence" title="WHAT THE CODE IS UNDER">
+        <Section n="01" id="licence" title="WHAT IT IS UNDER">
           <Reveal>
             <p className="statement-lead col-7" data-generated="license">
               {name}, {version.replace(/^Version /, "version ")}.
             </p>
-            <p className="col-7">
+          </Reveal>
+          <Reveal className="grid-12 step">
+            <span className="col-note prose-label">SOURCE</span>
+            <p className="col-9 prose-body">
               The text is <code>LICENSE</code> at the root of the repository. It is the authority;
               this page only names it, and names it by reading it, so the two cannot come apart.
             </p>
           </Reveal>
         </Section>
 
-        <Section n="02" id="supply-chain" title="WHAT STANDS BEHIND THIS SITE">
+        <Section n="02" id="supply-chain" title="THE PACKAGES">
           <Reveal>
             <p className="statement-lead col-7">{SITE.install.supplyChain}</p>
           </Reveal>
-          <Reveal>
+          <Reveal className="step">
             <ul className="deps" data-generated="manifest">
               {deps.runtime.map((d) => (
                 <li key={d}><code>{d}</code></li>
@@ -105,8 +108,9 @@ export default function License() {
               ))}
             </ul>
           </Reveal>
-          <Reveal>
-            <p className="col-7">
+          <Reveal className="grid-12 step">
+            <span className="col-note prose-label">MANIFEST</span>
+            <p className="col-9 prose-body">
               Each carries its own terms, which travel with the package rather than with this
               page. The list is read from <code>web/package.json</code> when the site is built, so
               adding a package changes this page and forgetting to is not possible.

@@ -61,15 +61,16 @@ export default function Terms() {
           </Reveal>
         </header>
 
-        <Section n="01" id="operator" title="THERE IS NO OPERATOR">
+        <Section n="01" id="operator" title="NO OPERATOR">
           <Reveal>
             <p className="statement-lead col-7">
               Terms of use are an agreement between a reader and whoever runs a site. There is no
               legal person on the other side of this one.
             </p>
           </Reveal>
-          <Reveal>
-            <p className="col-7">
+          <Reveal className="grid-12 step">
+            <span className="col-note prose-label">CHECKED</span>
+            <p className="col-9 prose-body">
               That is not a turn of phrase. No company, contact address or ownership line appears
               anywhere on this site, and a test in <code>web/test/site.test.ts</code> fails the
               build if one does — so nothing here can quietly start speaking for an entity that
@@ -79,12 +80,13 @@ export default function Terms() {
           </Reveal>
         </Section>
 
-        <Section n="02" id="code" title="WHAT GOVERNS THE CODE">
+        <Section n="02" id="code" title="WHAT GOVERNS IT">
           <Reveal>
             <p className="statement-lead col-7">The licence in the repository, and only that.</p>
           </Reveal>
-          <Reveal>
-            <p className="col-7">
+          <Reveal className="grid-12 step">
+            <span className="col-note prose-label">LICENCE</span>
+            <p className="col-9 prose-body">
               Using, copying and changing the software is covered by <code>LICENSE</code>, which
               is named on <a href="/legal/license/">the licence page</a> by reading it. This page
               adds nothing to it. A terms document that added a restriction the licence does not
@@ -93,22 +95,23 @@ export default function Terms() {
           </Reveal>
         </Section>
 
-        <Section n="03" id="warranty" title="WHAT IS NOT PROMISED">
+        <Section n="03" id="warranty" title="NO WARRANTY">
           <Reveal>
             <p className="statement-lead col-7">
               The licence disclaims warranty and liability. It says so in its own words, in two
               numbered sections.
             </p>
           </Reveal>
-          <Reveal>
+          <Reveal className="step">
             <ul className="warnings" data-generated="license">
               {sections.map((s) => (
                 <li key={s}>{s}</li>
               ))}
             </ul>
           </Reveal>
-          <Reveal>
-            <p className="col-7">
+          <Reveal className="grid-12 step">
+            <span className="col-note prose-label">OPERATIVE</span>
+            <p className="col-9 prose-body">
               Read them in <code>LICENSE</code>. They are the operative text; the headings above
               are read from that file at build time so that this page cannot cite a section number
               that has moved.

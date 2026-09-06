@@ -42,12 +42,13 @@ export default function Privacy() {
           </Reveal>
         </header>
 
-        <Section n="01" id="collected" title="WHAT THIS SITE COLLECTS">
+        <Section n="01" id="collected" title="WHAT IS COLLECTED">
           <Reveal>
             <p className="statement-lead col-7">Nothing, because there is nothing here to do it.</p>
           </Reveal>
-          <Reveal>
-            <p className="col-7">
+          <Reveal className="grid-12 step">
+            <span className="col-note prose-label">STATIC</span>
+            <p className="col-9 prose-body">
               The site is a static export — <code>output: &quot;export&quot;</code> in{" "}
               <code>web/next.config.ts</code> — so what a host serves is a directory of files. No
               code of ours runs when you open a page, which means there is no form to submit, no
@@ -56,13 +57,13 @@ export default function Privacy() {
           </Reveal>
         </Section>
 
-        <Section n="02" id="loaded" title="WHAT YOUR BROWSER LOADS">
+        <Section n="02" id="loaded" title="WHAT YOU LOAD">
           <Reveal>
             <p className="statement-lead col-7">
               Only files from wherever you are reading this.
             </p>
           </Reveal>
-          <Reveal>
+          <Reveal className="step">
             <ul className="warnings">
               <li>
                 No analytics or telemetry package is installed. The check is a test of the same
@@ -82,14 +83,15 @@ export default function Privacy() {
           </Reveal>
         </Section>
 
-        <Section n="03" id="session" title="THE ONE PAGE THAT MAKES A REQUEST">
+        <Section n="03" id="session" title="THE ONE REQUEST">
           <Reveal>
             <p className="statement-lead col-7">
               The session page talks to your own machine, and to nothing else.
             </p>
           </Reveal>
-          <Reveal>
-            <p className="col-7">
+          <Reveal className="grid-12 step">
+            <span className="col-note prose-label">LOOPBACK</span>
+            <p className="col-9 prose-body">
               It drives a session over <code>hydra gui</code>&apos;s local API — by default{" "}
               <code>http://127.0.0.1:8787</code>, or an address you hand it. That address is the
               only one it ever calls. If you open it from a link carrying a token, the token is
@@ -100,14 +102,15 @@ export default function Privacy() {
           </Reveal>
         </Section>
 
-        <Section n="04" id="host" title="WHAT THIS PAGE CANNOT SPEAK FOR">
+        <Section n="04" id="host" title="WHAT A HOST SEES">
           <Reveal>
             <p className="statement-lead col-7">
               Whoever serves you these files sees that they served them.
             </p>
           </Reveal>
-          <Reveal>
-            <p className="col-7">
+          <Reveal className="grid-12 step">
+            <span className="col-note prose-label">NOT OURS</span>
+            <p className="col-9 prose-body">
               A web server logs the request: an address, a time, a path. That is the host&apos;s
               behaviour and not this site&apos;s, and no sentence written here would change it —
               which is why the honest thing is to say so rather than to write a paragraph that
