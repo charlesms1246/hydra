@@ -5,8 +5,12 @@ import { Figure, INK, Tick } from "./Figure.tsx";
  * Where a message goes, with every number taken from `MEASURED`.
  *
  * The prose says a pointer goes on chain and the body goes to a server that cannot read it. The
- * figure says the same thing and adds the shape the prose cannot carry without becoming a list:
- * two felts one way, a padded blob the other, and four decoys travelling with it.
+ * figure says the same thing and adds the shape the prose cannot carry without becoming a list.
+ *
+ * ⛔ **The labels are in a reader's words, not the project's.** They said `2 FELTS`, `sealed,
+ * size-padded`, `1 + 4 DECOYS`. A felt is a Starknet type, padding is our word for a defence, and
+ * a decoy is jargon a reader meets here first — the figure was accurate and unreadable, which is
+ * the failure mode a diagram has that a paragraph does not, because nobody rereads a diagram.
  *
  * **Not one number here is typed.** `noteFelts`, `buckets.length`, `jitterBlocks` and `coverRate`
  * are read from the same constants the disclosure statement quotes, so a change to a default
@@ -31,7 +35,7 @@ export function MessagePath() {
        * long one back over the leader line at y=116, and shortening the string spends the
        * qualification to save the layout. The box was the thing that was wrong.
        */
-      viewBox="0 0 380 150"
+      viewBox="0 0 396 150"
       label={
         `A message splits in two: ${MEASURED.noteFelts} values go on chain as a pointer, and the `
         + `body goes to a storage server as a sealed blob padded to one of `
@@ -63,10 +67,10 @@ export function MessagePath() {
 
       {/* chain leg */}
       <rect x={118} y={18} width={90} height={24} fill="none" stroke={INK.g48} />
-      <Tick x={163} y={33} anchor="middle" fill={INK.g80}>{MEASURED.noteFelts} FELTS</Tick>
+      <Tick x={163} y={33} anchor="middle" fill={INK.g80}>{`${MEASURED.noteFelts} numbers`}</Tick>
       <path d="M208 30 L262 30" stroke={INK.g32} />
-      <Tick x={266} y={27} fill={INK.g64}>ON CHAIN</Tick>
-      <Tick x={266} y={38} fill={INK.g32}>public, permanent</Tick>
+      <Tick x={266} y={27} fill={INK.g64}>ON THE CHAIN</Tick>
+      <Tick x={266} y={38} fill={INK.g32}>anyone can read it</Tick>
 
       {/* vault leg — the message and its decoys, indistinguishable */}
       {Array.from({ length: total }, (_, i) => (
@@ -84,8 +88,8 @@ export function MessagePath() {
         />
       ))}
       <path d="M188 116 L262 116" stroke={INK.g32} />
-      <Tick x={266} y={113} fill={INK.g64}>TO THE VAULT</Tick>
-      <Tick x={266} y={124} fill={INK.g32}>sealed, size-padded</Tick>
+      <Tick x={266} y={113} fill={INK.g64}>TO A SERVER</Tick>
+      <Tick x={266} y={124} fill={INK.g32}>it cannot read it</Tick>
 
       {/* ⛔ These two are two units apart on y and both start inside the same span on x, which is
           how `YOURS` came to be printed through `DECOYS` in accent red at every width — a
@@ -95,10 +99,10 @@ export function MessagePath() {
           Space below is not available: y=142 is `padded to one of N sizes` and the rects occupy
           104-128. */}
       <Tick x={118} y={86} fill={INK.g48}>
-        {`1 + ${decoys} DECOYS · ≤${MEASURED.jitterBlocks} BLOCKS LATE`}
+        {`yours + ${decoys} fakes, sent minutes late`}
       </Tick>
       <Tick x={118} y={142} fill={INK.g32}>
-        {`padded to one of ${MEASURED.buckets.length} sizes`}
+        {`all the same size, so size says nothing`}
       </Tick>
       <Tick x={149} y={99} anchor="middle" fill={INK.accent}>YOURS</Tick>
     </Figure>
