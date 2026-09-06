@@ -1,7 +1,7 @@
 /**
  * How linkable sending is right now — the number, and the rules for not lying with it.
  *
- * `decisions/0029` and its amendment. `channel.activeAccount` on the disclosure table says an
+ * `channel.activeAccount` on the disclosure table says an
  * operator holding the vault's grouping and the public chain can ask whose chain events' upload
  * windows contain this channel's objects, and get **100%** for the account that sent them. What
  * decides whether that names anybody is how many OTHER accounts published often enough to cover
@@ -27,12 +27,12 @@
  * and 2.3 at the design window. No published figure could stand in for that, which is the whole
  * argument for reading it at the moment of sending.
  *
- * **WHAT `decisions/0042` DOES TO THIS FILE: it makes it MOOT FOR PRIVATE MESSAGING, and leaves it
- * meaningful for publishing. It does not make it wrong.**
+ * **WHAT TAKING THE CHAIN OUT OF PRIVATE MESSAGING DOES TO THIS FILE: it makes it MOOT THERE, and
+ * leaves it meaningful for publishing. It does not make it wrong.**
  *
  * Everything here measures **chain** linkability: how many other accounts published inside the
  * jitter window that covers your uploads, and therefore how well an operator joining the chain to
- * the vault can pick you out. `0042` removes the chain leg from private messaging entirely — so for
+ * the vault can pick you out. Removing the chain leg from private messaging removes all of it — so for
  * a private conversation there are no events, no publishing accounts, and **no crowd to be in**,
  * because the observation this defends against no longer happens.
  *
@@ -276,7 +276,7 @@ export function linkability(
  * Measured on real mainnet: on quiet ranges every aggressive pruning rule reaches a crowd of
  * zero, and zero means an observer naming the sender is right **every time**. A rendering that
  * treated that as the error case, with the healthy number as the default, would be a reassurance
- * meter — which is the thing `decisions/0029` decided this must not be.
+ * meter, which is the thing this must not be.
  *
  * THREE RULES THE WORDING IS HELD TO, each asserted in `crowd.test.ts`:
  *

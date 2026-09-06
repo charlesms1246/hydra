@@ -60,7 +60,7 @@ export const NOTE_FELTS = 2;
 export const BUCKETS: readonly number[] = [1024, 4096, 16384, 65536, 262144];
 
 /**
- * How often a client asks its vault for what has arrived — `decisions/0042` §2c.
+ * How often a client asks its vault for what has arrived.
  *
  * **CONSTANT, AND THAT IS A DISCLOSURE PROPERTY RATHER THAN AN IMPLEMENTATION DETAIL.** The two
  * variants have opposite consequences and the difference was measured, not argued

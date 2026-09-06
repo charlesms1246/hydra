@@ -1,7 +1,7 @@
 /**
  * Deleting an encrypted blob — a capability, not a report.
  *
- * `decisions/0035` §1: for an encrypted blob the operator has no information and nothing to judge,
+ * For an encrypted blob the operator has no information and nothing to judge,
  * because the only party who can read it has already fetched it. So there is no moderation path
  * for this class. There is a capability instead, and the operator holds no discretion over it —
  * the token verifies or it does not, and there is no judgement to compel.
@@ -11,8 +11,9 @@
  * post could destroy it. A blob id is public by construction. This is derived material that is
  * not, so being able to read an object is not being able to remove it.
  *
- * WHOSE CAPABILITY IT IS DEPENDS ON THE CLASS OF CONTENT, and getting that wrong would undo
- * `decisions/0026`.
+ * WHOSE CAPABILITY IT IS DEPENDS ON THE CLASS OF CONTENT, and getting that wrong would undo the
+ * authorship guarantee — a counterparty who could destroy signed content leaves the commitment and
+ * the signature standing with nothing to check them against.
  *
  *   deniable content   derived from the CHANNEL — either party may clear it, which is what
  *                      deniable means: neither of them can prove anything about it anyway.

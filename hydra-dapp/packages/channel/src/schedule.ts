@@ -68,7 +68,7 @@ export const MIN_JITTER_BLOCKS = 8;
  *      60000     480s    65.9   0.015     31.3   0.061
  *
  * THE MAGNITUDE IS NOT A CONSTANT and the two runs differ by about a factor of two — the crowd
- * is a property of who happened to be publishing, which is why `decisions/0029` insists the
+ * is a property of who happened to be publishing, which is why the
  * number is read per conversation rather than published as one. The SHAPE is stable, and the
  * shape is the whole argument: sixteen seconds leaves the operator right half the time in both.
  *

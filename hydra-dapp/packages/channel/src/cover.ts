@@ -338,8 +338,8 @@ export function saltFrom(commitment: bigint): Salt {
     throw new Error(
       `a commitment of ${commitment} is too small to be one — a Poseidon hash lands below 2^64 `
       + "about once in 2^187 times, so this is a counter, an index, or a field nobody set. "
-      + "Salting cover with it would let a second device on this identity mint the same decoys; "
-      + "see claude-docs/decisions/0033.");
+      + "Salting cover with it would let a second device on this identity mint the same decoys, "
+      + "and a colliding content-addressed id is what proves two clients share an identity.");
   }
   if (commitment >= P) throw new Error(`a commitment must be a felt: ${commitment} is not below P`);
   return commitment as Salt;

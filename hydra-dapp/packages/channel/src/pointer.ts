@@ -4,9 +4,8 @@
  * The chain publishes timestamped events. The vault sees timestamped uploads. If the value
  * published on chain is the blob id, the two timelines join on that value and the vault
  * operator maps every blob to a channel while holding no key and decrypting nothing. So the
- * pointer carries `blob_id` masked under a channel-scoped, per-message pad
- * (`claude-docs/HYDRA_HANDOFF.md` I3: "carry `enc(channel_key, blob_id)` or a channel-scoped
- * KDF derivation").
+ * pointer carries `blob_id` masked under a channel-scoped, per-message pad — either
+ * `enc(channel_key, blob_id)` or a channel-scoped KDF derivation, which is I3.
  *
  * WHICH channel key, and this is the part that is easy to get wrong. Not the pool's. The pool
  * derives channel keys from the viewing key it escrows to the auditor
