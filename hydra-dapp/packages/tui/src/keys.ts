@@ -3,8 +3,9 @@
  *
  * `readline.emitKeypressEvents` would do this and it is not used, for one reason: it needs a
  * real stream and a real TTY, so every test of key handling would need a pty. Decoding here
- * means `test/render.test.ts` can feed the app a string and assert on the frame, which is the
- * only way the interface itself gets tested rather than the functions behind it.
+ * means `adversary/test/tui-conversation.test.ts` can feed the app a string and assert on the
+ * frame, which is the only way the interface itself gets tested rather than the functions behind
+ * it.
  *
  * The decoder is deliberately partial. It knows the sequences this interface binds and returns
  * the raw text for everything else, so an unbound key types itself into a field instead of

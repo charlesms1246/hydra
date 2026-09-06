@@ -447,7 +447,7 @@ export function open(state: State, name: string, bundle: Bundle): PrekeyMessage 
  * The delivery costs a disclosure and it is not a small one: the mailbox slots are a public
  * function of the recipient's identity key, so the vault operator can see that this person is
  * reachable and count what is waiting for them. `observations.ts` `DERIVABLE` carries the rows
- * and `inbox-derivations.test.ts` performs the derivation. There is no version of this without
+ * and `derivations.test.ts` performs the derivation. There is no version of this without
  * accounts, and accounts would disclose more.
  */
 export async function openAndSend(

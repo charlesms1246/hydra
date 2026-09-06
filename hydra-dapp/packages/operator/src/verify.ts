@@ -45,7 +45,7 @@ const VALID = new Set([
  * they asserted the request matched what the code built, and the code built the name. A stub
  * cannot tell you the shape it was copied from is wrong.
  *
- * Derived rather than recalled. `live-record-anchor.ts` carries the same warning next to its own
+ * Derived rather than recalled. `live-record-anchor.test.ts` carries the same warning next to its own
  * selectors: this is a 250-bit number, and a wrong one does not fail loudly — it fails as
  * "entrypoint not found" or, worse, as somebody else's function.
  */

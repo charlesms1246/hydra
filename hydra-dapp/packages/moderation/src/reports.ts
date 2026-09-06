@@ -292,8 +292,15 @@ export class Reports {
    * carry `blobId, outcome, category, at` and nothing else, which is `DECISIONS-NEEDED.md` D8's
    * stated default — no reporter identity, ever. Report BODIES appear only for reviews that are
    * still OPEN, because `decide` drops them already: a body is retained exactly as long as a
-   * human still needs to read it, and not one invocation longer. `store.test.ts` checks that no
-   * decided object has a body anywhere in the file, which is the property this comment claims.
+   * human still needs to read it, and not one invocation longer.
+   *
+   * **THAT SENTENCE CITED A FILE NAMED store.test.ts, WHICH HAS NEVER EXISTED IN THIS
+   * REPOSITORY**, and
+   * nothing asserted the property — the code did what the comment said and nothing held it there.
+   * The citation was worse than no citation: an unguarded property carrying a claim that it is
+   * guarded sends away the one reader best placed to close it. `reports-retention.test.ts` now
+   * checks it, over the SERIALISED BYTES rather than the object shape, before and after a decision
+   * and across a restore.
    *
    * How long DECISIONS live is still open and rides with D7 — see D8. This does not settle it,
    * and deliberately provides no expiry, because a default retention period invented here would
