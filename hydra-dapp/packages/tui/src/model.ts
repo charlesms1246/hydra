@@ -203,6 +203,21 @@ export type View = {
   /** No `effect`: which button was pressed is the reducer's business, not the screen's. */
   readonly confirm: { readonly question: string; readonly label: string } | null;
   readonly cite: boolean;
+  /**
+   * Whether the help overlay is up.
+   *
+   * A flag and not a seventh `Page`, for two reasons that are both about this interface rather
+   * than about taste. The nav bar already spends 79 columns on six tabs, so a seventh does not
+   * fit at the width most terminals open at — the label would be truncated on the page whose job
+   * is telling you what exists. And help is the one screen you want to leave by returning to
+   * exactly where you were, which a page cannot do without remembering where you came from.
+   *
+   * `confirm` is the same shape for the same reason and this follows it: the body is taken over,
+   * the page underneath is untouched, and one keystroke gives it back.
+   */
+  readonly help: boolean;
+  /** How far help is scrolled. Its own offset so reading it does not move the page underneath. */
+  readonly helpScroll: number;
   readonly signing: boolean;
   readonly now: number;
 };

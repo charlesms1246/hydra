@@ -138,6 +138,17 @@ export type Model = {
   readonly busy: string | null;
   readonly confirm: { readonly question: string; readonly label: string; readonly effect: Effect } | null;
   readonly cite: boolean;
+  /** Whether the help overlay is up. See {@link View.help} in `model.ts` for why it is not a page. */
+  readonly help: boolean;
+  /**
+   * How far help is scrolled — its OWN offset, not `scroll`.
+   *
+   * Help does not fit on a short terminal, so it has to scroll, and it is drawn over a page that
+   * may be scrolled itself. Reusing `scroll` would mean reading help moved the Status page under
+   * it, which the user would find on dismissing and would have no way to explain. Reset when help
+   * opens rather than remembered: it is a screen you read from the top.
+   */
+  readonly helpScroll: number;
   /**
    * Whether the next message will be signed.
    *
@@ -169,6 +180,8 @@ export function start(state: State | null, now: number): Model {
     busy: null,
     confirm: null,
     cite: false,
+    help: false,
+    helpScroll: 0,
     signing: false,
     now,
     quit: false,
@@ -269,6 +282,19 @@ function key(m: Model, k: Key): Step {
     return just(m);
   }
   if (k.t === "ctrl" && k.value === "c") return just({ ...m, quit: true });
+  // ANY key, and it is checked AFTER `confirm` on purpose. Help is a reminder and dismissing it
+  // should cost no thought; a consent dialog is the opposite, so opening help over one must not
+  // become a way to answer it. Nothing else is consumed — the page underneath is untouched, so
+  // the keystroke that puts it away is the only one help costs.
+  if (m.help) {
+    if (k.t === "up" || (k.t === "char" && k.value === "k")) {
+      return just({ ...m, helpScroll: Math.max(0, m.helpScroll - 1) });
+    }
+    if (k.t === "down" || (k.t === "char" && k.value === "j")) {
+      return just({ ...m, helpScroll: m.helpScroll + 1 });
+    }
+    return just({ ...m, help: false });
+  }
   if (m.typing) return typed(m, k);
   return command(m, k);
 }
@@ -316,6 +342,7 @@ function command(m: Model, k: Key): Step {
     if (digit >= 0 && m.page !== "setup") return just(go(m, PAGES[digit].id));
     if (k.value === "]" && m.page !== "setup") return just(cycle(m, 1));
     if (k.value === "[" && m.page !== "setup") return just(cycle(m, -1));
+    if (k.value === "?") return just({ ...m, help: true, helpScroll: 0 });
     if (k.value === "i" && fields.length) return just({ ...m, typing: true });
     if (k.value === "q") return just({ ...m, quit: true });
     return action(m, k.value);
@@ -587,6 +614,8 @@ export function viewOf(m: Model): View {
     // The effect is dropped: which button was pressed is the reducer's business.
     confirm: m.confirm ? { question: m.confirm.question, label: m.confirm.label } : null,
     cite: m.cite,
+    help: m.help,
+    helpScroll: m.helpScroll,
     signing: m.signing,
     now: m.now,
   };

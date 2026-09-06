@@ -33,6 +33,7 @@
 
 import { box, beside, fit, frame, paint, truncate, wrap, width } from "./screen.ts";
 import { PAGES, FIELDS, channelNames, selected, due } from "./model.ts";
+import { scaled } from "./logo.ts";
 import type { Page, View } from "./model.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
@@ -70,14 +71,24 @@ const activity = (m: View): string => {
   return waiting ? paint(`○ ${waiting} scheduled`, "gray") : paint("○ idle", "gray");
 };
 
+/**
+ * The footer, per page.
+ *
+ * **`? help` LEADS EVERY ONE OF THEM, AND THE ORDER IS THE WHOLE POINT.** This line is truncated
+ * at the terminal's width, and the Chats footer was already 79 columns before help existed — so
+ * appending the one key that finds everything else would have put it past the edge at exactly the
+ * width most terminals open at. `effects.ts` states the rule this follows: truncation eats the
+ * tail, so the tail has to be the part you can afford to lose. Everything after `? help` is
+ * repeated on the help screen; `? help` is not repeated anywhere.
+ */
 const KEYS: Record<Page | "setup", string> = {
-  setup: "i type · Tab field · Enter create identity · ctrl-c quit",
-  chats: "i type · Enter send · s sign · r read · D forget · j/k channel · f flush · q quit",
-  connect: "i type · Tab field · Enter invite · e export bundle · c collect · q quit",
-  identity: "R rotate prekey · 1-6 pages · q quit",
-  record: "i type · Tab field · A write mine · C check theirs · 1-6 pages · q quit",
-  disclosure: "c citations · j/k scroll · 1-6 pages · q quit",
-  status: "f flush now · j/k scroll · 1-6 pages · q quit",
+  setup: "? help · i type · Tab field · Enter create identity · ctrl-c quit",
+  chats: "? help · i type · Enter send · s sign · r read · D forget · j/k channel · f flush · q quit",
+  connect: "? help · i type · Tab field · Enter invite · e export bundle · c collect · q quit",
+  identity: "? help · R rotate prekey · 1-6 pages · q quit",
+  record: "? help · i type · Tab field · A write mine · C check theirs · 1-6 pages · q quit",
+  disclosure: "? help · c citations · j/k scroll · 1-6 pages · q quit",
+  status: "? help · f flush now · j/k scroll · 1-6 pages · q quit",
 };
 
 const field = (m: View, index: number, key: string, label: string, cols: number): string => {
@@ -107,6 +118,35 @@ const bullet = (text: string, cols: number, marker = "- "): string[] => {
   const n = width(marker);
   return wrap(text, cols - n).map((l, i) => (i === 0 ? marker : " ".repeat(n)) + l);
 };
+
+/**
+ * The mark, on the pane that has no conversation to draw yet.
+ *
+ * An empty message pane with one grey sentence in it reads as a client that has not finished
+ * loading. This is the first thing a new user sees after `init` and it should look like the
+ * product rather than like a blank.
+ *
+ * **THE SENTENCE STAYS UNDER IT.** The mark is decoration and "open one on Connect (2)" is the
+ * only affordance on the page — a splash that replaced it would be a nicer-looking dead end. It
+ * is drawn in `gray` for the same reason: this pane holds messages and their attribution marks,
+ * and decoration that competes with those for attention is decoration that costs something.
+ *
+ * Falls back to the sentence alone when the pane is too small to hold a mark worth drawing. The
+ * cutoff is height rather than taste: below about four rows the outer ring closes into a blob.
+ */
+function splash(cols: number, rows: number): string[] {
+  const caption = wrap("no channels yet. open one on Connect (2).", cols);
+  const artRows = rows - caption.length - 1;
+  if (artRows < 4 || cols < 12) return caption.map((l) => paint(l, "gray"));
+  const art = scaled(cols, artRows);
+  const pad = Math.max(0, Math.floor((cols - Math.max(0, ...art.map(width))) / 2));
+  return [
+    ...Array.from({ length: Math.max(0, Math.floor((artRows - art.length) / 2)) }, () => ""),
+    ...art.map((l) => paint(" ".repeat(pad) + l, "gray")),
+    "",
+    ...caption.map((l) => paint(l, "gray")),
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // Pages
@@ -142,11 +182,11 @@ function chats(m: View, size: Size, height: number): string[] {
         msg.text, size.cols - listWidth - 4,
         paint(who.mark, tone) + " " + paint(`${who.name}  `, msg.mine ? "gray" : "cyan"));
     })
-    : note(current
-      ? "nothing read yet. `r` fetches every chain event and asks the vault for every "
+    : current
+      ? note("nothing read yet. `r` fetches every chain event and asks the vault for every "
         + "candidate id at once — that batch IS the read defence, and it is why reading is "
-        + "quadratic in the number of events."
-      : "no channels. open one on Connect (2).", size.cols - listWidth - 4);
+        + "quadratic in the number of events.", size.cols - listWidth - 4)
+      : splash(size.cols - listWidth - 4, top - 2);
 
   const visible = body.slice(Math.max(0, body.length - (top - 2)));
 
@@ -374,6 +414,73 @@ function setup(m: View, size: Size, height: number): string[] {
 }
 
 /**
+ * What the interface is, for someone who has just met it.
+ *
+ * **IT DESCRIBES THE INTERFACE AND NOT THE PRODUCT'S CLAIMS, and that split is the point.** Every
+ * page in this client already carries the cost of what it does next to the button that does it —
+ * this file's header says so — and Disclosure (5) is generated from the code that makes it true.
+ * A help screen that restated any of that would be a second, hand-written copy of sentences whose
+ * whole value is that nobody wrote them by hand. So this points at them and says nothing they say.
+ *
+ * **THE PURPOSES ARE A `Record<Page, …>`, WHICH IS THE `initialFields` LESSON APPLIED.** A page
+ * added to `PAGES` with no line here is a type error rather than a help screen that has quietly
+ * stopped listing a page — which is the failure `usage()` in `cli.ts` had, where a hardcoded
+ * `slice(3, 30)` dropped four commands off the only place a user finds out they exist. The order
+ * comes from `PAGES` for the same reason: two lists agreeing by hand is two lists.
+ */
+const PURPOSE: Record<Page, string> = {
+  chats: "read and write. Enter sends, `s` switches between deniable and signed before you do.",
+  connect: "start a conversation. you need their bundle file; Enter delivers your half through "
+    + "the vault, so only one file ever changes hands.",
+  identity: "your fingerprint, to read aloud to the person you are talking to by some other "
+    + "means. `R` destroys the current prekey and mints fresh ones.",
+  record: "publish your signing key at a Starknet address, or check that someone else's matches "
+    + "what you handshook with.",
+  disclosure: "what every party involved can see. generated from the code, not written; `c` "
+    + "shows what each line is generated from.",
+  status: "where this client is pointed, and what it is about to upload. the queue moves on a "
+    + "clock rather than on your command.",
+};
+
+function helpBody(m: View, size: Size, height: number): string[] {
+  const inner = size.cols - 4;
+  const row = (keys: string, what: string) =>
+    bullet(what, inner, paint(fit(keys, 16), "bold"));
+  const lines = [
+    paint("getting around", "bold"),
+    ...row("1-6", "go straight to a page"),
+    ...row("[  ]", "previous page, next page"),
+    ...row("?", "this screen. any key puts it away and gives you back the page underneath"),
+    ...row("q  ctrl-c", "quit. nothing is left running"),
+    "",
+    paint("typing", "bold"),
+    ...note("THIS INTERFACE IS MODAL. letters do things until you press `i`, and type until you "
+      + "press Esc. that is why `q` can be a key at all.", inner),
+    ...row("i", "start typing into the highlighted field"),
+    ...row("Esc", "stop typing"),
+    ...row("Tab  shift-Tab", "move between the fields on the page"),
+    ...row("Enter", "the page's one action — the footer at the bottom names it"),
+    "",
+    paint("the pages", "bold"),
+    ...PAGES.flatMap((p, i) => bullet(PURPOSE[p.id], inner, paint(fit(`${p.label} (${i + 1})`, 16), "cyan"))),
+    "",
+    paint("what it does while you are not looking", "bold"),
+    ...note("this client stays running because it has to: uploads are scheduled for a jittered "
+      + "moment after the chain event, and a client that only ran when you typed would send a "
+      + "message and all of its cover in one burst. the top right corner says what it is doing "
+      + "and Status (6) says what is queued.", inner),
+  ];
+  // Clamped so `j` cannot scroll the screen into nothing: `slice` past the end returns [], and a
+  // help screen that can be paged into a blank box is a help screen that looks broken.
+  const top = Math.min(m.helpScroll, Math.max(0, lines.length - (height - 2)));
+  return box(lines.slice(top), {
+    width: size.cols, height,
+    title: `help — what the keys do${top ? ` · ${top + 1}/${lines.length}` : ""}`,
+    focus: true,
+  });
+}
+
+/**
  * A question, as the whole body.
  *
  * It takes the page over rather than sharing the status line, because the status line is one row
@@ -408,13 +515,19 @@ export function render(m: View, size: Size): string[] {
   const header = fit(head, Math.max(0, size.cols - width(right) - 1)) + " " + right;
 
   const bodyHeight = Math.max(6, size.rows - 4);
-  const body = m.confirm ? confirmBody(m, size, bodyHeight) : PAGE_BODY[m.page](m, size, bodyHeight);
+  // Help sits OVER the page and `confirm` sits over both. A consent dialog is the one thing on
+  // screen that must not be displaceable by a reminder — see the dismissal rule in `app.ts`.
+  const body = m.confirm ? confirmBody(m, size, bodyHeight)
+    : m.help ? helpBody(m, size, bodyHeight)
+      : PAGE_BODY[m.page](m, size, bodyHeight);
 
   const last = m.log[m.log.length - 1];
   const tone = last?.tone === "bad" ? "red" : last?.tone === "warn" ? "yellow" : "gray";
   const line = paint(truncate(last ? last.text : "", size.cols), tone as "gray");
 
-  const keys = m.confirm ? "y confirm · any other key cancels" : KEYS[m.page];
+  const keys = m.confirm ? "y confirm · any other key cancels"
+    : m.help ? "any key returns to the page underneath · j/k scroll"
+      : KEYS[m.page];
   return [header, ...body, line, paint(truncate(keys, size.cols), "gray")];
 }
 
