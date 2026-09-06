@@ -20,8 +20,8 @@
  * design exists to deny.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync }
-  from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync,
+  writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { isEnvelope, open as openEnvelope, promptPassphrase, seal } from "./at-rest.ts";
 import type { PrekeyStore } from "../../handshake/src/prekeys.ts";
@@ -371,6 +371,26 @@ export function locked(): boolean {
   try { return isEnvelope(JSON.parse(readFileSync(STATE_FILE, "utf8"))); } catch { return false; }
 }
 
+/**
+ * What the file looked like when a state was read out of it, per state object.
+ *
+ * **A `WeakMap`, KEYED ON THE OBJECT, RATHER THAN A FIELD ON THE STATE.** A field would be
+ * serialised into the file, which makes the record of the file part of the file. Keying on the
+ * object also gets the scope exactly right: `load()` returns a fresh object per call, so two
+ * holders of one file are two entries, which is precisely the situation being guarded.
+ *
+ * `decisions/0048`.
+ */
+const readAs = new WeakMap<State, { mtimeMs: number; size: number }>();
+
+/** How the file stands now, or `null` if there is no file. */
+function stampOf(): { mtimeMs: number; size: number } | null {
+  try {
+    const s = statSync(STATE_FILE);
+    return { mtimeMs: s.mtimeMs, size: s.size };
+  } catch { return null; }
+}
+
 export function load(): State {
   if (!existsSync(STATE_FILE)) throw new Error(`no state at ${STATE_FILE} — run \`hydra init\` first`);
   let parsed: unknown;
@@ -407,10 +427,49 @@ export function load(): State {
       + `client is ${STATE_VERSION}. Refusing to guess at the difference — a state file read `
       + "wrong is a root key used wrong. Use the client that wrote it, or start fresh.");
   }
-  return parsed as State;
+  const state = parsed as State;
+  const stamp = stampOf();
+  if (stamp) readAs.set(state, stamp);
+  return state;
 }
 
 export function save(state: State): void {
+  // **COMPARE-AND-SWAP, FAILING CLOSED — `decisions/0048`.** Two processes on one `HYDRA_HOME` is a
+  // configuration this client expects: `gui/src/main.ts` re-reads the state on every request
+  // precisely because *"a user may be running the TUI at the same time."* Both load, both change
+  // something, both write the whole file back, and the second erases the first — a message and the
+  // cover objects queued for it, gone, with a recipient left pointing at a blob nobody will
+  // upload. There is no lock between processes and `serialise()` cannot see one.
+  //
+  // **REFUSES; DOES NOT MERGE, RETRY OR OVERWRITE.** A merge would have to decide which client's
+  // sequence number is real. A retry loop would re-apply a change to a state that no longer means
+  // what it meant. Both are ways of guessing, and the thing being guessed about is whether a
+  // user's message exists.
+  //
+  // **AND THIS IS NOT A LOCK.** `renameSync` cannot say "only if the file is still the version I
+  // read", so two savers that both pass this check will both rename. The window goes from however
+  // long a user spends composing to the microseconds between a `stat` and a `rename` — a large
+  // reduction and not a guarantee, and it must not be described as one. `0048` records why an
+  // `O_EXCL` lockfile, which would be the real fix, is not being improvised days out.
+  //
+  // **TWO LIMITS THE MESSAGE HAS TO BE HONEST ABOUT.** A refused save does not re-apply itself —
+  // the change is gone and the user has to make it again — so the sentence says that rather than
+  // implying a queue. And a long-lived holder (the TUI, which loads once at startup) stays refused
+  // until it is restarted, because nothing here re-reads the file on its behalf. That is the
+  // stale-refusal failure `0048` gives as the reason not to improvise a lockfile, and it is
+  // present in a smaller form here: worth knowing before somebody meets it.
+  const seen = readAs.get(state);
+  if (seen) {
+    const now = stampOf();
+    if (now && (now.mtimeMs !== seen.mtimeMs || now.size !== seen.size)) {
+      throw new Error(
+        `${STATE_FILE} changed on disk after this client read it, so saving would erase whatever `
+        + "wrote it — most likely another `hydra` running against the same HYDRA_HOME.\n\n"
+        + "Nothing here has been written, and this client cannot save again until it re-reads the "
+        + "file: close the other one, then start this one again.\n\n"
+        + "Your change is not queued anywhere and will need doing again.");
+    }
+  }
   mkdirSync(dirname(STATE_FILE), { recursive: true, mode: 0o700 });
   // WRITTEN VIA A TEMPORARY FILE AND A RENAME, for the reason the operator queue is: a process
   // interrupted mid-write leaves a truncated file, and `load` then refuses it — correctly — so the
@@ -458,6 +517,12 @@ export function save(state: State): void {
   // Set explicitly as well as at creation: `writeFileSync`'s mode applies only when the file
   // does not already exist, so a file created some other way would keep its own permissions.
   chmodSync(STATE_FILE, 0o600);
+  // **THE HOLDER NOW OWNS THE FILE IT JUST WROTE.** Without this, saving twice from one loaded
+  // state refuses on the second — the client refusing its own writes, which loses a message as
+  // surely as the race does. A resident client saves on a timer, so that is the common path and
+  // not the exotic one.
+  const after = stampOf();
+  if (after) readAs.set(state, after);
 }
 
 export const exists = (): boolean => existsSync(STATE_FILE);
