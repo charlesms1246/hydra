@@ -24,6 +24,18 @@ export const PINS = {
     cmd: ["starknet-devnet", "--version"],
     match: /starknet-devnet (\S+)/,
   },
+  /*
+   * PINNED BECAUSE `BUILD_HINTS.discoveryService` IS `cargo build --release`.
+   *
+   * It was the one tool in this table that was assumed rather than checked: a user without Rust
+   * got `[MISS] artifact: discoveryService` and a remedy they could not run, with nothing on the
+   * page saying why. Every other build the doctor demands has a row naming the tool that performs
+   * it; this one handed over a command and diagnosed nothing.
+   *
+   * `exact: null` for the same reason as `universal-sierra-compiler` — upstream publishes no
+   * cargo pin, so presence is the honest check and claiming a version would be inventing one.
+   */
+  cargo: { exact: null, cmd: ["cargo", "--version"], match: /cargo (\S+)/ },
 };
 
 /** Node is a floor, not an exact pin: >= 24 is required by ohttp-ts (WebCrypto). */
@@ -50,6 +62,9 @@ export const INSTALL_HINTS = {
   // upstream's .tool-versions, so it looked unfixable when it is not.
   "universal-sierra-compiler":
     "curl -fsSL https://raw.githubusercontent.com/foundry-rs/starknet-foundry/master/scripts/install.sh | sh && snfoundryup -v 0.63.0",
+  // Rust's own installer. `cargo` is needed only for the discovery service; the rest of the
+  // stack builds with scarb, which is why a machine can look ready until that one artifact.
+  cargo: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh",
   // mkdir first: tar -C into a directory that does not exist fails, and on a
   // clean machine ~/.local/bin usually does not.
   "starknet-devnet":

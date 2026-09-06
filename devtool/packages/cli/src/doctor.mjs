@@ -123,11 +123,24 @@ export function check() {
   });
 
   const hasUpstream = existsSync(join(up, "Scarb.toml"));
+  /*
+   * COMPARED, not merely counted. This row scored `hasUpstream ? OK : BAD` and printed `want`
+   * beside `got` — so a checkout at the WRONG revision was marked `[ok  ]` and the comparison was
+   * left to a human eyeballing two twelve-character hex strings.
+   *
+   * The pin exists BECAUSE this stack is version-fragile; a row that names a revision and then
+   * does not check it is a guard weaker than the thing it is guarding. `WARN` rather than `BAD`
+   * for the same reason the pinned tools above use it at line 94: the checkout is present, it is
+   * just not the one that was pinned, and `MISS` would say something untrue about a directory
+   * that exists. An unknown revision — a checkout that is not a git repository — is not a pass
+   * either, because nothing has been shown to match.
+   */
+  const at = hasUpstream ? sha(up) : null;
   rows.push({
-    status: hasUpstream ? OK : BAD,
+    status: !hasUpstream ? BAD : at === UPSTREAM_SHA.slice(0, 12) ? OK : WARN,
     name: "upstream checkout",
     want: UPSTREAM_SHA.slice(0, 12),
-    got: hasUpstream ? sha(up) ?? "unknown" : "not found",
+    got: hasUpstream ? at ?? "unknown" : "not found",
     hint: `git clone ${UPSTREAM_REPO} <dir> && git -C <dir> checkout ${UPSTREAM_SHA}\n       then set HYDRA_UPSTREAM=<dir>`,
     // Needs a destination and an env var the tool cannot choose for the user.
     cmd: null,

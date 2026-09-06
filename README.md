@@ -12,53 +12,104 @@ carries a `file:line` citation.
 
 ## Quick start
 
-Requires **Node >= 24** and a checkout of
-[`starknet-privacy`](https://github.com/starkware-libs/starknet-privacy) at
-`980da8affafb9f8350975ca93c03b2299a31ac9b`, either at `.upstream/` beside this repo or pointed
-at by `HYDRA_UPSTREAM`.
+Requires **Node >= 24** and `git`. HYDRA does not vendor the privacy pool — it drives a
+checkout of [`starknet-privacy`](https://github.com/starkware-libs/starknet-privacy) pinned to
+one commit. That pin has a single source of truth, `UPSTREAM_SHA` in
+`devtool/packages/cli/src/pins.mjs`, and `hydra-dev doctor` prints the clone command with it already
+filled in, so it is not repeated here.
 
 ```bash
-hydra() { node packages/cli/src/cli.mjs "$@"; }   # or add packages/cli/src/cli.mjs to PATH
+# 1. HYDRA itself. The published package is `hydra-devtool`; until it is published,
+#    run it from a clone.
+git clone https://github.com/charlesms1246/hydra.git && cd hydra
+hydra-dev() { node devtool/packages/cli/src/cli.mjs "$@"; }   # from the repository root
 
-hydra bootstrap     # install node dependencies
-hydra doctor        # check the toolchain — tells you how to fix whatever is missing
-hydra up            # devnet + pool + funded accounts + local discovery service
-hydra               # the TUI
+# 2. the checkout it drives. Run doctor first — its `upstream checkout` row prints the
+#    exact two commands, pin included. They look like this:
+hydra-dev doctor
+git clone https://github.com/starkware-libs/starknet-privacy .upstream
+git -C .upstream checkout <the commit doctor printed>
+
+# 3. the stack. `.upstream/` inside this repo is found automatically; a checkout anywhere
+#    else needs HYDRA_UPSTREAM=<dir>.
+hydra-dev bootstrap # install node dependencies — the TUI and the linter need them,
+                    # doctor, the CLI and `up` do not
+hydra-dev doctor    # fourteen rows now; it prints the exact fix for anything missing
+hydra-dev up        # devnet + pool + funded accounts + local discovery service
+hydra-dev           # the TUI
 ```
 
-`hydra doctor` is the honest starting point: it verifies twelve pinned tools and build
-artifacts, and prints the exact command for anything missing. It needs no dependencies itself,
-so it works before `bootstrap` does.
+`hydra-dev doctor` is the honest starting point, and how many rows it prints tells you where you
+are: **eight** before the checkout exists — six pinned tools, one property of the machine,
+and the checkout itself — and **fourteen** once it does, adding the six build artifacts. It
+prints the exact command for anything missing, and needs no dependencies itself, so it works
+before `bootstrap` does.
 
 ## The TUI
 
 ```
-hydra
+hydra-dev
 ```
 
-| Pane | What it does |
+It opens on the mark while it probes the machine — the outline fills cyan from the centre as
+each source reports in, then seals red once they all have — and then on an **overview
+dashboard**: the stack, the chain, the toolchain, your wallets, what this session has run, and
+the standing note that the auditor can decrypt all of it.
+
+Every page is on the nav bar along the bottom. The page you are on is filled in; the rest are
+outlined, each with the key that opens it.
+
+| Key | Page |
 |---|---|
-| **Services** | devnet, indexer, prover, MCP and skills — live |
-| **Wallets** | test accounts, balances, and the devnet faucet |
-| **Activity** | recent blocks |
-| **Tools** | the doctor rows, and it can run the fixes (each confirmed first) |
-| **Transact** | shield, register, private transfer — then what that just disclosed |
+| **o** | **Overview** — the dashboard: stack, chain, tooling, wallets, recent runs |
+| **b** | **Wallets** — test accounts, balances, and the devnet faucet (`m` mints) |
+| **c** | **Activity** — recent blocks, and `enter` twice reaches a transaction receipt |
+| **f** | **Disclosure** — the matrix: six parties x five fields, every cell, for the last flow |
+| **x** | **Run** — shield, register, private transfer; `enter` previews what each will disclose |
+| **t** | **Tools** — the doctor rows, and it can run the fixes (each confirmed first) |
+| **j** | **Build** — the contract and Cairo-test operations, read from the checkout's manifests |
+| **l** | **Log** — the live output of whatever is running |
+| **g** | **About** — what this is, why it exists, and every binding, in six sections |
 
-`u` starts the stack, `d` stops it, `q` quits.
+**Nothing needs a modifier key.** `w a s d` and the arrows are movement and only movement —
+`a`/`d` and `←`/`→` walk the nav bar, `enter` opens what the cursor is over, and `w`/`s` and
+`↑`/`↓` move inside the page. That is why the page letters are `o b c f x t j l g`: binding `w`
+to Wallets as well would make one key mean two things depending on where you were.
 
-The Transact pane is the point of the project: it runs a real private transfer against the
-local pool and shows the disclosure underneath it — a public observer learns the *timing*, the
-counterparty learns everything, and the auditor can decrypt everything, always.
+`u` starts the stack, `p` stops it, `r` refreshes, `esc` goes back, `q` quits — and quitting
+asks what to do with a running stack, because leaving devnet and the discovery service up is
+the right answer when you are about to run `hydra-dev status`, and the wrong one when you are done.
+
+Every screen fills the terminal and nothing scrolls: pages are laid out to the size they are
+given, and where a list is longer than its space it says how many rows it dropped rather than
+hiding them behind a scrollbar you have to discover.
+
+The disclosure matrix is the point of the project: it runs a real private transfer against the
+local pool and shows, cell by cell, what that disclosed — a public observer learns the *timing*,
+the counterparty learns everything, and the auditor can decrypt everything, always. Nothing is
+summarised: `not-by-tx` is glossed on screen as *not* a privacy claim — it is scoped to one
+transaction and says nothing about correlation across transactions, off-chain side channels or
+prior knowledge (`devtool/packages/leak/src/facts.mjs:25-30`) — and `UNKNOWN` is never rendered as a pass.
+
+Two things the matrix says about a local run, because they are true and not flattering:
+its `network` is **UNKNOWN** (a devnet is neither mainnet nor Sepolia, so no auditor key is in
+force that this tool can name), and the report describes the **declared action shape, not the
+receipt** — `hydra-dev tx` returns an event count, not decoded events, so nothing here can check a
+report against the transaction it sent.
 
 ## For agents
 
-Every pane is also a command, and every command takes `--json`:
+Every page that reads is also a command, and every command takes `--json`: Disclosure is
+`hydra-dev leak`, the Overview's stack block `hydra-dev status`, Wallets `hydra-dev wallets`, Activity
+`hydra-dev blocks`, Tools `hydra-dev doctor`. Run is the one exception — it submits real transactions
+and has no command twin.
 
 ```bash
-hydra status --json
-hydra indexer --status --json
-hydra wallets --json
-hydra tx 0x07f1… --json
+hydra-dev leak transfer --json
+hydra-dev status --json
+hydra-dev indexer --status --json
+hydra-dev wallets --json
+hydra-dev tx 0x07f1… --json
 ```
 
 Human output is a rendering of the same object, so the TUI and an agent cannot disagree.
@@ -68,11 +119,10 @@ Human output is a rendering of the same object, so the TUI and an agent cannot d
 | Package | What it is |
 |---|---|
 | `core/` | every operation as a plain function returning plain data — zero dependencies |
-| `cli/` | the command surface, `hydra up`, doctor, bootstrap, dapp scaffold |
+| `cli/` | the command surface, `hydra-dev up`, doctor, bootstrap, dapp scaffold |
 | `tui/` | the terminal UI (Ink) |
 | `leak/` | `what_does_this_leak(tx)` — the disclosure set, per party and per field |
 | `linter/` | flags SDK configurations that disclose more than intended |
-| `mcp/` | MCP server exposing endpoints, environment, lint and pool state |
 
 `archive/gui/` holds a browser view of the disclosure matrix; `experiments/` holds the
 measurement harnesses behind the numbers quoted here.
@@ -85,7 +135,7 @@ substituted, and is write-once. This is true of every STRK20 integration, so HYD
 every run rather than leaving it to documentation.
 
 **Your viewing key reaches more parties than you may expect.** Which ones depends on your
-configuration, and that is precisely what `hydra` and the linter compute for you.
+configuration, and that is precisely what `hydra-dev` and the linter compute for you.
 
 A set of findings documenting this in detail, with source citations and two upstream patches,
 is being shared with StarkWare before publication.
@@ -93,7 +143,7 @@ is being shared with StarkWare before publication.
 ## Scaffold a dapp
 
 ```bash
-hydra init dapp
+hydra-dev init dapp
 ```
 
 Clones the official STRK20 starter kit and writes `.env.local` pointing at your running stack.
@@ -102,4 +152,4 @@ different route from the SDK, and one the linter cannot see inside.
 
 ## Licence
 
-Apache-2.0, matching upstream, so contributions flow both ways.
+Apache-2.0, matching upstream, so contributions flow both ways. Full text in [`LICENSE`](LICENSE).

@@ -46,7 +46,7 @@ function usage() {
 
   Interactive
     hydra-dev                 open the TUI
-    hydra-dev bootstrap       install node dependencies (run this first)
+    hydra-dev bootstrap       install node dependencies (the TUI, linter and MCP need them)
     hydra-dev up              start devnet + pool + local discovery service
     hydra-dev down            stop a running stack
     hydra-dev init dapp       scaffold the STRK20 starter kit against this stack
