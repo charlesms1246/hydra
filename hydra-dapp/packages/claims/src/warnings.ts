@@ -226,7 +226,87 @@ export const KEY_LOCKED: Warning = {
   ],
 };
 
+/**
+ * Opening a conversation from a published record, and the three things it costs.
+ *
+ * **THESE WERE FOUR `console.error` LINES IN `cli.ts` AND NOWHERE ELSE.** `hydra lookup` turns a
+ * Starknet address into a bundle with no out-of-band file, which its own comment calls *"the step
+ * that had no path"* — a source could previously only reach an organisation they already had a
+ * relationship with, a prerequisite sitting in front of the surface and undoing its premise. The
+ * TUI, the front end `cli.ts` itself calls *"the one people use"*, did not have the command at all.
+ *
+ * So the command is arriving on a second surface, and the wording it arrives with is the wording
+ * that was already there — moved here rather than retyped. That is this module's entire subject:
+ * three of the four drifts recorded at the top of this file happened because a claim was correct
+ * in one front end and stale in the other, and a claim about to be rendered twice for the first
+ * time is exactly when to stop it being written twice.
+ *
+ * Split into three rather than one, on the same principle as `KEY_IN_CLEAR`/`KEY_LOCKED`: they are
+ * three different kinds of thing — what the check proves, what the shortcut gives up, and who
+ * learns. A reader who needs only the middle one should not have to find it inside the others.
+ */
+export const LOOKUP_KEY_NOT_PERSON: Warning = {
+  id: "lookup.keyNotPerson",
+  surfaces: ["cli", "tui"],
+  because: "`bundleOf` verifies the record's anchor signature against the address before "
+    + "returning anything, so the key provably belongs to that address and to no other — which "
+    + "is a different question from whether the address is the party you mean, and nothing in "
+    + "this client can answer the second; `cli/src/commands.ts` `bundleFromChain`",
+  short: "the record's signature names that address — it does not say the address is who you mean",
+  full: [
+    "The record's signature names that address, so this is their key and not somebody else's",
+    "under their name. What it does NOT tell you is that the address is the organisation you",
+    "mean — that is still a question you answer somewhere else.",
+  ],
+};
+
+/**
+ * What a chain record cannot carry, and it is the thing that makes a first message replayable.
+ *
+ * The one-time prekeys stay in the vault because a chain write is charged per felt and there are
+ * twenty of them. That is a reasonable trade and it is not a free one, so it is stated where the
+ * choice is made rather than where the consequence lands.
+ */
+export const LOOKUP_NO_ONE_TIME: Warning = {
+  id: "lookup.noOneTime",
+  surfaces: ["cli", "tui"],
+  because: "`myRecord` publishes no one-time prekey — there are many, they are consumed, and a "
+    + "chain record charges per felt — so a bundle read off chain has only the signed prekey; "
+    + "`cli/src/commands.ts` `myRecord`",
+  short: "no one-time prekey in a chain record, so a conversation opened from one can be replayed",
+  full: [
+    "NO ONE-TIME PREKEY. Those stay in the vault, so a conversation opened from a chain record",
+    "alone has no replay resistance: someone who records your prekey message can present it",
+    "again. Ask them for a bundle if that matters.",
+  ],
+};
+
+/**
+ * Who learns that you looked — and why this is the better of the two available disclosures.
+ *
+ * **THE COMPARISON IS PART OF THE CLAIM AND IS NOT DECORATION.** Reading a bundle from the peer's
+ * vault would tell the PEER you were considering contacting them, which for the source this
+ * feature exists for is the disclosure that matters. Telling the node instead is a real cost and a
+ * smaller one, and the reason it is smaller is that you choose the node and they do not. A version
+ * of this claim that named only the cost would push a user toward the worse option.
+ */
+export const LOOKUP_NODE_SEES: Warning = {
+  id: "lookup.nodeSees",
+  surfaces: ["cli", "tui"],
+  because: "the lookup is two `starknet_call` requests to the configured RPC, so that node learns "
+    + "your address asked about theirs — where a vault fetch would disclose the same interest to "
+    + "the peer, and the node is the party you pick; `cli/src/commands.ts` `bundleFromChain`",
+  short: "the RPC node you chose learns you asked about that address — the peer does not",
+  full: [
+    "WHO SAW THIS: the RPC node you are configured against, which now knows your address asked",
+    "about theirs. That is better than fetching from their vault — which would tell THEM you were",
+    "considering it — and it is not nothing. You choose the node; they do not. `hydra disclose`",
+    "lists what each party sees.",
+  ],
+};
+
 /** Every warning both front ends must render identically. The guard iterates this. */
 export const WARNINGS: readonly Warning[] =
   [SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, TLS_TERMINATION,
-    KEY_IN_CLEAR, KEY_LOCKED];
+    KEY_IN_CLEAR, KEY_LOCKED,
+    LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES];

@@ -69,20 +69,50 @@ export const PAGES: readonly { readonly id: Page; readonly label: string }[] = [
  * `setup` is not in `PAGES` because it is not a destination: it is what the interface is when
  * there is no identity yet, and it goes away for good once there is one.
  */
-export const FIELDS: Record<Page | "setup", readonly { readonly key: string; readonly label: string }[]> = {
+export const FIELDS: Record<Page | "setup", readonly {
+  readonly key: string;
+  readonly label: string;
+  /**
+   * Not needed to create an identity — needed before the first message.
+   *
+   * **SEVEN FIELDS WERE PRESENTED AS PREREQUISITES OF EXISTING AND NONE OF THEM IS ONE.**
+   * `commands.ts` `init` defaults every field, and `ensureFromBlock` returns early when there is
+   * no contract, so first run makes no network request at all. The wall in front of a new user was
+   * the prerequisites of SENDING, collected at the one moment not one of them is used.
+   *
+   * Marked rather than removed, and this is the deliberately cheap half of that finding. Deferring
+   * a field moves its failure later — a blank `account` fails inside `sncast` at the first send —
+   * and a defer is only honest if each field is then ASKED for at its moment with a named remedy.
+   * That is real work and it is recorded, not built. Saying which half is which costs nothing and
+   * is true today.
+   *
+   * On the entry rather than in a second list in `view.ts`, for the reason `initialFields` exists:
+   * two lists that must agree are two lists, and nothing makes them.
+   */
+  readonly later?: true;
+}[]> = {
   setup: [
     { key: "vault", label: "vault URL" },
     { key: "rpc", label: "chain RPC" },
     { key: "contract", label: "contract address" },
-    { key: "accountsFile", label: "sncast accounts file" },
-    { key: "account", label: "account name" },
-    { key: "network", label: "network (blank for a devnet URL)" },
-    { key: "invites", label: "upload invites, comma separated" },
+    { key: "accountsFile", label: "sncast accounts file", later: true },
+    { key: "account", label: "account name", later: true },
+    { key: "network", label: "network (blank for a devnet URL)", later: true },
+    { key: "invites", label: "upload invites, comma separated", later: true },
   ],
   chats: [{ key: "compose", label: "message" }],
   connect: [
     { key: "peerName", label: "what to call them" },
     { key: "peerBundle", label: "path to their bundle file" },
+    /**
+     * Their Starknet address, as an alternative to having their file at all.
+     *
+     * `hydra lookup` reads a published record off chain and gets a bundle from it, which its own
+     * comment in `cli.ts` calls "the step that had no path": a source could otherwise only reach
+     * an organisation they already had a relationship with, which is a prerequisite sitting in
+     * front of the surface and undoing its premise. The TUI did not have it.
+     */
+    { key: "peerAddress", label: "or their Starknet address, if they published one" },
     { key: "exportPath", label: "write my bundle to" },
   ],
   identity: [],

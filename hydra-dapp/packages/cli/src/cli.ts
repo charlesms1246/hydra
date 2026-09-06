@@ -48,7 +48,8 @@
  */
 
 import { describePost, describeFetch } from "../../client/src/public.ts";
-import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED }
+import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED,
+  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES }
   from "../../claims/src/warnings.ts";
 import { verifyProof } from "../../vault-server/src/root.ts";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -346,19 +347,19 @@ switch (command) {
     console.log(encode(bundle));
     console.error("");
     console.error(`bundle for ${where}, fingerprint ${fingerprint(bundle)}`);
-    console.error("the record's signature names that address, so this is their key and not");
-    console.error("somebody else's under their name. what it does NOT tell you is that the");
-    console.error("address is the organisation you mean — that is still a question you answer");
-    console.error("somewhere else.");
-    console.error("");
-    console.error("NO ONE-TIME PREKEY. those stay in the vault, so a conversation opened from a");
-    console.error("chain record alone has no replay resistance: someone who records your prekey");
-    console.error("message can present it again. ask them for a bundle if that matters.");
-    console.error("");
-    console.error("WHO SAW THIS: the RPC node you are configured against, which now knows your");
-    console.error("address asked about theirs. that is better than fetching from their vault —");
-    console.error("which would tell THEM you were considering it — and it is not nothing. you");
-    console.error("choose the node; they do not. `hydra disclose` lists what each party sees.");
+    // **THESE THREE WERE TYPED HERE AND NOWHERE ELSE, WHICH WAS FINE UNTIL THE TUI GREW THE
+    // COMMAND.** They are now `claims/src/warnings.ts` entries declaring `surfaces: ["cli",
+    // "tui"]`, so `claims-not-duplicated.test.ts` fails if either front end stops rendering one or
+    // starts saying it in its own words. Three of the four drifts that module exists for were a
+    // claim correct in one front end and stale in the other, and a claim about to be rendered
+    // twice for the first time is exactly when to stop it being written twice.
+    //
+    // The sentences are the ones that were here; only the leading capitals were normalised to
+    // match the other entries. Nothing was shortened — a summary on one surface is the drift.
+    for (const w of [LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES]) {
+      console.error("");
+      for (const line of w.full) console.error(line);
+    }
     break;
   }
 

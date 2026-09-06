@@ -86,7 +86,12 @@ test("EVERY FRONT END RENDERS THE SAME CLAIMS, from the same place", () => {
   const symbols = { "compose.signed": "SIGNED", "compose.deniable": "DENIABLE",
     "record.notWritten": "RECORD_NOT_WRITTEN", "identity.secondClient": "SECOND_CLIENT",
     "vault.tlsTermination": "TLS_TERMINATION",
-    "identity.keyInClear": "KEY_IN_CLEAR", "identity.keyLocked": "KEY_LOCKED" };
+    "identity.keyInClear": "KEY_IN_CLEAR", "identity.keyLocked": "KEY_LOCKED",
+    // The three that arrived with `lookup` reaching the TUI. They were four `console.error` lines
+    // in `cli.ts` while only one front end had the command; the moment a second surface renders a
+    // claim is the moment it can drift, which is what this map exists to prevent.
+    "lookup.keyNotPerson": "LOOKUP_KEY_NOT_PERSON", "lookup.noOneTime": "LOOKUP_NO_ONE_TIME",
+    "lookup.nodeSees": "LOOKUP_NODE_SEES" };
   for (const w of WARNINGS) {
     const symbol = symbols[w.id as keyof typeof symbols];
     assert.ok(symbol, `${w.id} has no symbol in this guard — add it, or the claim is unchecked`);

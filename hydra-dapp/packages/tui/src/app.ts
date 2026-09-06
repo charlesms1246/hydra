@@ -92,6 +92,15 @@ export type Effect =
   | { readonly t: "collect" }
   | { readonly t: "rotate" }
   | { readonly t: "invite"; readonly name: string; readonly path: string }
+  /**
+   * Open a conversation from a record published at a Starknet address — no file, either way.
+   *
+   * Separate from `invite` rather than a variant of it, because the two disclose differently: an
+   * invite reads a file off this disk, and this asks the configured RPC node a question about
+   * somebody's address. A single effect with an optional field would make which of those happened
+   * depend on which string was empty.
+   */
+  | { readonly t: "lookup"; readonly name: string; readonly address: string }
   | { readonly t: "export"; readonly path: string }
   /** Write the felts to publish. Writing them is not publishing them — see `identity` in `view.ts`. */
   | { readonly t: "record"; readonly address: string; readonly path: string }
@@ -426,6 +435,16 @@ function action(m: Model, ch: string): Step {
     case "connect":
       if (ch === "c") return run(m, "collect", { t: "collect" });
       if (ch === "e") return run(m, "export", { t: "export", path: m.fields.exportPath || "bundle.json" });
+      if (ch === "l") {
+        if (!m.fields.peerName || !m.fields.peerAddress) {
+          return just(say(m, "a name and their Starknet address, then l", "warn"));
+        }
+        // NO CONFIRM, and that is consistent rather than an oversight. `Enter` opens a channel
+        // without one too, and both disclosures are on the page beside the fields — which is this
+        // interface's rule: the cost sits by the button, not behind a second keystroke. A confirm
+        // here and not on `Enter` would say this path is the riskier of the two, and it is not.
+        return run(m, "lookup", { t: "lookup", name: m.fields.peerName, address: m.fields.peerAddress });
+      }
       return just(m);
     case "record":
       if (ch === "A") {

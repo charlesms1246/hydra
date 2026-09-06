@@ -17,6 +17,7 @@
 
 import {
   init, publishBundle, openAndSend, collect, sendMessage, flush, FLUSH_LIMIT, readChannel, rotatePrekey,
+  bundleFromChain,
   fingerprint, nextOneTime, encodeWire, decodeWire, foreignSends, forget,
   myRecord, anchorPeer, recordFelts, ensureFromBlock, describeFailure,
 } from "../../cli/src/commands.ts";
@@ -187,6 +188,25 @@ async function run(effect: Effect, state: State | null, deps: Deps): Promise<Eve
         // channel mean anything, and it has to be checked by some route that is not this one.
         text: `${effect.name} opened with ${fingerprint(bundle)} → slot ${slot} — check that `
           + "fingerprint with them by some other means",
+      };
+    }
+    case "lookup": {
+      // TWO STEPS, ONE EFFECT, AND THE ORDER MATTERS. `bundleFromChain` asks the node; only if it
+      // answers with a record whose anchor signature names that address does anything reach the
+      // vault. A failed lookup therefore discloses nothing to the vault operator at all — the
+      // channel is never opened and no prekey message is written.
+      const bundle = await bundleFromChain(state, BigInt(effect.address), deps.fetchImpl);
+      const { slot } = await openAndSend(state, effect.name, bundle, deps.fetchImpl);
+      deps.save(state);
+      return {
+        t: "ok", state,
+        // **THE FINGERPRINT AND THE QUALIFICATION, IN THAT ORDER, FOR THE REASON `anchor` LEARNED
+        // THE HARD WAY.** A log line is ONE ROW and is truncated at the terminal width, so the
+        // half that must survive goes first. What survives here is that the key came off chain and
+        // that this still does not say the address is the party they mean — the caveat, not the
+        // success. The full sentences are on the page beside the field, which wraps.
+        text: `${effect.name} opened from chain — ${fingerprint(bundle)} — the record names the `
+          + `address, not the person, and there is no one-time prekey · slot ${slot}`,
       };
     }
     case "forget": {

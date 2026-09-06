@@ -37,7 +37,8 @@ import { scaled } from "./logo.ts";
 import type { Page, View } from "./model.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
-import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED }
+import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED,
+  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES }
   from "../../claims/src/warnings.ts";
 
 export type Size = { readonly rows: number; readonly cols: number };
@@ -84,7 +85,7 @@ const activity = (m: View): string => {
 const KEYS: Record<Page | "setup", string> = {
   setup: "? help · i type · Tab field · Enter create identity · ctrl-c quit",
   chats: "? help · i type · Enter send · s sign · r read · D forget · j/k channel · f flush · q quit",
-  connect: "? help · i type · Tab field · Enter invite · e export bundle · c collect · q quit",
+  connect: "? help · i type · Enter invite · l from address · e export · c collect · j/k · q quit",
   identity: "? help · R rotate prekey · 1-6 pages · q quit",
   record: "? help · i type · Tab field · A write mine · C check theirs · 1-6 pages · q quit",
   disclosure: "? help · c citations · j/k scroll · 1-6 pages · q quit",
@@ -252,8 +253,38 @@ function connect(m: View, size: Size, height: number): string[] {
     "",
     ...note("`e` writes your own bundle to the path above; give that file to whoever wants to "
       + "reach you. `c` accepts whatever is waiting in your vault mailbox.", size.cols - 4),
+    "",
+    // **`l` IS THE STEP THAT HAD NO PATH, AND ITS THREE COSTS SIT UNDER IT RATHER THAN IN HELP.**
+    // Everything above needs their bundle file, which means a source can only reach an
+    // organisation they already have a relationship with — a prerequisite in front of the surface,
+    // undoing its premise. A published record removes the file from both directions.
+    //
+    // FROM `claims/src/warnings.ts`, rendered `full` and not `short`. The CLI has printed these
+    // three since `lookup` existed and this is the second surface to show them, which is precisely
+    // when a sentence starts drifting — so they moved to one source and neither front end owns the
+    // words. `full` because this box wraps and has the room: `short` exists for a status line, and
+    // summarising a disclosure on the surface a user is likelier to be reading is the wrong way
+    // round.
+    paint("or, with no file at all", "bold"),
+    ...note("`l` opens a conversation from a record they published at a Starknet address. put "
+      + "their address in the field above.", size.cols - 4),
+    ...[LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES]
+      .flatMap((w) => note(w.full.join(" "), size.cols - 4).concat("")),
   ];
-  return box(lines, { width: size.cols, height, title: "start a conversation", focus: m.typing });
+  // **SCROLLED, BECAUSE THE THIRD CAVEAT WAS FALLING OFF THE FRAME.** Adding the lookup path put
+  // this page over the height of an ordinary terminal, and what went off the bottom was
+  // `LOOKUP_NODE_SEES` — who learns that you looked. A page too full to show what it costs is the
+  // failure this interface is built around, and the answer here is the one Status and Disclosure
+  // already use rather than a shorter warning.
+  //
+  // `move` has been writing `m.scroll` on this page all along and nothing read it, so j/k did
+  // nothing here. The count goes in the title for the reason Disclosure's does: an interface that
+  // scrolls without saying so is one where the part below the fold is the part nobody knows about.
+  const shown = lines.slice(Math.min(m.scroll, Math.max(0, lines.length - (height - 2))));
+  return box(shown, {
+    width: size.cols, height, focus: m.typing,
+    title: `start a conversation${lines.length > height - 2 ? ` — ${m.scroll + 1}/${lines.length}` : ""}`,
+  });
 }
 
 function identity(m: View, size: Size, height: number): string[] {
@@ -405,7 +436,16 @@ function setup(m: View, size: Size, height: number): string[] {
     ...note("no identity yet. this creates one: a fresh vault root from OS randomness, twenty "
       + "one-time prekeys, and nothing else.", size.cols - 4),
     "",
-    ...FIELDS.setup.map((f, i) => field(m, i, f.key, f.label, size.cols)),
+    // SECTIONED, and the indices stay the real ones so Tab still walks the whole list in order.
+    // The split is read from `later` on each entry rather than from a boundary written here — see
+    // `FIELDS` in `model.ts` for why the marker is on the field and what it does NOT claim.
+    ...FIELDS.setup.flatMap((f, i) => (f.later ? [] : field(m, i, f.key, f.label, size.cols))),
+    "",
+    paint("needed before your first message, not before this one", "bold"),
+    ...note("nothing above sends anything: creating an identity is local and makes no request. "
+      + "these four are what a send and an upload need, and leaving one blank fails then rather "
+      + "than now.", size.cols - 4),
+    ...FIELDS.setup.flatMap((f, i) => (f.later ? field(m, i, f.key, f.label, size.cols) : [])),
     "",
     ...note(`Enter writes ${m.statePath}. that file holds your root key in the clear. it is `
       + "mode 0600 and that is all the protection there is.", size.cols - 4),
