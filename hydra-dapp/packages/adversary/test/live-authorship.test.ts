@@ -22,7 +22,17 @@
  *
  * Opt-in, and it MUTATES: it registers accounts, publishes, and moves value. Devnet only.
  *
- *     source ~/.hydra/live-env.sh && npm run test:live
+ *     source ~/.hydra/live-env.sh && HYDRA_LIVE_WRITE=1 npm run test:live
+ *
+ * **`HYDRA_LIVE_WRITE=1` IS NEW AND THE COMMAND ABOVE DID NOT HAVE IT.** Five of the tests below
+ * publish transactions, and until 2026-09-06 they did so with no opt-in at all — while
+ * `live-record-anchor.test.ts`, in this same directory, had one. So `npm run test:live` wrote to
+ * a chain as a side effect of a command that reads like a test run. See `live-write-gate.ts`.
+ *
+ * **AND `live-env.sh` IS DEVNET ONLY**, which its own first line says and this command does not.
+ * Sourcing it does NOT point you at Sepolia. That matters in both directions: the writes below
+ * are cheap because they land on a devnet, and anyone who substitutes a Sepolia RPC into this
+ * line is spending real testnet funds on a suite written for throwaway accounts.
  *
  * These tests passed alone and failed in the suite, which is the worse way round to find out.
  * The cause was not what it looked like: `approve` SETS an ERC20 allowance rather than adding
@@ -40,6 +50,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { starknet, poolChain } from "../../cli/src/chain.ts";
+import { writesToChain } from "./live-write-gate.ts";
 
 const RPC = process.env.HYDRA_RPC;
 const CHANNEL = process.env.HYDRA_CHANNEL;
@@ -117,13 +128,15 @@ const pooled = (who: string) => poolChain({
   controlUrl: CONTROL!, who,
 });
 
-test("published directly, the transaction names the author as its sender", async () => {
+test("published directly, the transaction names the author as its sender",
+  { skip: writesToChain("publishes a transaction from the author's account") }, async () => {
   const tx = await direct("alice").publish([1001n, 1002n]);
   assert.equal(await senderOf(tx), deployer,
     "sender_address is not the publishing account — recheck chain.ts");
 });
 
-test("published through the pool, the sender is the relayer and not the author", async () => {
+test("published through the pool, the sender is the relayer and not the author",
+  { skip: writesToChain("publishes a transaction through the pool") }, async () => {
   // The half that works. An observer reading `sender_address` sees whoever submitted it, and a
   // relayer submits for everyone — so the field no longer answers "who wrote this".
   const tx = await pooled("alice").publish([2001n, 2002n]);
@@ -134,7 +147,8 @@ test("published through the pool, the sender is the relayer and not the author",
   assert.equal(sender, admin, "the submitter is not the relayer this stack uses");
 });
 
-test("but the author's address is in the calldata anyway, every time", async () => {
+test("but the author's address is in the calldata anyway, every time",
+  { skip: writesToChain("publishes two transactions, one per account") }, async () => {
   // The half that does not. Measured rather than reasoned: publish as each of two people and
   // check that each transaction contains that person's address and not the other's.
   const aliceTx = await pooled("alice").publish([3001n, 3002n]);
@@ -166,7 +180,8 @@ test("an invoke with no private action beside it does not compile at all", async
   assert.match(String(body.error), /did not compile the actions|no server message/);
 });
 
-test("the free route works once per account, which is why messaging costs a deposit", async () => {
+test("the free route works once per account, which is why messaging costs a deposit",
+  { skip: writesToChain("publishes and then spends this account's one free route") }, async () => {
   // `autoSetup` contributes an `OpenChannel`, which is a server action and makes the
   // transaction compile. The SECOND time the channel already exists, so there is nothing to
   // compile and the same call fails — measured here rather than inferred, because "it worked
@@ -187,7 +202,8 @@ test("the free route works once per account, which is why messaging costs a depo
   assert.match(String(body.error), /did not compile the actions|no server message/);
 });
 
-test("the contract must return an empty deposits array or nothing publishes", async () => {
+test("the contract must return an empty deposits array or nothing publishes",
+  { skip: writesToChain("publishes a transaction through the pool") }, async () => {
   // Found the hard way: `privacy_invoke` returning nothing made every pool-routed publish
   // revert with INVALID_INVOKE_RETURN_DATA, because the pool deserialises the return value as
   // `Span<OpenNoteDeposit>` (`.upstream/packages/privacy/src/utils.cairo:590-594`). The

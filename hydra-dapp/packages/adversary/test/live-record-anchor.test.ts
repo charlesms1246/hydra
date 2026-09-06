@@ -14,7 +14,7 @@
  *       deserializes — by checking the write reverts on OWNERSHIP rather than on deserialization.
  *       That distinction is the whole argument order, and it costs nothing to check.
  *
- *   HYDRA_ANCHOR_SEND=1 HYDRA_RPC=... npm run test:live
+ *   HYDRA_LIVE_WRITE=1 HYDRA_RPC=... npm run test:live
  *       Mints an identity if needed and lands a real record. Spends testnet STRK and writes
  *       permanently to a public chain, which is why it is a separate opt-in rather than a flag
  *       somebody sets once and forgets.
@@ -34,9 +34,9 @@ import {
 } from "../../cli/src/anchor.ts";
 import { RECORD_FELTS, decodeRecord, verifyRecord } from "../../handshake/src/record.ts";
 import { init, myRecord, bundleFromChain, fingerprint } from "../../cli/src/commands.ts";
+import { writesToChain } from "./live-write-gate.ts";
 
 const RPC = process.env.HYDRA_RPC;
-const SEND = process.env.HYDRA_ANCHOR_SEND === "1";
 const NETWORK = process.env.HYDRA_NETWORK ?? "sepolia";
 const ACCOUNTS = process.env.HYDRA_ACCOUNTS ?? join(homedir(), ".hydra", "sepolia-accounts.json");
 const ACCOUNT = process.env.HYDRA_ACCOUNT ?? "hydra";
@@ -91,8 +91,32 @@ const OWNER = () => BigInt(
   execFileSync("sncast", ["--json", "--accounts-file", ACCOUNTS, "--account", ACCOUNT,
     "account", "list"], { encoding: "utf8" }).match(/0x[0-9a-f]{60,64}/)![0]);
 
-before(() => {
+/**
+ * `SN_SEPOLIA`, as the felt a node returns from `starknet_chainId`.
+ *
+ * **EVERY CLAIM IN THIS FILE IS PINNED TO ONE DEPLOYMENT** — `IDENTITY_CLASS_HASH`, three
+ * selectors typed from the class's own entry points, and an argument order verified against it.
+ * None of that means anything on a different chain.
+ *
+ * And the way to get to a different chain is short. `source ~/.hydra/live-env.sh` sets
+ * `HYDRA_RPC` to a **devnet** — its own first line says "Devnet only; regenerated on every
+ * `hydra up`" — while the composed command in two other test headers reads like a Sepolia run to
+ * anyone who has not opened the file. On a devnet the class lookup fails, which is survivable;
+ * what is not survivable is the shape this repository keeps finding, **a suite that passes while
+ * measuring the wrong thing.** So the chain is identified rather than inferred from whichever
+ * assertion happens to trip first.
+ */
+const SEPOLIA_CHAIN_ID = 0x534e5f5345504f4c4941n;
+
+before(async () => {
   assert.ok(RPC, "HYDRA_RPC is required — see the header");
+  if (NETWORK === "sepolia") {
+    const got = String(okResult(await rpc("starknet_chainId", []) as any, "chainId"));
+    assert.equal(BigInt(got), SEPOLIA_CHAIN_ID,
+      `${RPC} is not Sepolia — it reports chain id ${got}, and every class hash and selector in `
+      + "this file is pinned to the Sepolia deployment, so a pass here would measure nothing. If "
+      + "you sourced ~/.hydra/live-env.sh: that file is DEVNET ONLY and says so in its first line.");
+  }
   contract = identityContract(NETWORK);
   // Derived from the account so two machines do not collide, masked to a u128 and forced
   // non-zero — id 0 reads as absent on this contract.
@@ -129,10 +153,10 @@ test("the read entrypoint answers, and an unwritten slot is absent rather than z
  * requests, a reply decoder, and a signature check, none of it having met a real node.
  *
  * READ-ONLY, SO IT RUNS IN THE DEFAULT MODE. Two `starknet_call`s cost nothing and write nothing;
- * this needs no `HYDRA_ANCHOR_SEND` gate and should not have one.
+ * this needs no `HYDRA_LIVE_WRITE` gate and should not have one.
  *
  * **IT ASSERTS WHICHEVER ANSWER THE CHAIN ACTUALLY GIVES**, like the slot test above, because a
- * previous `HYDRA_ANCHOR_SEND=1` run may have landed a record for this account and a test that
+ * previous `HYDRA_LIVE_WRITE=1` run may have landed a record for this account and a test that
  * demanded "no record" would fail on a chain that is more complete rather than less. Both branches
  * assert something real, and the vacuity check is that exactly one of them ran.
  */
@@ -234,7 +258,9 @@ test("THE ARGUMENT ORDER IS RIGHT, proven without sending anything", async () =>
     `dropping the trailing domain still deserialized — then this test proves nothing:\n${bad.slice(0, 400)}`);
 });
 
-test("a real record lands on chain and reads back byte for byte", { skip: !SEND && "set HYDRA_ANCHOR_SEND=1 to spend testnet STRK and write to a public chain" }, async () => {
+test("a real record lands on chain and reads back byte for byte",
+  { skip: writesToChain("spends testnet STRK and writes a PERMANENT public record naming this "
+    + "account — it cannot be undone, edited or taken back") }, async () => {
   const owner = OWNER();
   const state = init({ invites: [] });
   const { felts } = myRecord(state, owner);

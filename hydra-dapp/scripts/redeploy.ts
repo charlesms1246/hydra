@@ -17,6 +17,17 @@
  *
  * Devnet only. It reads predeployed private keys out of the node, which is a thing only a
  * throwaway chain has.
+ *
+ * **AND THE THIRD LINE IS DEVNET ONLY TOO, WHICH IT DOES NOT LOOK LIKE.** `live-env.sh` sets
+ * `HYDRA_RPC` at this devnet; `npm run test:live` runs every `live-*.test.ts`, and several of
+ * those are written for **Sepolia**. Sourcing this and running that points a Sepolia suite at a
+ * throwaway chain — `live-record-anchor.test.ts` now refuses on `starknet_chainId` rather than
+ * failing somewhere further in, because a suite that passes against the wrong chain is worse than
+ * one that will not start.
+ *
+ * The write tests are behind `HYDRA_LIVE_WRITE=1` (`test/live-write-gate.ts`) and are NOT run by
+ * the line above. They were, until 2026-09-06: `live-authorship.test.ts` published five
+ * transactions with no opt-in, so this docstring recommended a command that wrote to a chain.
  */
 
 import { execFileSync } from "node:child_process";
@@ -177,4 +188,8 @@ writeFileSync(ENV_FILE, [
   "",
 ].join("\n"));
 
+// The one line most people will actually read, so it says what the file is rather than assuming
+// they open it. `live-env.sh`'s own first line says "Devnet only" and nobody sees it.
 console.log(`\nwrote ${ENV_FILE}\n  source ${ENV_FILE} && npm run test:live`);
+console.log("  that env is DEVNET ONLY — the Sepolia suites refuse it rather than pass against it.");
+console.log("  chain writes stay off until HYDRA_LIVE_WRITE=1.");
