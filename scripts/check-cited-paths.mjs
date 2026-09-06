@@ -195,11 +195,38 @@ const OUTWARD = [
   "DISCLOSURE-STATEMENT.md", // generated; a failure here means regenerate, never edit
 ];
 
+/**
+ * `--source`: THE SAME QUESTION ASKED OF THE OTHER CORPUS, AND THE ONE THAT HAS A STRANGER FOR A
+ * READER.
+ *
+ * Everything above asks whether a document in `claude-docs/` cites a path a clone contains. This
+ * asks the inverse, and it is the direction that was never checked: **does shipped source cite
+ * `claude-docs/`?** It does, in 95 tracked files, and every one of those pointers promises a reader
+ * a document that is not in the repository and can never be, because `claude-docs/` is gitignored
+ * by a standing decision.
+ *
+ * **NO `held` ESCAPE IN THIS MODE, DELIBERATELY.** Above, marking a citation as held is a real
+ * answer: the reader is being told a route exists and is closed to them, which is information. In
+ * source it is not. A comment that says "the argument for this is in a file you cannot open" gives
+ * a reader nothing they can act on and costs them the belief that the codebase explains itself.
+ * The ruling is that the pointers come out — the reason gets inlined where it carries the load,
+ * the pointer gets dropped where it is decorative, and an argument too long to inline belongs in a
+ * comment beside the code it constrains rather than in a file nobody can reach.
+ *
+ * **THIS FILE EXEMPTS ITSELF, AND THAT IS A CLAIM WORTH SEEING RATHER THAN A CONVENIENCE.** Its
+ * subject IS `claude-docs/`; naming the directory it audits is not a promise to a reader that they
+ * can open it. Nothing else is exempt.
+ */
+const SELF = "scripts/check-cited-paths.mjs";
+const SOURCE_EXT = /\.(md|ts|tsx|mjs|cjs|js|jsx|cairo|rs|toml|ya?ml|sh|css)$/;
+
 const all = process.argv.includes("--all");
-const files = (all
-  ? readdirSync(DOCS, { recursive: true }).filter((f) => String(f).endsWith(".md")).map(String)
-  : OUTWARD)
-  .map((f) => join(DOCS, f))
+const source = process.argv.includes("--source");
+const files = (source
+  ? [...tracked].filter((f) => SOURCE_EXT.test(f) && f !== SELF).map((f) => join(ROOT, f))
+  : (all
+    ? readdirSync(DOCS, { recursive: true }).filter((f) => String(f).endsWith(".md")).map(String)
+    : OUTWARD).map((f) => join(DOCS, f)))
   .filter((f) => existsSync(f) && statSync(f).isFile())
   .sort();
 
@@ -222,7 +249,8 @@ for (const file of files) {
     // cited: `node_modules/.bin contains one entry`, `pages.yml publishes web/out/`. A reader is
     // not being sent to open them, and flagging them is the noise that gets a guard skipped.
     if (/(^|\/)(node_modules|out|dist|target|build)(\/|$)/.test(full)) { unresolvable++; continue; }
-    const marked = HELD.test(paragraphAt(text, c.index));
+    // In source mode "held" is not an answer — see the flag's note above.
+    const marked = !source && HELD.test(paragraphAt(text, c.index));
     if (isTracked(full)) {
       ok++;
       if (marked) overMarked.push(`${file.slice(ROOT.length + 1)}  ${c.path}`);
@@ -241,17 +269,24 @@ const problems = [];
 // Not "at least N files" — that was calibrated to a scope which has since changed, and a
 // threshold that moves with the list is not a check. Every named document must have been found:
 // a renamed or deleted one silently leaving scope is the failure this catches.
-if (!all) {
+if (!all && !source) {
   const missing = OUTWARD.filter((f) => !files.some((x) => x.endsWith("/" + f)));
   if (missing.length) problems.push(`named but not scanned: ${missing.join(", ")}`);
 }
-if (unresolvable > 400) problems.push(`${unresolvable} candidates resolved to nothing — the matcher is too loose`);
+if (source && files.length < 50) {
+  problems.push(`only ${files.length} tracked source files scanned — the corpus is wrong`);
+}
+// Source is mostly code, so backticked identifiers that name nothing are the common case rather
+// than a sign the matcher slipped. The ceiling is per-corpus for that reason.
+if (unresolvable > (source ? 40_000 : 400)) problems.push(`${unresolvable} candidates resolved to nothing — the matcher is too loose`);
 if (ok + markedHeld + unmarked < 10) problems.push(`only ${ok + markedHeld + unmarked} citations found`);
 if (ok === 0) problems.push("no citation resolved to a tracked file — the resolver is broken");
-if (markedHeld === 0 && unmarked === 0) problems.push("no untracked citation seen — nothing exercised the held path");
+if (!source && markedHeld === 0 && unmarked === 0) problems.push("no untracked citation seen — nothing exercised the held path");
 if (tracked.size < 100) problems.push(`git ls-files returned only ${tracked.size} paths`);
 
-console.log(`scanned  ${files.length} documents in claude-docs/`);
+console.log(source
+  ? `scanned  ${files.length} tracked source files`
+  : `scanned  ${files.length} documents in claude-docs/`);
 console.log(`tracked  ${ok} citations resolve to a file a clone contains`);
 console.log(`held     ${markedHeld} are untracked and say so`);
 console.log(`unmarked ${unmarked} are untracked and do not`);
@@ -274,9 +309,17 @@ if (failures.length) {
     console.log(`  ${f}`);
     for (const p of [...paths].sort()) console.log(`      ${p}`);
   }
-  console.log("\nEither cite something a clone contains, or say it is held and name the route a");
-  console.log("reader can take instead. Removing the citation is the wrong fix: a pointer to a");
-  console.log("write-up they cannot read yet is still information, provided it says so.");
+  if (source) {
+    console.log("\nShipped source citing a document no reader of this repository can open. Inline");
+    console.log("the reason where the citation carries the load; drop the pointer where it is");
+    console.log("decorative; put an argument too long to inline in a comment beside the code it");
+    console.log("constrains. Do not delete the sentence — a claim with a `because` is checkable");
+    console.log("and a bare assertion is not, so stripping pointers alone is the worst of both.");
+  } else {
+    console.log("\nEither cite something a clone contains, or say it is held and name the route a");
+    console.log("reader can take instead. Removing the citation is the wrong fix: a pointer to a");
+    console.log("write-up they cannot read yet is still information, provided it says so.");
+  }
 }
 
 if (overMarked.length) {
