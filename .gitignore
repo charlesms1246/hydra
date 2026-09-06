@@ -82,3 +82,15 @@ web/tui-frames.json
 # impossible rather than something to remember.
 web/.tmp/
 web/tui-view.json
+
+# `hydra bundle` and the TUI's export both default to a BARE RELATIVE NAME, so running either from
+# a checkout writes here. The contents are public by construction — every field of a `Bundle` is a
+# `rawPublic(...)` and the CLI's own usage says "give this to people" — so this is debris rather
+# than key material. It is ignored because debris in the repository root is one `git add -A` from
+# being committed, which is how another lane's scratch files got in. The DEFAULT is left alone on
+# purpose: what `hydra bundle` should do when run in an arbitrary directory is a decision about the
+# product, recorded open in `claude-docs/ERRORS.md` E-WEB03, not a typo to fix here.
+/bundle.json
+/hydra-dapp/bundle.json
+/record.felts
+/hydra-dapp/record.felts
