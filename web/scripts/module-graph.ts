@@ -129,6 +129,26 @@ export function boundaryCrossings(root: string, entries: string[]): Crossing[] {
  *
  * So it walks the directory. A new page is covered the moment it exists rather than the moment
  * somebody remembers this file, and a moved page cannot leave a hole behind it.
+ *
+ * ## ⛔ EVERY MODULE UNDER `app/`, NOT EVERY `page.tsx`
+ *
+ * This matched `e.name === "page.tsx"` and the promise above was false for everything else the
+ * framework renders. A route segment may also hold `layout`, `template`, `error`, `loading`,
+ * `not-found`, `default` and `global-error` — **composed by Next and imported by no page**, so
+ * nothing pulls them into the graph. The ROOT layout was added by name, which is the tell: layouts
+ * were thought about and nested ones were not. Measured on a scratch tree: five such files in one
+ * segment, each importing `identity/src/domains.ts`, and this function reported **zero crossings**.
+ *
+ * **The fix is not a longer list of filenames.** That is the hand-kept entry list this walk
+ * replaced, one level up — it decays the same way, and Next may add a name tomorrow. Next exports
+ * no such list to read either; `next/dist/lib/constants.js` holds no array of them, so it cannot
+ * be derived from the framework.
+ *
+ * So the rule is inverted: **anything under `app/` is route code until proven otherwise.** It
+ * cannot under-cover, because a file the framework renders is necessarily a file in `app/`. It can
+ * over-cover — a colocated helper becomes an entry — and that costs nothing: everything under
+ * `app/` is subject to the same import rule anyway, so checking a helper is checking something
+ * that had to hold regardless.
  */
 export function entryPoints(webRoot: string): string[] {
   const app = resolve(webRoot, "app");
@@ -137,7 +157,8 @@ export function entryPoints(webRoot: string): string[] {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p);
-      else if (e.name === "page.tsx") pages.push(p);
+      // EVERY module under `app/`, not a list of the names the framework composes. See below.
+      else if (/\.tsx?$/.test(e.name)) pages.push(p);
     }
   };
   walk(app);
@@ -149,7 +170,7 @@ export function entryPoints(webRoot: string): string[] {
    */
   const layout = resolve(webRoot, "app/layout.tsx");
   if (!existsSync(layout)) throw new Error(`${layout} is missing — the module graph has no root`);
-  if (pages.length === 0) throw new Error(`no page.tsx under ${app} — nothing would be checked`);
+  if (pages.length === 0) throw new Error(`no modules under ${app} — nothing would be checked`);
 
   return [layout, ...pages.sort()];
 }
