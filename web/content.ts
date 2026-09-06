@@ -459,9 +459,15 @@ export const SITE = {
     body: [
       "The client runs on your own computer and answers on a local address that only that "
       + "computer can reach. This page asks it questions and draws the answers.",
-      "It reads. It does not send messages, it does not fetch new ones, and it never receives an "
-      + "invite code — only a count of how many are left. Every sentence it shows about a "
-      + "message comes from the client, in the client's own words.",
+      // **THIS SENTENCE USED TO SAY "It reads. It does not send messages, it does not fetch new "
+      // ones" AND THAT STOPPED BEING TRUE** when the page gained send, read and flush. A page
+      // that quietly acquires a write surface while its own description still says it only reads
+      // is worse than one that never described itself: the reader who checked once has been given
+      // a reason not to check again. Corrected rather than deleted, for the same reason.
+      "It reads and it writes. You can send a message — deniably or signed, and it makes you "
+      + "choose — fetch new ones, and upload what is queued. It never receives an invite code, "
+      + "only a count of how many are left. Every sentence it shows about a message comes from "
+      + "the client, in the client's own words.",
     ],
   },
 

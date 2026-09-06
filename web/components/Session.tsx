@@ -340,144 +340,202 @@ export function Session() {
   const live = !!status;
 
   return (
-    <div className="session">
+    <div className={live ? "dash-grid" : "dash-grid is-wire"}>
       {/*
-        ⛔ THE PAGE IS A WIREFRAME UNTIL A SESSION EXISTS, and the wireframe is not a loading state.
+        ⛔ **THE STRIP IS THE CONNECTION, AND IT IS ALWAYS THE SAME HEIGHT.**
 
-        It is the shape of what will be here, drawn empty — a reader arriving without a session
-        should be able to see what this page IS before deciding to point it at their machine.
-        A spinner or an empty page tells them nothing and asks for a credential anyway.
-
-        Everything below reads `live`. The same boxes hold placeholders or data; they do not
-        appear on connection, they fill.
+        Before a session exists it holds the address field; after one exists it holds the machine's
+        fingerprint and route. It does not appear or disappear, because a control that moves the
+        rest of the layout when it resolves is a control that makes a reader re-find everything
+        they were looking at.
       */}
-      {!live && (
-        <div className="session-prompt" role="dialog" aria-modal="false" aria-labelledby="connect-h">
-          <h2 id="connect-h">Connect to your machine</h2>
-          <p>
-            Run <code>hydra gui</code> and open the link it prints, or paste the address here.
-            Nothing on this page is fetched from this site.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void connect();
-            }}
-          >
-            <label htmlFor="base">
-              <span className="label">LOCAL API</span>
-              <input
-                id="base"
-                name="base"
-                type="text"
-                value={base}
-                spellCheck={false}
-                autoComplete="off"
-                onChange={(e) => setBase(e.target.value)}
-              />
-            </label>
-            <button className="button" type="submit">Connect</button>
-          </form>
-          {refusal && <RefusalNote refusal={refusal} />}
-        </div>
-      )}
+      <header className="dash-strip">
+        <form
+          className="dash-connect"
+          onSubmit={(e) => { e.preventDefault(); void connect(); }}
+        >
+          <label htmlFor="base" className="prose-label">LOCAL API</label>
+          <input
+            id="base" name="base" type="text" value={base} spellCheck={false}
+            autoComplete="off" onChange={(e) => setBase(e.target.value)}
+          />
+          <button className="button" type="submit">{live ? "Reconnect" : "Connect"}</button>
+        </form>
+        <dl className="dash-vitals">
+          <Vital k="IDENTITY" v={status?.fingerprint} />
+          <Vital k="ROUTE" v={status?.route} />
+          <Vital k="VAULT" v={status?.vault?.url} />
+          <Vital k="INVITES" v={status ? String(status.invitesLeft) : undefined} />
+        </dl>
+      </header>
 
-      <div className={live ? "session-frame" : "session-frame is-wire"} aria-hidden={!live}>
-        <StatusPanel status={status} />
+      <Pane title="CONVERSATIONS" className="dash-a">
+        {channels && channels.length > 0 ? (
+          <ul className="session-channels">
+            {channels.map((c) => (
+              <li key={c.name}>
+                <button type="button" onClick={() => void openChannel(c.name)}
+                        className={c.name === open ? "is-open" : undefined}>
+                  <span className="ch-name">{c.name}</span>
+                  <span className="ch-peer">{c.peer}</span>
+                  <span className="ch-count">{c.messages}</span>
+                </button>
+                {/*
+                  Shown whenever it is non-zero, never folded into the message count.
+                  `vault-server/src/observations.ts`: a removal indistinguishable from an expiry
+                  is invisible to the people it happened to.
+                */}
+                {c.removedUnderProcess > 0 && (
+                  <span className="ch-removed">
+                    {c.removedUnderProcess} removed under legal process
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <ul className="session-channels">
+            {[0, 1, 2].map((i) => (
+              <li key={i}><span className="wire wire-row" /></li>
+            ))}
+          </ul>
+        )}
+      </Pane>
 
-        <section className="session-block">
-          <h2>Conversations</h2>
-          {channels && channels.length > 0 ? (
-            <ul className="session-channels">
-              {channels.map((c) => (
-                <li key={c.name}>
-                  <button type="button" onClick={() => void openChannel(c.name)}>
-                    <span className="ch-name">{c.name}</span>
-                    <span className="ch-peer">{c.peer}</span>
-                    <span className="ch-count">{c.messages}</span>
-                  </button>
-                  {/*
-                    Shown whenever it is non-zero, never folded into the message count.
-                    `vault-server/src/observations.ts`: a removal indistinguishable from an expiry
-                    is invisible to the people it happened to.
-                  */}
-                  {c.removedUnderProcess > 0 && (
-                    <span className="ch-removed">
-                      {c.removedUnderProcess} removed under legal process
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <ul className="session-channels">
-              {[0, 1, 2].map((i) => (
-                <li key={i}><span className="wire wire-row" /></li>
-              ))}
-            </ul>
-          )}
-        </section>
+      {/*
+        ⛔ **LINKABILITY IS A PANE, NOT A FOOTNOTE, AND IT SITS ABOVE THE CONVERSATION.**
 
-        <section className="session-block">
-          <h2>{open ?? "Messages"}</h2>
-          {open && (
-            <div className="session-actions">
-              <button type="button" className="button" onClick={() => void readNow()}
-                      disabled={working !== null}>
-                {working === "read" ? "Reading…" : "Fetch new messages"}
-              </button>
-              <button type="button" className="button" onClick={() => void flushNow()}
-                      disabled={working !== null}>
-                {working === "flush" ? "Uploading…" : "Upload what is due"}
-              </button>
-            </div>
-          )}
-          {open && <LinkabilityNote how={howLinkable} />}
-          {messages && messages.length > 0 ? (
-            <ol className="session-messages">
-              {messages.map((m) => (
-                <li key={m.id} className={m.mine ? "msg mine" : "msg"}>
-                  <p className="msg-text">{m.text}</p>
-                  {/*
-                    ⛔ `basis` is TEXT, beside every message, always. Not a tooltip, not a colour,
-                    not a class. See the header — the mark is an indicator and the basis is the
-                    claim, and the two signed cases are told apart only by the basis.
-                  */}
-                  <p className="msg-basis">
-                    <span className="msg-mark" aria-hidden>{m.mark}</span>
-                    <span className="msg-basis-text">{m.basis}</span>
-                  </p>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <ol className="session-messages">
-              {[0, 1].map((i) => (
-                <li key={i} className="msg">
-                  <span className="wire wire-text" />
-                  <span className="wire wire-basis" />
-                </li>
-              ))}
-            </ol>
-          )}
+        It qualifies everything below it, so it is placed where a reader meets it before the
+        messages rather than after them. This is the one thing this surface says that an ordinary
+        messenger would never say, and the layout should not make it the easiest thing to miss.
+      */}
+      <Pane title={open ? `LINKABILITY — ${open}` : "LINKABILITY"} className="dash-b1" scroll={false}>
+        {howLinkable
+          ? <LinkabilityNote how={howLinkable} />
+          : <p className="dash-empty">Open a conversation to see how linkable it is.</p>}
+      </Pane>
 
-          {open && (
-            <Compose
-              draft={draft}
-              setDraft={setDraft}
-              working={working}
-              onSend={(signed) => void sendNow(signed)}
-            />
-          )}
-          {sent && <SentNote sent={sent} />}
-        </section>
+      <Pane
+        title={open ?? "MESSAGES"}
+        className="dash-b2"
+        right={open ? (
+          <span className="dash-acts">
+            <button type="button" onClick={() => void readNow()} disabled={working !== null}>
+              {working === "read" ? "reading…" : "fetch new"}
+            </button>
+            <button type="button" onClick={() => void flushNow()} disabled={working !== null}>
+              {working === "flush" ? "uploading…" : "upload due"}
+            </button>
+          </span>
+        ) : undefined}
+      >
+        {messages && messages.length > 0 ? (
+          <ol className="session-messages">
+            {messages.map((m) => (
+              <li key={m.id} className={m.mine ? "msg mine" : "msg"}>
+                <p className="msg-text">{m.text}</p>
+                {/*
+                  ⛔ `basis` is TEXT, beside every message, always. Not a tooltip, not a colour,
+                  not a class. See the header — the mark is an indicator and the basis is the
+                  claim, and the two signed cases are told apart only by the basis.
+                */}
+                <p className="msg-basis">
+                  <span className="msg-mark" aria-hidden>{m.mark}</span>
+                  <span className="msg-basis-text">{m.basis}</span>
+                </p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ol className="session-messages">
+            {[0, 1].map((i) => (
+              <li key={i} className="msg">
+                <span className="wire wire-text" />
+                <span className="wire wire-basis" />
+              </li>
+            ))}
+          </ol>
+        )}
+      </Pane>
+
+      {/*
+        The compose box and everything a write can answer with, in one place under the messages.
+        A refusal that appeared next to the status panel would be a sentence about an act the
+        reader performed somewhere else on the screen.
+      */}
+      <div className="dash-b3">
+        <Compose
+          draft={draft}
+          setDraft={setDraft}
+          working={working}
+          disabled={!open}
+          onSend={(signed) => void sendNow(signed)}
+        />
+        {sent && <SentNote sent={sent} />}
+        {busy && <BusyNote busy={busy} />}
+        {refusal && <RefusalNote refusal={refusal} />}
       </div>
 
-      {live && busy && <BusyNote busy={busy} />}
-      {live && refusal && <RefusalNote refusal={refusal} />}
+      <Pane title="THIS MACHINE" className="dash-c1">
+        <StatusPanel status={status} />
+      </Pane>
+
+      <Pane title="UPLOADS" className="dash-c2" scroll={false}>
+        <UploadHealth queue={status?.queue} />
+      </Pane>
+
+      {/*
+        ⛔ **THE LEGEND IS RENDERED UNCONDITIONALLY**, not inside a branch that needs data. It
+        used to sit next to the message list, so it existed only once a reader had opened a
+        channel — absent from the shipped markup entirely, and absent for a reader with no script
+        or an unreachable API. `test/site.test.ts` asserts it against the BUILT HTML for that
+        reason, which is why it must not move behind a condition again.
+      */}
+      <Pane title="WHAT THE MARKS MEAN" className="dash-c3" scroll={false}>
+        <AttributionLegend />
+      </Pane>
     </div>
   );
 }
+
+/**
+ * The instrument's structural primitive: a titled pane that owns its own scroll.
+ *
+ * The header is a fixed strip with a mono label, so every pane's title sits on the same baseline
+ * across the screen. `min-height: 0` on the body is the load-bearing detail — without it a grid
+ * child refuses to shrink below its content and the pane grows the page instead of scrolling,
+ * which silently turns a one-screen instrument back into a document.
+ */
+function Pane({
+  title, right, className, scroll = true, children,
+}: {
+  title: string;
+  right?: React.ReactNode;
+  className?: string;
+  scroll?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className={`dash-pane ${className ?? ""}`}>
+      <header className="dash-pane-head">
+        <h2>{title}</h2>
+        {right}
+      </header>
+      <div className={scroll ? "dash-pane-body is-scroll" : "dash-pane-body"}>{children}</div>
+    </section>
+  );
+}
+
+/** One figure in the connection strip. Absent reads as a rule, never as a blank. */
+function Vital({ k, v }: { k: string; v?: string }) {
+  return (
+    <div className="dash-vital">
+      <dt className="prose-label">{k}</dt>
+      <dd>{v ?? <span className="wire wire-value" />}</dd>
+    </div>
+  );
+}
+
 
 /**
  * The refusal, in the API's own words.
@@ -590,14 +648,16 @@ function SentNote({ sent }: { sent: Sent }) {
  * generated `basis` beside it, once the send returns. That is the same split the legend uses.
  */
 function Compose({
-  draft, setDraft, working, onSend,
+  draft, setDraft, working, disabled, onSend,
 }: {
   draft: string;
   setDraft: (v: string) => void;
   working: string | null;
+  /** No channel open: the box is present so the layout does not jump, and it cannot be sent. */
+  disabled: boolean;
   onSend: (signed: boolean) => void;
 }) {
-  const empty = draft.trim() === "";
+  const empty = draft.trim() === "" || disabled;
   return (
     <form className="session-compose" onSubmit={(e) => e.preventDefault()}>
       <label htmlFor="draft">
@@ -605,8 +665,10 @@ function Compose({
         <textarea
           id="draft"
           name="draft"
-          rows={3}
+          rows={2}
           value={draft}
+          disabled={disabled}
+          placeholder={disabled ? "Open a conversation first" : ""}
           spellCheck={false}
           onChange={(e) => setDraft(e.target.value)}
         />
@@ -630,8 +692,7 @@ function StatusPanel({ status }: { status: Status | null }) {
   /* The wireframe's rows: the same keys, with a bar where the value will be. */
   if (!status) {
     return (
-      <section className="session-block">
-        <h2>This machine</h2>
+      <>
         <dl className="session-status">
           {["IDENTITY", "STATE FILE", "AT REST", "VAULT", "NETWORK", "ROUTE", "INVITES LEFT",
             "PENDING UPLOAD"].map((k) => (
@@ -641,12 +702,11 @@ function StatusPanel({ status }: { status: Status | null }) {
             </div>
           ))}
         </dl>
-      </section>
+      </>
     );
   }
   return (
-    <section className="session-block">
-      <h2>This machine</h2>
+    <>
       <dl className="session-status">
         <Row k="IDENTITY" v={status.fingerprint} />
         <Row k="STATE FILE" v={status.stateFile} />
@@ -660,8 +720,6 @@ function StatusPanel({ status }: { status: Status | null }) {
         {status.queue && <Row k="PENDING UPLOAD" v={String(status.queue.pending)} />}
       </dl>
 
-      <UploadHealth queue={status.queue} />
-
       {/*
         Degraded, not broken — and it has a remedy, so it is stated rather than left to be felt as
         slowness. The TUI surfaces the same condition on its status line.
@@ -672,7 +730,7 @@ function StatusPanel({ status }: { status: Status | null }) {
           the beginning. Reads will be slow until the client records one.
         </p>
       )}
-    </section>
+    </>
   );
 }
 
@@ -692,7 +750,11 @@ function StatusPanel({ status }: { status: Status | null }) {
  * print for the same dead vault. This page does not paraphrase it and does not write its own.
  */
 function UploadHealth({ queue }: { queue: Status["queue"] }) {
-  if (!queue) return null;
+  // No session yet. An empty pane reads as "nothing to report", which is the reassuring reading
+  // of a state that has reported nothing — the same mistake `null` makes further down.
+  if (!queue) {
+    return <p className="dash-empty">Not connected, so nothing is known about uploads.</p>;
+  }
   const a = queue.lastAttempt;
   if (a === undefined || a === null) {
     return (
