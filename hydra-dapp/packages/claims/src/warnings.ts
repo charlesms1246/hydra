@@ -26,7 +26,16 @@
 export type Warning = {
   /** Stable across renderings. The guard matches on this, never on prose. */
   readonly id: string;
-  /** The decision or file that settled the wording. A claim with no source cannot be shown. */
+  /**
+   * What settled the wording — a reason, or a tracked file a reader can open. A claim with no
+   * source cannot be shown.
+   *
+   * **NOT A `claude-docs/` PATH.** These held decision references, and a reference into a
+   * gitignored directory cannot do the job this field exists for: the whole argument above is
+   * that *"a claim with a `because` can be checked against the thing it cites"*, and a citation
+   * nobody outside this machine can open is one nothing can be checked against. The reason itself
+   * survives a clone; a pointer to it does not.
+   */
   readonly because: string;
   /** Full text, for a surface with room. */
   readonly full: readonly string[];
@@ -54,7 +63,9 @@ export type Warning = {
 export const SIGNED: Warning = {
   id: "compose.signed",
   surfaces: ["cli", "tui"],
-  because: "decisions/0038 finding 3; attributionLabel draws the same line when reading",
+  because: "signing alone buys no third-party proof until the key is anchored, so somebody who "
+    + "signs believing they made evidence made something only their recipient can check; "
+    + "`attributionLabel` draws the same line when reading",
   short: "SIGNED — only you could have written this; only THEY can check it until you anchor",
   full: [
     "SIGNED. Anyone holding your bundle can prove you wrote this, including people you never",
@@ -92,7 +103,9 @@ export const DENIABLE: Warning = {
 export const RECORD_NOT_WRITTEN: Warning = {
   id: "record.notWritten",
   surfaces: ["cli", "tui"],
-  because: "decisions/0031 verified the ABI and landed a record; 0027 for what the record binds",
+  because: "the identity contract's data ABI is verified against the deployed class and a record "
+    + "has been landed on Sepolia, so the client must not report less confidence than it has; "
+    + "`cli/src/anchor.ts` holds the verified addresses",
   short: "this client does not write your record — which account pays is the link it creates",
   full: [
     "This client does not write it, and that is a choice rather than a limitation. The write",
@@ -114,7 +127,8 @@ export const RECORD_NOT_WRITTEN: Warning = {
 export const SECOND_CLIENT: Warning = {
   id: "identity.secondClient",
   surfaces: ["cli", "tui"],
-  because: "decisions/0033 — two devices salt decoys with the commitment, so cover is not identical",
+  because: "two devices salt decoys with the commitment, so their cover is not identical and a "
+    + "second client is visible in the sequence rather than in the cover; `channel/src/cover.ts`",
   short: "another client is running on this identity — both are spending your invites",
   full: [
     "Messages in your own direction were not sent by this client. Another client is running on",
@@ -128,8 +142,8 @@ export const SECOND_CLIENT: Warning = {
  *
  * WAS ASSERTED IN THE VAULT'S STARTUP BANNER, in hand-written prose: *"session tickets are
  * disabled, so every connection is a full handshake and two connections cannot be linked to one
- * client"*. It is very likely true — `decisions/0021` disabled resumption deliberately and
- * `tls.resumption` sits on the not-observable table — and standing rule 3 does not have an
+ * client"*. It is very likely true — resumption was disabled deliberately and `tls.resumption`
+ * sits on the not-observable table — and standing rule 3 does not have an
  * exception for claims that happen to hold. A privacy claim is generated or it is not made.
  *
  * The qualification is the part hand-written prose kept dropping: **resumption is one linking
@@ -139,7 +153,9 @@ export const SECOND_CLIENT: Warning = {
 export const TLS_TERMINATION: Warning = {
   id: "vault.tlsTermination",
   surfaces: ["vault-server"],
-  because: "decisions/0021 disabled session tickets; tls.resumption on the not-observable table",
+  because: "session tickets are disabled deliberately, and `tls.resumption` sits on the "
+    + "not-observable table in `vault-server/src/observations.ts` — which is what makes this "
+    + "generated rather than asserted",
   short: "TLS terminates here; session tickets are off, so resumption does not link connections",
   full: [
     "TLS terminates HERE rather than behind a proxy. Both choices disclose SNI, cipher suite and",
@@ -152,7 +168,7 @@ export const TLS_TERMINATION: Warning = {
 };
 
 /**
- * The root key on disk, in the two states it can be in — `decisions/0040`.
+ * The root key on disk, in the two states it can be in.
  *
  * TWO CLAIMS RATHER THAN ONE WITH A CONDITION, because the surfaces render whichever is true and a
  * claim that changes its own meaning is one nobody can check. The old text was hand-written in
@@ -162,7 +178,8 @@ export const TLS_TERMINATION: Warning = {
 export const KEY_IN_CLEAR: Warning = {
   id: "identity.keyInClear",
   surfaces: ["cli", "tui"],
-  because: "decisions/0040 — the state file is plaintext until `hydra lock` is run",
+  because: "the state file is plaintext until `hydra lock` is run, and a save must never "
+    + "silently downgrade a locked file back; `cli/src/state.ts`",
   short: "your root key is on disk in the clear — `hydra lock` encrypts it",
   full: [
     "Your root key is in the state file, in the clear, mode 0600 and nothing else. No passphrase,",
@@ -184,7 +201,9 @@ export const KEY_IN_CLEAR: Warning = {
 export const KEY_LOCKED: Warning = {
   id: "identity.keyLocked",
   surfaces: ["cli", "tui"],
-  because: "decisions/0040 §1 — scrypt + AES-256-GCM over the whole state file",
+  because: "scrypt and AES-256-GCM over the whole state file, not just the seed field — the "
+    + "state holds every message as text and nobody is prosecuted for the messages they were "
+    + "going to send; `cli/src/at-rest.ts`",
   short: "your root key is encrypted at rest — this protects a seized disk, not a running machine",
   full: [
     "Your state file is encrypted with your passphrase: the root key and every message in it.",
@@ -200,10 +219,10 @@ export const KEY_LOCKED: Warning = {
     "",
     "HOW LONG THE KEY IS EXPOSED, and this is not yet the number it should be: the passphrase is",
     "read from HYDRA_PASSPHRASE, so it lives as long as that variable does — for a shell session,",
-    "typically, and visible to anything else running as you. `decisions/0040` chose an agent with",
-    "a stated idle timeout instead, and it is not built yet. Until it is, the honest answer to",
-    "\"how long is the key exposed\" is \"as long as you leave that variable set\", which is a",
-    "condition you control rather than a number we can quote.",
+    "typically, and visible to anything else running as you. What this should be instead is an",
+    "agent holding the key with a stated idle timeout, and it is not built yet. Until it is, the",
+    "honest answer to \"how long is the key exposed\" is \"as long as you leave that variable",
+    "set\", which is a condition you control rather than a number we can quote.",
   ],
 };
 
