@@ -7,7 +7,6 @@ import { CommandSurface } from "../../../components/CommandSurface.tsx";
 import { Terminal } from "../../../components/Terminal.tsx";
 import { LiveTerminal } from "../../../components/LiveTerminal.tsx";
 import { liveView } from "../../../components/live-view.ts";
-import { Reveal } from "../../../components/Reveal.tsx";
 import { Footer } from "../../../components/Footer.tsx";
 
 /**
@@ -34,27 +33,35 @@ export default function Page() {
       <Nav current="demo" />
 
       <main className="page">
-        <header className="doc-head">
-          <h1>hydra</h1>
-          <p className="tagline">A scriptable command line, and a terminal interface over the same code.</p>
-        </header>
+        {/* Two columns, and the terminal is the wide one because it is the thing being shown.
+            The figure stays put while the prose scrolls, so the only thing that follows the
+            reader down the page is the footer.
 
-        {/* What using it looks like, before the catalogue of what it can do. A command list tells
-            a reader what exists; it does not show them the thing. */}
-        <Section n="01" id="screen" title="WHAT IT LOOKS LIKE">
-          <Reveal>
+            THE SPLIT IS PART OF THE DEMONSTRATION, not decoration. `LiveTerminal` measures the
+            box it is given and re-renders at the columns that fit, so putting it in a 60% column
+            is not a smaller picture of the full-width frame — it is the interface drawing itself
+            differently, which is the claim the whole live render exists to make. */}
+        <div className="demo-split">
+          <div className="demo-split-prose">
+            <header className="doc-head">
+              <h1>hydra</h1>
+              <p className="tagline">A scriptable command line, and a terminal interface over the same code.</p>
+            </header>
+
+            <Section n="01" id="commands" title="EVERY COMMAND">
+              <CommandSurface tool="hydra" />
+            </Section>
+          </div>
+
+          <aside className="demo-split-figure" aria-label="What it looks like">
             {/* The captured frame is the child, so it is what the markup carries and what a
                 reader without JavaScript keeps. `LiveTerminal` replaces it only once it has
                 measured the reader's width — see that file for why re-rendering beats scaling. */}
             <LiveTerminal view={liveView()}>
               <Terminal frame="chats" />
             </LiveTerminal>
-          </Reveal>
-        </Section>
-
-        <Section n="02" id="commands" title="EVERY COMMAND">
-          <CommandSurface tool="hydra" />
-        </Section>
+          </aside>
+        </div>
       </main>
 
       <Footer />

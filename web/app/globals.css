@@ -2987,3 +2987,57 @@ html[data-build="public"] .wordmark {
   margin: 0.25rem 0;
   color: var(--g-64);
 }
+
+/*
+ * The demo split: prose on the left, the interface on the right.
+ *
+ * The figure is the WIDE column because it is the subject. A command list tells a reader what
+ * exists; the frame shows them the thing, and `LiveTerminal` re-renders into whatever width this
+ * column gives it rather than shrinking a fixed grid — so the split is part of the demonstration.
+ *
+ * Sticky rather than fixed: the figure holds while the prose scrolls past it, and it releases at
+ * the end of the grid so the footer is the one thing that follows the reader down.
+ */
+.demo-split {
+  display: grid;
+  gap: var(--gutter);
+  align-items: start;
+  /* Stacked on narrow screens, and `min-width: 0` so a wide child scrolls itself rather than
+     widening the document — a horizontal scrollbar on a phone was the first thing this grid did. */
+  min-width: 0;
+}
+
+.demo-split-prose { min-width: 0; }
+
+.demo-split-figure {
+  /* The backdrop is a fixed canvas behind the whole site, and a figure it shows through is a
+     figure with ASCII art inside its box. The frame is opaque on purpose. */
+  background: var(--g-4);
+}
+
+@media (min-width: 60rem) {
+  .demo-split {
+    /*
+     * 40/60, and `minmax(0, …)` is what makes it actually 40/60.
+     *
+     * A bare `2fr 3fr` measured 67/33 in a browser: an `fr` track has `min-width: auto`, so it
+     * refuses to shrink below its content, and the command surface in the left column is wide.
+     * The prose column took the room and the terminal was left rendering 48 columns in the
+     * *wide* half of the page — the exact failure this layout exists to fix, arriving through
+     * the layout meant to fix it.
+     */
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+
+  .demo-split-figure {
+    position: sticky;
+    top: var(--gutter);
+    /*
+     * Bounded, because a sticky element taller than the viewport scrolls its own bottom off and
+     * never comes back — which is how the frame came to be cut off at the bottom of the screen.
+     * The frame is 20 rows; this leaves room for the gutter above and below it at any zoom.
+     */
+    max-height: calc(100vh - (2 * var(--gutter)));
+    overflow: auto;
+  }
+}

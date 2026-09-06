@@ -4,8 +4,6 @@ import { SITE } from "../../../content.ts";
 import { Nav } from "../../../components/Nav.tsx";
 import { Section } from "../../../components/Section.tsx";
 import { CommandSurface } from "../../../components/CommandSurface.tsx";
-import { Terminal } from "../../../components/Terminal.tsx";
-import { Reveal } from "../../../components/Reveal.tsx";
 import { Footer } from "../../../components/Footer.tsx";
 
 /**
@@ -37,13 +35,23 @@ export default function Page() {
           <p className="tagline">A local STRK20 privacy stack, and tooling that computes what a transaction discloses.</p>
         </header>
 
-        <Section n="01" id="screen" title="WHAT IT LOOKS LIKE">
-          <Reveal>
-            <Terminal frame="status" />
-          </Reveal>
-        </Section>
+        {/* THERE IS NO TERMINAL BLOCK HERE, AND ITS ABSENCE IS THE HONEST STATE.
+            This rendered `<Terminal frame="status" />` — a frame captured from `hydra-dapp`'s
+            TUI, whose nav reads `HYDRA  Chats (1)  Connect (2) …`. That is the PLATFORM client's
+            interface standing in for the devtool's, on a site whose argument is that its terminal
+            blocks are output the tool actually produced.
 
-        <Section n="02" id="commands" title="EVERY COMMAND">
+            The devtool has a real TUI at `devtool/packages/tui` (Ink), and it CAN be captured:
+            it renders headlessly to a coloured, SGR-only frame with no devnet, using the harness
+            in that package's `test/render.mjs`. What stops a capture today is that every page
+            carries a status bar with live local state — an indexer lag that increments every
+            second, and a real pool address off the operator's machine. A capture would be neither
+            reproducible nor safe to publish, and the fix is a fixture seam in that package's
+            `app.mjs`, which is not this lane's file.
+
+            So the block is gone rather than wrong. A missing figure is a gap; the other product's
+            figure is a false claim. */}
+        <Section n="01" id="commands" title="EVERY COMMAND">
           <CommandSurface tool="hydra-dev" />
         </Section>
       </main>
