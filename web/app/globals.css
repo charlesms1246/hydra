@@ -3037,7 +3037,76 @@ html[data-build="public"] .wordmark {
      * never comes back — which is how the frame came to be cut off at the bottom of the screen.
      * The frame is 20 rows; this leaves room for the gutter above and below it at any zoom.
      */
-    max-height: calc(100vh - (2 * var(--gutter)));
-    overflow: auto;
+    /*
+     * DEFINITE, not `max-height`. `LiveTerminal` derives its row count from this box's measured
+     * height, and a box that sizes to its content would measure the frame it had already drawn —
+     * the rows could never grow, so the terminal stopped partway and left the column black below
+     * it. A definite height makes the available space the input rather than the output.
+     */
+    height: calc(100vh - (2 * var(--gutter)));
   }
+}
+
+/*
+ * The demo surface: two contents, one terminal.
+ *
+ * `tui` draws the live render; `commands` draws the same tool's real help output, captured by
+ * `cli-surface.ts`. Both go through `Screen` and the same tone mapping, because a terminal beside
+ * a styled code block would be two treatments of one idea — and the commands are just as much
+ * output the tool produced as the frame is.
+ */
+.term-live-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.term-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.term-tab {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  padding: 0.3rem 0.9rem;
+  color: var(--g-32);
+  background: transparent;
+  border: 1px solid var(--g-12);
+  cursor: pointer;
+}
+
+.term-tab-on {
+  color: var(--black);
+  background: var(--g-80);
+  border-color: var(--g-80);
+}
+
+/*
+ * The box the frame is measured against, and it must have a definite height.
+ *
+ * `LiveTerminal` derives ROWS from this element's height, so a box that sizes to its content
+ * would measure the frame it already drew — the rows would never grow and the terminal would
+ * leave the bottom of the column black, which is what it did.
+ */
+.term-live-box {
+  flex: 1 1 auto;
+  min-height: 0;
+  /*
+   * The frame is re-rendered to fit, so it never needs this. The COMMANDS do: `cli-surface.ts`
+   * captures the real binary's help, whose lines are as wide as they are, and a 94-column line
+   * cannot be re-flowed into 56 without rewriting the tool's output. So it scrolls inside the
+   * box rather than widening the document — the alternative is a horizontal scrollbar on the
+   * whole page, which is how a figure breaks every other figure on a phone.
+   */
+  overflow: auto;
+}
+
+.term-live-box .term,
+.term-live-box .term-screen {
+  height: 100%;
 }

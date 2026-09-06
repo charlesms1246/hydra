@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 
 import { SITE } from "../../../content.ts";
 import { Nav } from "../../../components/Nav.tsx";
-import { Section } from "../../../components/Section.tsx";
 import { CommandSurface } from "../../../components/CommandSurface.tsx";
+import { commandLines } from "../../../scripts/cli-surface.ts";
 import { Terminal } from "../../../components/Terminal.tsx";
 import { LiveTerminal } from "../../../components/LiveTerminal.tsx";
 import { liveView } from "../../../components/live-view.ts";
@@ -48,17 +48,20 @@ export default function Page() {
               <p className="tagline">A scriptable command line, and a terminal interface over the same code.</p>
             </header>
 
-            <Section n="01" id="commands" title="EVERY COMMAND">
-              <CommandSurface tool="hydra" />
-            </Section>
           </div>
 
           <aside className="demo-split-figure" aria-label="What it looks like">
             {/* The captured frame is the child, so it is what the markup carries and what a
                 reader without JavaScript keeps. `LiveTerminal` replaces it only once it has
                 measured the reader's width — see that file for why re-rendering beats scaling. */}
-            <LiveTerminal view={liveView()}>
+            {/* BOTH contents are server-rendered as the fallback, and that is not just for
+                no-JS readers. `site.test.ts` checks every `data-generated="cli"` block against a
+                fresh capture — moving the commands into the client component alone took them out
+                of the markup and the guard's count went from two demo pages to one. A figure the
+                guard cannot see is a figure nothing holds to the binary's real output. */}
+            <LiveTerminal view={liveView()} commands={commandLines("hydra")}>
               <Terminal frame="chats" />
+              <CommandSurface tool="hydra" />
             </LiveTerminal>
           </aside>
         </div>
