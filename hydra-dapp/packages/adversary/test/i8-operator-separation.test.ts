@@ -133,12 +133,24 @@ test("I8 IS WRITTEN DOWN, and says the thing the tests check", () => {
 test("NO ROUTE FROM A USER'S VALUE TO REMOVAL AUTHORITY COMPILES", () => {
   const local = join(HERE, "..", "node_modules", ".bin", "tsc");
   const shared = join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc");
-  // `root` is the workspace root, and it is where npm puts `tsc` once `package.json`
-  // declares `workspaces` — the two paths above are inside `packages/*`, which is exactly
-  // where it stops landing. Without this a fresh clone fails the assertion below on a tree
-  // where typescript is installed and working.
-  const root = join(HERE, "..", "..", "..", "node_modules", ".bin", "tsc");
-  const tsc = [local, shared, root].find(existsSync) ?? null;
+  /*
+   * Walked, not listed. `tsc` moves with the workspace layout: `packages/identity/node_modules`
+   * with per-package installs, `hydra-dapp/node_modules` with a workspace root, and the
+   * REPOSITORY root with one spanning both products. A list of candidates is a list of guesses
+   * about which of those is in force, and it was wrong within a day of being written — a third
+   * hard-coded path was added for the workspace root and the repo-root layout broke it again.
+   * Walking up from `packages/identity` covers every ancestor, which is where npm can put it.
+   */
+  const tsc = [join(HERE, "..", "node_modules", ".bin", "tsc"), ...(() => {
+    const up = [];
+    let at = join(HERE, "..", "..", "identity");
+    for (;;) {
+      up.push(join(at, "node_modules", ".bin", "tsc"));
+      const parent = dirname(at);
+      if (parent === at) return up;
+      at = parent;
+    }
+  })()].find(existsSync) ?? null;
   // A missing type-checker is a FAILURE, not a skip — an unrun build check reported as green is
   // how a build-time guarantee stops being one.
   assert.ok(tsc, "no tsc — run `npm i -D typescript` in hydra-dapp/packages/identity");
