@@ -418,6 +418,7 @@ export function Session() {
       <Pane
         title={open ?? "MESSAGES"}
         className="dash-b2"
+        basisHost
         right={open ? (
           <span className="dash-acts">
             <button type="button" onClick={() => void readNow()} disabled={working !== null}>
@@ -507,12 +508,30 @@ export function Session() {
  * which silently turns a one-screen instrument back into a document.
  */
 function Pane({
-  title, right, className, scroll = true, children,
+  title, right, className, scroll = true, basisHost, children,
 }: {
   title: string;
   right?: React.ReactNode;
   className?: string;
   scroll?: boolean;
+  /**
+   * ⛔ **MARKS THIS PANE AS THE HOST `scripts/figure-geometry.ts` MEASURES IN, AND IT IS NOT A
+   * STYLE HOOK.**
+   *
+   * That script injects a message with the longest `basis` string the product can produce and
+   * measures whether it clips — the qualification that separates a signature under a published
+   * key from one under a key nobody can look up. It has to inject into the element real messages
+   * render in, or it measures a width no message ever has.
+   *
+   * It anchored on `class="session"` until this page became a dashboard, and a correct
+   * restyling removed that class — so the gate found no host and certified nothing on any route.
+   * **A `data-` attribute whose only job is this cannot be removed by a refactor that does not
+   * know what it is for**, which a presentational class always can. The same file already
+   * anchors on `[data-deck]` and `[data-slide]` for the same reason.
+   *
+   * If you remove this, `check:figures` fails loudly rather than passing — verified.
+   */
+  basisHost?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -521,7 +540,12 @@ function Pane({
         <h2>{title}</h2>
         {right}
       </header>
-      <div className={scroll ? "dash-pane-body is-scroll" : "dash-pane-body"}>{children}</div>
+      <div
+        className={scroll ? "dash-pane-body is-scroll" : "dash-pane-body"}
+        data-basis-host={basisHost ? "" : undefined}
+      >
+        {children}
+      </div>
     </section>
   );
 }

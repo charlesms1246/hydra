@@ -492,8 +492,14 @@ for (const width of [360, 390, 768, 1024, 1440]) {
 
   const { result } = await cdp.send("Runtime.evaluate", {
     expression: `(() => {
-      const host = document.querySelector(".session");
-      if (!host) return { ok: false, why: "no .session on the page" };
+      // **ANCHORED ON A \`data-\` ATTRIBUTE, NOT A CLASS, AND THAT IS THE POINT.** This used to
+      // read \`.session\`. The page was restructured into a dashboard, the class went with the
+      // old layout, and this gate then found no host and certified NOTHING on any route — the
+      // failure was loud, but it measured nothing for as long as it took somebody to notice.
+      // \`components/Session.tsx\` sets this attribute and says why; a class earns its way into a
+      // refactor's crosshairs and an attribute named for its only job does not.
+      const host = document.querySelector("[data-basis-host]");
+      if (!host) return { ok: false, why: "no [data-basis-host] on the page — see components/Session.tsx" };
       const probe = document.createElement("ol");
       probe.className = "session-messages";
       probe.innerHTML =
