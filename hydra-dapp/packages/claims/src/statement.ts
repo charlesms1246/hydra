@@ -47,9 +47,15 @@ export type Claim = {
    */
   readonly from: string;
   /**
-   * The decision that settled it, when there is one. NOT RENDERED as a citation, deliberately —
-   * it points at a document a reader outside this machine cannot open, so it is a note for
-   * whoever maintains the claim rather than evidence offered to whoever reads it.
+   * What settled it, in a sentence. NOT RENDERED, deliberately: it is a note for whoever
+   * maintains the claim rather than evidence offered to whoever reads it, and `from` is the
+   * evidence.
+   *
+   * **IT HELD A PATH AND NOW HOLDS THE REASON.** The path was into `claude-docs/`, which is
+   * gitignored by standing decision — so the field parked an unfollowable pointer where it would
+   * not be rendered, which kept it out of the reader's way without making it any more openable.
+   * A sentence is the encoding a maintainer can act on without the directory, and it is the same
+   * thing the pointer was standing for.
    */
   readonly decides?: string;
   /** `true` when the guarantee is unqualified; `false` when it is partial and quantified. */
@@ -168,13 +174,13 @@ export function statement(): Statement {
       {
         says: "The pool's auditor can decrypt every message you send through it, and can link "
           + "any new identity you fund from your own balance back to you.",
-        // `claude-docs/` is gitignored by standing decision, so a citation into it is uncheckable
-        // BY CONSTRUCTION rather than by accident — clone the repo and that path is not there,
-        // ever. A citation is a promise a reader can follow; this was a note wearing a citation's
-        // clothes, borrowing credibility the second half could not pay for. The code half stays,
-        // so nothing became uncited. See `decides` for the reference that was dropped.
+        // A citation is a promise a reader can follow, and the second half of this one was a
+        // path into a gitignored directory — a note wearing a citation's clothes, borrowing
+        // credibility it could not pay for. The code half stays, so nothing became uncited.
         from: "identity/src/linkage.ts",
-        decides: "decisions/0002-fresh-identity-funding.md",
+        decides: "Escrow reveals what an identity did, not who owns it, so anonymous submission "
+          + "rests entirely on there being no funding link. Analysed and accepted; the "
+          + "provisioning flow that would close the link is not built.",
         complete: true,
       },
       {
@@ -191,7 +197,9 @@ export function statement(): Statement {
           + "and a conversation is sealed under a secret agreed separately that neither the pool "
           + "nor the storage server ever holds. What they get is who, not what.",
         from: "handshake/src/x3dh.ts",
-        decides: "decisions/0009-key-agreement.md",
+        decides: "X3DH under vault keys, never derived from pool material. Using the pool's own "
+          + "channel context would have been less code and would have handed the conversation to "
+          + "whoever holds the escrowed auditor key.",
         complete: true,
       },
     ]),
@@ -273,7 +281,9 @@ export function statement(): Statement {
           + "object, so the server can see a repeat within a conversation — not across "
           + "conversations, and not what was repeated.",
         from: "vault-client/src/blobs.ts",
-        decides: "decisions/0004-blob-classes.md",
+        decides: "Two storage classes that share nothing — separate ids, separate derivation. A "
+          + "private message published by accident cannot be un-read, and the author cannot be "
+          + "warned because the product does not know who they are.",
         complete: false,
       },
     ],

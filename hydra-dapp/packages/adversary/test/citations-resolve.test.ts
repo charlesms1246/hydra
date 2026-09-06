@@ -77,7 +77,8 @@ test("NO CITATION POINTS AT A PATH THAT CAN NEVER BE IN THE REPOSITORY", () => {
       for (const dir of ignored) {
         assert.ok(!p.includes(dir),
           `"${c.says.slice(0, 60)}…" cites ${p}, which is gitignored and will never be in a `
-          + "clone. A citation is a promise a reader can follow; put it in `decides` instead.");
+          + "clone. A citation is a promise a reader can follow. Cite the code that implements "
+          + "it, and put the reasoning itself in `decides` — as a sentence, not as a path.");
       }
     }
   }
@@ -110,8 +111,17 @@ test("a claim with no source cannot be published, and `decides` is not a citatio
   for (const c of claims()) {
     assert.ok(c.from.trim().length > 0, `"${c.says.slice(0, 50)}…" has no source`);
     assert.ok(paths(c.from).length > 0, `"${c.says.slice(0, 50)}…" cites nothing openable`);
-    // `decides` points at a document a reader outside this machine cannot open. It exists so the
-    // reference is not lost, and it must stay out of the rendered citation.
-    if (c.decides) assert.ok(!c.from.includes(c.decides), `${c.decides} leaked into a citation`);
+    // **`decides` HOLDS A REASON, NOT A PATH, AND THAT IS THE ASSERTION.** It used to hold a
+    // `claude-docs/…` reference — parked where it would not be rendered, which kept it out of a
+    // reader's way without making it one bit more openable. Storing an unfollowable pointer in a
+    // field nobody renders is not a fix, it is a place to put the problem. A sentence is what a
+    // maintainer without the directory can act on.
+    if (c.decides) {
+      assert.ok(!c.from.includes(c.decides), `${c.decides} leaked into a citation`);
+      assert.ok(!/^\S*\/\S*\.md$|^decisions\//.test(c.decides.trim()),
+        `\`decides\` holds a path (${c.decides}) rather than the reason it stands for`);
+      assert.ok(c.decides.trim().split(/\s+/).length >= 8,
+        `\`decides\` is too short to be a reason: ${c.decides}`);
+    }
   }
 });
