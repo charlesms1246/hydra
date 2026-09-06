@@ -23,22 +23,26 @@
  * ## ⛔ EXCLUDED FROM `web/`'s TYPECHECK, AND THIS IS NOT A LOOPHOLE
  *
  * `tsc` follows imports, so checking this file drags what it imports into the web lane's
- * typecheck. That made `npm run typecheck` here go red for **type errors in another lane's tree**,
- * which is a gate failing for a reason nobody in this lane can fix and everybody in this lane
- * learns to ignore.
+ * typecheck — and under this config that goes red over **correct Node code**, which is a gate
+ * failing for a reason nobody can fix and everybody learns to ignore. The exact cause is below,
+ * because "it fails for another lane's reasons" was the vague version and it survived two
+ * re-measurements without anyone checking it.
  *
- * ⛔ **Re-measured after the platform lane's split, and the blocker moved.** `view.ts` now reaches
- * ten files and none of them are forbidden — it used to be forty-three and four. But this script
- * also imports `app.ts` for `start` and `viewOf`, and that still reaches
- * `client/src/public.ts` and `handshake/src/inbox.ts`, both of which have type errors today. So
- * the exclusion stays, and the reason is now **`app.ts`, not `view.ts`** — which is the thing to
- * re-check next time, rather than re-deriving the whole argument.
+ * ⛔ **Re-measured 2026-09-06, and the blocker is not what the earlier note said.** `view.ts`
+ * reaches ten files and none are forbidden — it used to be forty-three and four. This script also
+ * imports `app.ts` for `start` and `viewOf`, which reaches `client/src/public.ts` and
+ * `handshake/src/inbox.ts`; under this config both report TS2769, because both call `fetch` with a
+ * `Uint8Array` body and this compilation's `lib` is `dom`, where `BodyInit` does not accept one.
  *
- * Those files are typechecked by `hydra-dapp`'s own `npm run typecheck`. Excluding them here drops
- * no coverage; it stops duplicating another lane's coverage inside this one and inheriting its
- * red. **What is lost is type checking of THIS file**, which is the real cost and is stated rather
- * than hidden: it is a build script with no runtime consumers, its output is validated by the
- * assertions below, and `npm run build` runs it — so it fails loudly rather than silently.
+ * ⛔ **THAT IS A LIB MISMATCH, NOT A DEFECT IN THAT LANE, and the earlier note here got it wrong
+ * by calling them "type errors" without qualification.** Node accepts that body; the same two
+ * files check clean under `lib: ES2022`. There is nothing for `hydra-dapp` to fix, and asking them
+ * to would be asking them to work around our `lib`.
+ *
+ * **The cost this exclusion used to carry is now paid.** It used to lose type checking of THIS
+ * file — a build script with real logic and no coverage. `tsconfig.scripts.json` covers it under
+ * Node's libs, and `npm run typecheck` runs both. That the coverage is real was checked rather
+ * than assumed: a deliberate `const x: number = "s"` here fails that config with TS2322.
  *
  * ## The fixture is obviously a fixture
  *

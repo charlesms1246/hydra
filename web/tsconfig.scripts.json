@@ -1,0 +1,34 @@
+{
+  /*
+   * The build scripts, typechecked under NODE's libs rather than the browser's.
+   *
+   * ⛔ THIS EXISTS BECAUSE `tsconfig.json` EXCLUDES `scripts/capture-tui.ts`, AND THAT EXCLUSION
+   * IS CORRECT. That file imports the TUI's own `app.ts` so the site can render the real
+   * interface rather than a drawing of it, and `tsc` follows imports — so checking it under the
+   * site's config pulls `client/src/public.ts` and `handshake/src/inbox.ts` into a compilation
+   * whose `lib` is `dom`. Both call `fetch` with a `Uint8Array` body, which Node accepts and the
+   * DOM's `BodyInit` does not, so both report TS2769.
+   *
+   * ⛔ THAT IS A LIB MISMATCH, NOT A DEFECT IN THAT LANE. Re-measured 2026-09-06: those two errors
+   * are the whole of it, they are the same error twice, and they disappear here — under
+   * `lib: ES2022` with node types — with no change to their code. Deleting the exclusion would put
+   * the web lane's gate permanently red over correct Node code, which is a gate everybody learns
+   * to ignore. Do not "fix" them in `hydra-dapp`; there is nothing there to fix.
+   *
+   * What the exclusion used to cost was type checking of `capture-tui.ts` ITSELF — a build script
+   * with real logic and no coverage. That is what this file buys back, and it is checked: adding
+   * `const x: number = "s"` to `capture-tui.ts` fails this config with TS2322.
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "noEmit": true,
+    /* The site's config sets `incremental`, which would drop a second `.tsbuildinfo` beside the
+       one `.gitignore` names by path. A scripts typecheck is fast enough not to need the cache,
+       and emitting nothing is cheaper than teaching the ignore file about it. */
+    "incremental": false
+  },
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["node_modules"]
+}
