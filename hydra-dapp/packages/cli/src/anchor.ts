@@ -78,7 +78,8 @@ export function identityContract(network: string): string {
     throw new Error(
       `no verified Starknet ID identity contract for ${network} — known: `
       + `${Object.keys(IDENTITY_CONTRACT).join(", ")}. Adding one means reading its class hash `
-      + "off the chain, not copying an address from a document; see decisions/0031.");
+      + "off the chain and checking its data ABI against a call that actually returns, not "
+      + "copying an address out of a document.");
   }
   return at;
 }

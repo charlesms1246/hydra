@@ -299,8 +299,6 @@ switch (command) {
     // whose whole job is to help somebody decide. A stale user-facing string is a claim, and this
     // one was wrong in the direction that talks a user out of a thing that works.
     for (const line of RECORD_NOT_WRITTEN.full) console.error(line);
-    console.error("");
-    console.error("see claude-docs/decisions/0031 and 0027.");
     break;
   }
 
@@ -360,7 +358,7 @@ switch (command) {
     console.error("WHO SAW THIS: the RPC node you are configured against, which now knows your");
     console.error("address asked about theirs. that is better than fetching from their vault —");
     console.error("which would tell THEM you were considering it — and it is not nothing. you");
-    console.error("choose the node; they do not. see `hydra disclose` and decisions/0038.");
+    console.error("choose the node; they do not. `hydra disclose` lists what each party sees.");
     break;
   }
 
@@ -390,7 +388,8 @@ switch (command) {
     console.log("");
     console.log("the storage server can now see that they are reachable and count what is");
     console.log("waiting for them. that is unavoidable without accounts, and accounts would");
-    console.log("disclose more. see claude-docs/decisions/0013-prekey-delivery.md.");
+    console.log("disclose more: an account is a name the server counts against over time, and");
+    console.log("this way it counts against a key that tells it nothing else about you.");
     console.log("");
     console.log("AND: this write is not scheduled the way message uploads are. if you `send`");
     console.log("in the next few minutes, the chain publish nearest this write is yours, and");
@@ -463,8 +462,8 @@ switch (command) {
     console.log("");
     console.log("NOTE: that transaction was signed by your own account, so the chain shows that");
     console.log("YOU published a message, and its nonce shows which one. the timing defence hides");
-    console.log("which upload holds the text; it does not hide that you sent it. see");
-    console.log("claude-docs/decisions/0011-cli-client.md.");
+    console.log("which upload holds the text; it does not hide that you sent it. `hydra status`");
+    console.log("names the route you are on, and the pool route is the one that changes this.");
     break;
   }
 
@@ -831,7 +830,7 @@ switch (command) {
         + "    calldata, and spends a little of your money per message"
       : "  - it publishes pointers from your own account, so the chain shows that YOU\n"
         + "    sent each message and in what order. every time.");
-    console.log("it is for a devnet and a testnet. see claude-docs/decisions/0009 and 0011.");
+    console.log("it is for a devnet and a testnet.");
     // Touch the root so a corrupt seed fails here rather than at the first send.
     vaultRootOf(state);
     break;

@@ -91,7 +91,8 @@ if (generate > 0) {
   console.error("If you are accepting anonymous submissions, PUBLISH A BATCH OPENLY so that holding");
   console.error("one identifies nobody. That is not free: an open code is usable by anyone, so your");
   console.error("abuse control degrades to per-code rate limiting that anyone can exhaust. That is");
-  console.error("the trade, and it is a real one — see claude-docs/decisions/0038.");
+  console.error("the trade, and it is a real one. The cryptographic answer — a token you sign and");
+  console.error("cannot recognise when it comes back — is not built here yet.");
   process.exit(0);
 }
 
@@ -198,7 +199,8 @@ console.log(`limiter  ${mode}${mode === "none" ? "" : ` at ${perMinute}/min`}`
 // which is why a vault that could not perform it looked exactly like one that could.
 console.log(removalToken
   ? "takedown  public takedown ENABLED (--removal-token-file); encrypted objects are never\n"
-    + "          removable this way — they are deleted by capability, see decisions/0035"
+    + "          removable this way. An encrypted object is deleted by presenting the\n"
+    + "          capability for it, which is a thing you do not hold and cannot mint"
   : "takedown  public takedown DISABLED — no --removal-token-file, so DELETE is refused. The\n"
     + "          moderation pipeline cannot remove anything from this vault.");
 // The most consequential capability this server can be configured with, announced like the rest.

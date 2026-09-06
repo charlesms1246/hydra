@@ -121,7 +121,11 @@ test("only networks with a verified address are served", () => {
   // A devnet has no Starknet ID deployment, and inventing an address for one would put a record
   // where nothing resolves it. The error names what adding a network actually requires.
   assert.throws(() => identityContract("devnet"), /no verified Starknet ID/);
-  assert.throws(() => identityContract("goerli"), /decisions\/0031/);
+  // **PINS THE INSTRUCTION, NOT A POINTER.** This used to assert `/decisions\/0031/` — a citation
+  // to a document no reader of this repository can open, which made the test agree that a
+  // dead-end reference was the message. What the operator has to DO is the checkable part.
+  assert.throws(() => identityContract("goerli"), /class hash/);
+  assert.throws(() => identityContract("goerli"), /data ABI/);
 });
 
 test("the addresses and class hash are the ones read off the chain", () => {

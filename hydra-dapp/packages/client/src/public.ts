@@ -114,7 +114,7 @@ export const describePost = (): string[] => [
   "",
   "It can be taken down and it cannot be unpublished. A removal stops this vault serving it.",
   "It does not reach anybody who already read it, and a public object is content-addressed, so",
-  "any copy anybody kept still verifies. See `decisions/0035`.",
+  "any copy anybody kept still verifies.",
   "",
   "NOTHING ABOUT THIS GOES ON CHAIN. A channel message publishes a commitment and the chain",
   "shows that you sent something; a post does not. What ties you to this is the upload itself —",

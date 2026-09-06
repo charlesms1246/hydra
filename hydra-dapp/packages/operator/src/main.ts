@@ -320,7 +320,8 @@ switch (command) {
     out(`Appeal ${outcome}: ${account} against ${decisionId}.`,
       outcome === "upheld"
         ? "The original decision is reversed. If it was a removal, the object is NOT restored by\n"
-          + "this command — removal is not reversible, see decisions/0035."
+          + "this command. A removal is not reversible: the bytes are gone from this vault and\n"
+          + "nothing here can put them back. Reversing the decision reverses the record of it."
         : "The original decision stands.");
     break;
   }
@@ -419,7 +420,8 @@ switch (command) {
   }
 
   default:
-    out("hydra-operator — the moderator's tool. NOT a user client; see decisions/0036.",
+    out("hydra-operator — the moderator's tool. NOT a user client: it shares no binary and no\n"
+      + "dependency path with one, so nothing here can be reached from a user's client.",
       "",
       "  queue                          reviews waiting for a human",
       "  show <blobId>                  the reports against one object, with their limits",

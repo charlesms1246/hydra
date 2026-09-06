@@ -82,8 +82,9 @@ const EMPTY = H("hydra/vault/root/empty/v1");
 function levels(ids: readonly string[]): string[][] {
   if (ids.length > TREE_LEAVES) {
     throw new Error(`${ids.length} objects exceeds the ${TREE_LEAVES}-leaf tree. Doubling it is a `
-      + "public step that discloses the corpus passed this threshold — see decisions/0039, and "
-      + "announce it in the report for the period it happens in.");
+      + "public step: the tree size is visible in every proof, so a change to it tells every "
+      + "reader the corpus passed this threshold. Announce it in the transparency report for the "
+      + "period it happens in rather than letting them infer it.");
   }
   const sorted = [...ids].sort();
   let level = [...sorted.map(leaf), ...new Array(TREE_LEAVES - sorted.length).fill(EMPTY)];
