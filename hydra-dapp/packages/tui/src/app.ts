@@ -26,7 +26,7 @@ import type { State, ReceivedMessage as Received } from "../../cli/src/state.ts"
 import { PAGES, FIELDS } from "./model.ts";
 import { navigate } from "./nav.ts";
 import type { Client, Identity, LogLine, Page, Satisfies, Shown, View } from "./model.ts";
-import { attributionLabel, linkabilityOf } from "../../cli/src/commands.ts";
+import { attributionLabel, linkabilityOf, gapsOf } from "../../cli/src/commands.ts";
 import { bundleFrom, oneTimeRemaining } from "../../handshake/src/prekeys.ts";
 import { derive, rootSeed, entropyFrom, fromStoredSeed, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
@@ -532,6 +532,7 @@ function clientOf(state: State): Client {
     controlUrl: state.controlUrl,
     poolAccount: state.poolAccount,
     invites: state.invites.length,
+    gaps: gapsOf(state),
   };
 }
 

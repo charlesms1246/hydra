@@ -46,6 +46,9 @@
 
 import type { Nav } from "./nav.ts";
 
+import type { SetupGap } from "../../claims/src/setup.ts";
+export type { SetupGap };
+
 export type Page = "chats" | "connect" | "identity" | "record" | "disclosure" | "status";
 
 export const PAGES: readonly { readonly id: Page; readonly label: string }[] = [
@@ -200,6 +203,14 @@ export type Client = {
   readonly poolAccount?: string;
   /** The count, not the invites. The screen only ever said how many were left. */
   readonly invites: number;
+  /**
+   * What this install still cannot do, and what was never chosen.
+   *
+   * From `claims/src/setup.ts`, which imports nothing — so this type crosses into the browser
+   * bundle without dragging a graph behind it. Computed in `app.ts` `clientOf` by `gapsOf`, which
+   * is the one place a `State` is narrowed to the four fields the answer depends on.
+   */
+  readonly gaps: readonly SetupGap[];
 };
 
 /** Everything `render` takes. `app.ts` `viewOf` is the only thing that builds one. */

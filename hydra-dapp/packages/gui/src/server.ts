@@ -33,7 +33,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 
 import { anchorOf, attributionLabel, describeFailure, fingerprint, publishBundle, sendMessage,
-  readChannel, flush, linkabilityOf, FLUSH_LIMIT } from "../../cli/src/commands.ts";
+  readChannel, flush, linkabilityOf, gapsOf, RECONFIGURE, FLUSH_LIMIT } from "../../cli/src/commands.ts";
 import { describe as describeLinkability } from "../../channel/src/crowd.ts";
 import { BUSY, type Exclusive } from "./serialise.ts";
 import type { Chain } from "../../cli/src/chain.ts";
@@ -287,6 +287,26 @@ function status(state: State, file: string, lastFlush: FlushAttempt | null): unk
     // before their first message — `vault-server/src/observations.ts` calls it the row that can
     // undo every other row. A page holding codes is a page that can spend them.
     invitesLeft: state.invites.length,
+    /**
+     * What this install still cannot do, and what nobody chose.
+     *
+     * **THE SAME OMISSION THIS SURFACE ALREADY MADE ONCE.** The linkability row in
+     * `FRONT-END-PARITY-INVENTORY.md` records that the GUI served a chat and never mentioned the
+     * crowd at all — *"a parity document with no row for a thing cannot report that thing
+     * missing"* — and this is that shape again: `contract: ""` and `invitesLeft: 0` shipped as a
+     * string and a number, with nothing saying they are the reason nothing can be sent.
+     *
+     * `gapsOf` is `claims/src/setup.ts` through the one `State` projection, so the CLI's printed
+     * block, the TUI's status page and this array are the same sentences. **`RECONFIGURE` rides
+     * with it** because the remedy is useless split from the condition, and a page that had to
+     * fetch the two separately would be a page that could render one without the other.
+     *
+     * **WHAT THIS CANNOT DO, stated where the I7 and linkability rows already concede it:** it
+     * guarantees a page cannot get `invitesLeft` without the sentence explaining where invites
+     * come from. It cannot make the page draw the difference between a blocker and a value, which
+     * is exactly the mistake the other two surfaces were making. That half is `web/`'s.
+     */
+    setup: { gaps: gapsOf(state), reconfigure: RECONFIGURE },
     queue: {
       pending: state.pending.length,
       nextUploadAt: state.pending.length

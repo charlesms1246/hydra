@@ -40,6 +40,7 @@ import { describe } from "../../channel/src/crowd.ts";
 import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED,
   LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES }
   from "../../claims/src/warnings.ts";
+import { RECONFIGURE } from "../../claims/src/setup.ts";
 
 export type Size = { readonly rows: number; readonly cols: number };
 
@@ -402,7 +403,7 @@ function status(m: View, size: Size, height: number): string[] {
   const lines = [
     `${paint("state    ", "gray")}${m.statePath}`,
     `${paint("vault    ", "gray")}${s?.vaultUrl ?? "—"}`,
-    `${paint("chain    ", "gray")}${s?.contract || "(unset)"} via ${s?.rpcUrl ?? "—"}`,
+    `${paint("chain    ", "gray")}${s?.contract || paint("(none — see below)", "yellow")} via ${s?.rpcUrl ?? "—"}`,
     // **A SLOW CLIENT THAT DOES NOT SAY IT IS SLOW READS AS A BROKEN ONE.** `fromBlock` is 0 with
     // a contract set exactly when the deployment-block discovery has not succeeded — the node was
     // unreachable at identity creation, or this file predates the discovery existing. Every read
@@ -420,6 +421,19 @@ function status(m: View, size: Size, height: number): string[] {
       : []),
     `${paint("route    ", "gray")}${s?.controlUrl ? `pool (${s.poolAccount || "alice"})` : "direct from your own account"}`,
     `${paint("invites  ", "gray")}${s?.invites ?? 0} left`,
+    "",
+    // **A BLOCKER IS NOT A VALUE, AND THIS PAGE USED TO DRAW THEM THE SAME.** `(unset)` and
+    // `0 invites left` sat in the rows above at the weight of a fingerprint, so a client that
+    // could not send one message looked configured. From `claims/src/setup.ts` via the `View`, so
+    // the CLI, this page and the HTTP API cannot phrase the same gap three ways.
+    ...(s?.gaps ?? []).flatMap((g) => [
+      ...bullet(g.what, size.cols - 4,
+        g.severity === "missing" ? paint("MISSING      ", "yellow") : paint("never chosen ", "gray")),
+      ...note(g.why, size.cols - 6).map((l) => `  ${l}`),
+      ...note(g.remedy, size.cols - 6).map((l) => `  ${l}`),
+      "",
+    ]),
+    ...((s?.gaps ?? []).length ? note(RECONFIGURE, size.cols - 4) : []),
     "",
     paint(`queue — ${pending.length} object(s), uploaded on the clock, not on your command`, "bold"),
     ...soon.map((p) => `  ${fit(p.channel, 18)}${p.real ? "message" : paint("cover  ", "gray")}  ${at(p.uploadAt)}`),

@@ -27,6 +27,8 @@ import { signedBy, ephemeral, unframe, verifyAuthorship } from "../../handshake/
 import { recordFor, encodeRecord, decodeRecord, verifyRecord, bundleOf, RECORD_FELTS }
   from "../../handshake/src/record.ts";
 import { commit, contentHashFor } from "../../channel/src/commitment.ts";
+import { DEVNET_VAULT, DEVNET_RPC, setupGaps } from "../../claims/src/setup.ts";
+import type { SetupGap } from "../../claims/src/setup.ts";
 import type { Bundle, PrekeyMessage } from "../../handshake/src/x3dh.ts";
 import { coverPlan, coverBody, coverId, coverIndex, COVER_RATE, saltFrom } from "../../channel/src/cover.ts";
 import { deleteToken } from "../../channel/src/deletion.ts";
@@ -234,10 +236,28 @@ export function describeFailure(e: unknown, vaultUrl?: string): string {
   return `${vaultUrl ?? "the vault"} did not answer (${code}) — is it running?`;
 }
 
+export { RECONFIGURE, DEVNET_VAULT, DEVNET_RPC } from "../../claims/src/setup.ts";
+export type { SetupGap, SetupConfig } from "../../claims/src/setup.ts";
+
+/**
+ * `setupGaps` for a caller that has a whole `State`.
+ *
+ * The narrow function lives in `claims/src/setup.ts` and takes four fields so that module can
+ * import nothing and stay reachable from `view.ts`. This is the projection, in the one place that
+ * already holds a `State` — the same shape as `clientOf` in the TUI: one function where the wide
+ * type meets the narrow one, so a renamed field is a type error here rather than a silent gap.
+ */
+export const gapsOf = (state: State): readonly SetupGap[] => setupGaps({
+  contract: state.contract,
+  invites: state.invites.length,
+  vaultUrl: state.vaultUrl,
+  rpcUrl: state.rpcUrl,
+});
+
 export function init(overrides: Partial<State> = {}): State {
   return {
-    vaultUrl: "http://127.0.0.1:8080",
-    rpcUrl: "http://127.0.0.1:5050",
+    vaultUrl: DEVNET_VAULT,
+    rpcUrl: DEVNET_RPC,
     contract: "",
     fromBlock: 0,
     accountsFile: "",

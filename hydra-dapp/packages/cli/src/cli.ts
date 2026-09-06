@@ -59,7 +59,7 @@ import {
   myRecord, anchorPeer, anchorOf, recordFelts, drain, linkabilityOf, post, fetchPosts,
   bundleFromChain,
   encodeWire as encode, decodeWire as decode, ensureFromBlock,
-  describeFailure } from "./commands.ts";
+  gapsOf, RECONFIGURE, describeFailure } from "./commands.ts";
 import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
@@ -105,6 +105,49 @@ const positional = rest.filter((a, i) => {
   // A boolean flag consumes nothing, so what follows it is a positional argument.
   return BOOLEAN.has(previous.slice(2));
 });
+
+/**
+ * What this install still needs, printed the way every other refusal here is: condition, then
+ * remedy.
+ *
+ * **TO STDERR, AND NOT BECAUSE IT IS AN ERROR.** `hydra status` is piped and read by scripts; the
+ * rows above are its output and these are a message to the person. Same split `init` already makes
+ * when the deployment-block discovery fails.
+ *
+ * `missing` before `unchosen` because one stops you sending and the other only means nobody
+ * decided. Both are printed: a client that named the blockers and stayed quiet about two devnet
+ * URLs pointing at nothing would have answered the smaller half of the complaint.
+ */
+function printSetupGaps(state: State): void {
+  const gaps = gapsOf(state);
+  if (gaps.length === 0) return;
+  const missing = gaps.filter((g) => g.severity === "missing");
+  console.error("");
+  console.error(missing.length
+    ? `THIS CLIENT CANNOT SEND YET — ${missing.length} thing(s) missing.`
+    : "this client can send, but two settings were never chosen:");
+  for (const g of gaps) {
+    console.error("");
+    console.error(`  ${g.severity === "missing" ? "MISSING" : "never chosen"}: ${g.what}`);
+    for (const line of wrapTo(g.why, 74)) console.error(`      ${line}`);
+    for (const line of wrapTo(g.remedy, 74)) console.error(`      ${line}`);
+  }
+  console.error("");
+  for (const line of wrapTo(RECONFIGURE, 78)) console.error(`  ${line}`);
+  console.error("");
+}
+
+/** Break on spaces at `n` columns. The TUI has `screen.ts`; a CLI printing prose needs three lines. */
+function wrapTo(text: string, n: number): string[] {
+  const out: string[] = [];
+  let line = "";
+  for (const word of text.split(/\s+/)) {
+    if (line && line.length + 1 + word.length > n) { out.push(line); line = ""; }
+    line = line ? `${line} ${word}` : word;
+  }
+  if (line) out.push(line);
+  return out;
+}
 
 const usage = () => {
   // DERIVED FROM THE COMMENT'S OWN END, not a hardcoded line range. It used to be `slice(3, 30)`,
@@ -238,6 +281,10 @@ switch (command) {
     console.log(`identity written to ${STATE_FILE}`);
     console.log(`fingerprint ${fingerprint(publishBundle(state))}`);
     console.log("\nthat file holds your root key in the clear. it is mode 0600 and that is all.");
+    // **A FRESH `hydra init` WITH NO FLAGS SUCCEEDS AND CANNOT SEND ANYTHING.** It printed a
+    // fingerprint and stopped, so the only signal that the install was unusable was `(unset)` on a
+    // page the user had no reason to visit. Said here, at the one moment every user passes through.
+    printSetupGaps(state);
     break;
   }
 
@@ -846,7 +893,9 @@ switch (command) {
     const state = load();
     console.log(`state      ${STATE_FILE}`);
     console.log(`vault      ${state.vaultUrl}`);
-    console.log(`chain      ${state.contract || "(unset)"} via ${state.rpcUrl}`);
+    // `(unset)` USED TO SIT HERE LOOKING LIKE A SETTING. The condition and its remedy are below,
+    // in the block every other refusal in this client uses; this row keeps the shape scripts parse.
+    console.log(`chain      ${state.contract || "(none — see below)"} via ${state.rpcUrl}`);
     console.log(`route      ${state.controlUrl ? `pool (${state.poolAccount || "alice"})` : "direct from your own account"}`);
     console.log(`fingerprint ${fingerprint(publishBundle(state))}`);
     console.log(`channels   ${Object.keys(state.channels).join(", ") || "(none)"}`);
@@ -867,6 +916,7 @@ switch (command) {
       : "  - it publishes pointers from your own account, so the chain shows that YOU\n"
         + "    sent each message and in what order. every time.");
     console.log("it is for a devnet and a testnet.");
+    printSetupGaps(state);
     // Touch the root so a corrupt seed fails here rather than at the first send.
     vaultRootOf(state);
     break;
