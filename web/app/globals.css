@@ -28,18 +28,15 @@
  * parties learn what — so there is no `next/font/google` here and no URL that leaves this host.
  * `test/site.test.ts` fails on any absolute URL that is not one of the declared links.
  *
- * `font-display: block` on the wordmark rather than `swap`: it is the whole hero at 14vw, and a
- * fallback grotesk flashing at that size and then reflowing is uglier than a beat of nothing.
- * Everything else uses `swap`, because prose that arrives late is worse than prose in the
- * fallback face.
+ * ⛔ **TWO FACES, BY DECISION: NON Natural Grotesk and Geist Mono.** Geist and Instrument Serif
+ * are gone, from here and from `public/fonts/`.
+ *
+ * `font-display` on the grotesk moved from `block` to `swap`, and that is a consequence of the
+ * ruling rather than a preference. `block` was right when the face set the wordmark and nothing
+ * else — a fallback flashing at 14vw and reflowing is uglier than a beat of nothing. The same
+ * face now sets every word on the site, and `block` on body copy is a blank page until the file
+ * arrives. Late prose beats absent prose.
  * ------------------------------------------------------------------------------------------ */
-
-@font-face {
-  font-family: "Geist";
-  src: url("/fonts/Geist-Variable-latin.woff2") format("woff2");
-  font-weight: 100 900;
-  font-display: swap;
-}
 
 @font-face {
   font-family: "Geist Mono";
@@ -48,24 +45,21 @@
   font-display: swap;
 }
 
-@font-face {
-  font-family: "Instrument Serif";
-  src: url("/fonts/InstrumentSerif-Regular-latin.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-
 /*
  * NON Natural Grotesk is licensed to the user for personal use, which covers building this and
  * does not cover redistributing the file. So the binary is gitignored and `scripts/preflight.ts`
  * fails the build with a path and an explanation when it is missing, rather than quietly
- * falling back to Geist and shipping a wordmark nobody chose. See `web/README.md`.
+ * falling back to another face and shipping a wordmark nobody chose. See `web/README.md`.
+ *
+ * One weight, 400. Nothing here asks the browser to synthesise a bolder or lighter one — the
+ * weight declarations elsewhere in this sheet resolve to 400 against a single-weight family, and
+ * a synthetic bold is a smeared outline rather than a typeface.
  */
 @font-face {
   font-family: "NON Natural Grotesk";
   src: url("/fonts/NON-Natural-Grotesk-Regular.woff2") format("woff2");
   font-weight: 400;
-  font-display: block;
+  font-display: swap;
 }
 
 /* --------------------------------------------------------------------------------------------
@@ -95,10 +89,19 @@
   --g-64: #949494;
   --g-80: #bdbdbd;
 
-  --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  /*
+   * ⛔ THREE NAMES, TWO FACES. `--sans`, `--serif` and `--display` are all the grotesk.
+   *
+   * The names are kept rather than collapsed into one, and that is deliberate: they name the
+   * ROLE — interface, prose, display — and the sheet says which role every rule is playing. Two
+   * of them happen to resolve to the same file today. If a second text face is ever commissioned,
+   * it attaches here, in one line, and lands on exactly the rules that meant prose. Collapsing
+   * them to `--sans` would throw that information away and it is not recoverable by search.
+   */
+  --sans: "NON Natural Grotesk", ui-sans-serif, system-ui, sans-serif;
   --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --serif: "Instrument Serif", Georgia, "Times New Roman", serif;
-  --display: "NON Natural Grotesk", "Geist", ui-sans-serif, sans-serif;
+  --serif: "NON Natural Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --display: "NON Natural Grotesk", ui-sans-serif, system-ui, sans-serif;
 
   /* The page gutter, matched to the frame inset so the rules line up with the corner marks. */
   --gutter: clamp(1.5rem, 3vw, 3rem);
@@ -1529,9 +1532,21 @@ body.has-canvas .field {
  * See `scripts/build-mode.ts` for why the gitignore does not cover this.
  * ------------------------------------------------------------------------------------------ */
 
+/*
+ * ⛔ **A SYSTEM STACK, WRITTEN OUT, NOT `var(--sans)`.**
+ *
+ * This rule used to substitute `var(--sans)`, which was Geist — a file. `--sans` is now the
+ * restricted face itself, so leaving it here would make the public build substitute the exact
+ * thing it exists to avoid serving, and pointing it at any other bundled face would mean shipping
+ * a third woff2 for a mode nobody currently builds. A substitution's whole job is to degrade to
+ * something guaranteed present, so it names what every machine already has.
+ *
+ * The weight is 400 rather than 200 for the same reason: 200 asked a variable face for a light
+ * cut, and there is no guarantee of one in a system stack.
+ */
 html[data-build="public"] .wordmark {
-  font-family: var(--sans);
-  font-weight: 200;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-weight: 400;
   letter-spacing: -0.03em;
 }
 
@@ -2187,6 +2202,32 @@ html[data-build="public"] .wordmark {
 }
 
 /*
+ * ⛔ Short boxes, and this band exists because of the face.
+ *
+ * The site went to two faces, and the deck's copy moved from Instrument Serif to NON Natural
+ * Grotesk, which sets wider at the same size — so the same paragraphs take more lines and slide
+ * 03 (two paragraphs and a figure) overflowed its own box at seven of the seventy viewport sizes
+ * `check:figures` sweeps, worst at 360x768 by 63px. **A slide that overflows has an unread tail**,
+ * and it is reached by scrolling vertically inside a deck that just taught the reader movement is
+ * horizontal.
+ *
+ * The floors are what bite at these sizes, not the `vh` terms: `clamp()` picks the floor once the
+ * viewport is small enough, so lowering the fluid coefficient would have changed nothing. This
+ * band lowers the floors and tightens the leading, and stops short of the 40rem band's figure cap
+ * because a 800px-tall window has room for a drawing and does not need one.
+ */
+@media (max-height: 50rem) {
+  .slide h2 {
+    font-size: clamp(1.4rem, min(4.2vw, 5.9vh), 3.25rem);
+  }
+
+  .slide p {
+    font-size: clamp(0.9375rem, min(2.4vw, 2.8vh), 1.9rem);
+    line-height: 1.3;
+  }
+}
+
+/*
  * Very short boxes. Reached by a small window rather than by a device, but a slide that overflows
  * is a slide with an unread tail whatever produced the viewport.
  */
@@ -2231,6 +2272,31 @@ html[data-build="public"] .wordmark {
   line-height: 1.15;
   color: var(--white);
   margin: 0;
+}
+
+/*
+ * An inline link inside prose.
+ *
+ * The site had none until the legal pages: every cross-reference before them was a CTA button or
+ * a footer row, so a link in a paragraph rendered in the browser's default blue and underline —
+ * the one piece of styling on the site nobody chose. White with an offset rule, accent on hover,
+ * which is how the rest of the sheet distinguishes state: by weight and colour, never by a hue
+ * that is not in the palette.
+ */
+.prose-body a,
+.statement-lead a {
+  color: var(--white);
+  text-decoration: underline;
+  text-decoration-color: var(--g-32);
+  text-underline-offset: 0.2em;
+}
+
+.prose-body a:hover,
+.prose-body a:focus-visible,
+.statement-lead a:hover,
+.statement-lead a:focus-visible {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
 }
 
 /* The step: down, and inward. The second block of a staircase never starts where the first did. */

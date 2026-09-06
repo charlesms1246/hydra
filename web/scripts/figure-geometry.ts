@@ -49,17 +49,25 @@ import { tmpdir } from "node:os";
 const WIDTHS = [390, 768, 1024, 1440];
 
 /** Every route the site exports. A page missing from this list is a page nobody measures. */
-const ROUTES = [
-  "/",
-  "/pitch/",
-  "/demo/",
-  "/demo/hydra/",
-  "/demo/hydra-dev/",
-  "/install/",
-  "/session/",
-  "/about/",
-  "/about/disclosure/",
-];
+/**
+ * Every built route, enumerated from `out/` rather than listed.
+ *
+ * ⛔ **It was a list of nine, and it was a list the day three pages were added.** The legal pages
+ * carry no SVG, so nothing here would have failed — which is the point: the next page that does
+ * carry one is added by somebody who has no reason to know this file exists, and the gate would
+ * have reported "clean" over a scope that had quietly stopped covering the site.
+ *
+ * The same reasoning `test/site.test.ts` gives for enumerating `out/`, and the same reasoning
+ * behind `entryPoints()` discovering pages for the boundary walk. A hand-kept scope shrinks by
+ * default.
+ */
+function routes(dir: string, route = "/"): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory()
+      ? routes(join(dir, e.name), `${route}${e.name}/`)
+      : e.name === "index.html" ? [route] : [],
+  );
+}
 
 /*
  * Vacuity floors, set below what the site has today (4 figures, 25 labels) so that removing one
@@ -308,6 +316,13 @@ async function connect(url: string) {
 const root = normalize(join(import.meta.dirname, "..", "out"));
 if (!existsSync(join(root, "index.html"))) {
   console.error(`::error::${root}/index.html is missing — build before measuring.`);
+  process.exit(1);
+}
+
+/* After `root`, because it reads the built directory rather than a list. */
+const ROUTES = routes(root).sort();
+if (ROUTES.length < 9) {
+  console.error(`::error::only ${ROUTES.length} routes found in out/ — the walk is not seeing the site.`);
   process.exit(1);
 }
 

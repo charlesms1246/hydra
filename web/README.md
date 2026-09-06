@@ -52,21 +52,25 @@ time, the real `out/` directory, real `git ls-files`. No fixture, no golden file
 
 ## Fonts
 
-Four faces, all self-hosted from `public/fonts/`.
+Two faces, both self-hosted from `public/fonts/`.
 
 | face | role | licence | in the repo? |
 |---|---|---|---|
-| Geist (variable 100–900) | UI, section titles | OFL-1.1 | yes |
-| Geist Mono (variable) | labels, citations, ticks | OFL-1.1 | yes |
-| Instrument Serif (400) | all prose | OFL-1.1 | yes |
-| NON Natural Grotesk (400) | the wordmark, nothing else | **personal use** | **no** |
+| Geist Mono (variable) | labels, citations, ticks, terminals | OFL-1.1 | yes |
+| NON Natural Grotesk (400) | everything else | **personal use** | **no** |
+
+It was four. Geist and Instrument Serif were removed by decision, and the grotesk went from
+setting the wordmark alone to setting every word that is not monospace. Two consequences worth
+knowing before touching this: it has **one weight**, so `font-weight` in `globals.css` resolves
+to 400 wherever it is not the mono, and `font-display` moved from `block` to `swap`, because a
+blank page is a worse wait than a page in the fallback face.
 
 **NON Natural Grotesk is not in the repository and must not be committed.** It is licensed to
 the author for personal use, which covers building this site and does not cover redistribution —
 and committing a font to a repository is redistribution regardless of what the site does with it.
 It is in `.gitignore`, and `scripts/preflight.ts` fails the build with the path and this
-explanation if it is absent, rather than silently falling back to Geist and shipping a wordmark
-nobody chose.
+explanation if it is absent, rather than silently falling back to a system face and shipping a
+site nobody designed.
 
 To build: put your licensed copy at `public/fonts/NON-Natural-Grotesk-Regular.woff2`.
 
@@ -116,7 +120,7 @@ So there are two builds:
 | | `npm run build` | `npm run build:public` |
 |---|---|---|
 | for | local work, recording, development | anything served from a URL |
-| wordmark | NON Natural Grotesk | Geist Light |
+| wordmark | NON Natural Grotesk | the system sans stack |
 | mark | `public/hydra.svg` | `>|<`, the reference's own glyph |
 | preflight fails when | the assets are **missing** | the assets are **present** |
 

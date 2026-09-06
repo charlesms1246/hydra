@@ -59,7 +59,8 @@ devtool/LICENSE
 #   3. `HYDRA_ASSETS=licensed` in `web/scripts/assert-public.ts` (it does not need deleting — it
 #      inverts, and under `licensed` it asserts exactly what it always did).
 #
-# The other three faces (Geist, Geist Mono, Instrument Serif) are OFL and were always committed.
+# The other face (Geist Mono) is OFL and is committed. Geist and Instrument Serif were dropped
+# when the site went to two faces.
 
 # Unanchored: a Next command run from the repository root leaves a `.next/` there, and a rule
 # anchored at `web/` does not cover it. Found as 12K of trace files at the root, untracked and one

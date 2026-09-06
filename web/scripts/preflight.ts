@@ -28,8 +28,9 @@ const problems: string[] = [];
  * or a licensed font and a third party's trademark served from a public URL because they happened
  * to be sitting in `public/` when somebody ran the build.
  *
- * `font-display: block` means a missing wordmark face renders as nothing rather than as Geist, so
- * without this check the full build's failure mode is an empty hero that looks like a layout bug.
+ * The grotesk now sets every word on the site, so a missing file is not a wordmark in the wrong
+ * face — it is the whole page in a system fallback, which looks like a design nobody chose rather
+ * than like a missing asset. This check is what turns that into a path and a sentence.
  * And `next build` copies all of `public/` into `out/`, so without the other half the publish
  * failure mode is silent and legal rather than visible and technical — which is worse.
  */
@@ -64,12 +65,15 @@ if (isPublicBuild()) {
   }
 }
 
-/** The open faces, which ARE in the repository because their licence permits it. */
-for (const face of [
-  "Geist-Variable-latin.woff2",
-  "GeistMono-Variable-latin.woff2",
-  "InstrumentSerif-Regular-latin.woff2",
-]) {
+/**
+ * The open face, which IS in the repository because its licence permits it.
+ *
+ * One rather than three: the site was cut to two faces — the grotesk above and this — so Geist
+ * and Instrument Serif were removed from `public/fonts/` and from `app/globals.css` in the same
+ * change. A file listed here that nothing references is a build that fails for a face nobody
+ * would have missed.
+ */
+for (const face of ["GeistMono-Variable-latin.woff2"]) {
   const path = join(WEB, "public/fonts", face);
   if (!existsSync(path)) problems.push(`missing font: ${path}`);
 }
