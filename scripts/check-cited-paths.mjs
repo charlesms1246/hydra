@@ -77,7 +77,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, dirname, basename } from "node:path";
+import { join, dirname, basename, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -158,7 +158,17 @@ const BASES = ["", "devtool/", "hydra-dapp/", "web/", "claude-docs/"];
 function resolve(path, from = "") {
   for (const base of (from ? [from, ...BASES] : BASES)) {
     const full = base + path;
-    if (existsSync(join(ROOT, full))) return full;
+    /*
+     * NORMALISED before it is returned, because the caller compares it against `git ls-files`.
+     *
+     * `web/README.md` cites `../hydra-dapp` — correct, since Vercel's root directory is `web/` and
+     * that is where its reader stands. With `from` this existed on disk, and then `isTracked`
+     * refused it: the string was `web/../hydra-dapp`, and no tracked path starts with that.
+     * `isTracked` already handles a directory by prefix-matching; it was being handed a spelling
+     * no prefix could match. A guard that resolves a path one way and looks it up another is
+     * wrong about every `..` in the repository.
+     */
+    if (existsSync(join(ROOT, full))) return relative(ROOT, join(ROOT, full));
     // `findings/06` and `decisions/0012` are prefixes of a filename, which is how people cite
     // numbered write-ups. Accept the prefix if exactly the directory it names exists.
     const slash = full.lastIndexOf("/");
