@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import "./dashboard.css";
 
 import { SITE } from "../../content.ts";
-import { Session } from "../../components/Session.tsx";
+import { Session, AttributionLegend } from "../../components/Session.tsx";
 
 /**
  * The session page: the client on the reader's own machine, as an instrument rather than a page.
@@ -41,24 +40,36 @@ export const metadata: Metadata = {
 export default function SessionPage() {
   return (
     <div className="dash">
-      {/* Chrome, not navigation: one way back and nothing else competing with the instrument. */}
-      <header className="dash-chrome">
-        <Link href="/" className="dash-home">{SITE.name}</Link>
-        <span className="dash-chrome-title">SESSION</span>
-        <Link href="/install/" className="dash-chrome-link">Run the client</Link>
-      </header>
-
-      <Session />
-
       {/*
-        The two claims, at the foot of the instrument rather than above it. A reader meets them
-        without having to scroll past them to reach the tool, and they describe what is on the
-        screen instead of introducing it.
+        ⛔ **THE DISCLOSURE MOVED BEHIND AN AFFORDANCE AND DID NOT LEAVE THE DOCUMENT.**
+
+        It was a block at the foot of the page taking roughly a tenth of the viewport on every
+        screen. It is now folded into the `?` in the header — a `<details>`, so every word is in
+        the shipped HTML and merely closed. `test/site.test.ts:854` reads the built page and
+        matches the legend's text; markup that appears only after a click would fail that build,
+        and it should, because a disclosure nobody can find in the source is not shipped.
       */}
-      <footer className="dash-foot">
-        <p>{SITE.session.body[1]}</p>
-        <p>{SITE.session.lede}</p>
-      </footer>
+      <Session
+        disclosure={
+          <>
+            <section>
+              <h3>WHAT THIS PAGE IS</h3>
+              {/*
+                This sentence said "It reads. It does not send messages, it does not fetch new
+                ones" after send, read and flush had shipped. A page that quietly gains a write
+                surface while its own description still says it only reads is worse than one that
+                never described itself.
+              */}
+              <p className="prose-body">{SITE.session.body[1]}</p>
+              <p className="prose-body">{SITE.session.lede}</p>
+            </section>
+            <section>
+              <h3>WHAT THE MARKS MEAN</h3>
+              <AttributionLegend />
+            </section>
+          </>
+        }
+      />
     </div>
   );
 }

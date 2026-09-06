@@ -131,7 +131,12 @@ const UNREACHABLE: Refusal = {
     + "site in the browser's own site settings, which is the only place that can be changed",
 };
 
-export function Session() {
+/**
+ * @param disclosure Copy the PAGE owns — the legend and what this page is — folded into the `?`.
+ *   Passed in rather than imported here so the prose stays with the route that publishes it, and
+ *   so it is server-rendered into the shipped HTML rather than assembled on a click.
+ */
+export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
   const [base, setBase] = useState(DEFAULT_BASE);
   const [status, setStatus] = useState<Status | null>(null);
   const [channels, setChannels] = useState<Channel[] | null>(null);
@@ -161,12 +166,28 @@ export function Session() {
    */
   const token = useRef<string | null>(null);
 
+  /*
+   * ⛔ **THE BASE IS HELD IN A REF AS WELL AS IN STATE, AND THAT IS A FIX RATHER THAN A STYLE.**
+   *
+   * The mount effect reads `#b=` and called `setBase`; the auto-connect effect ran in the same
+   * commit and captured the base from the render BEFORE that state update — so a page opened at
+   * `#t=…&b=http://127.0.0.1:19100` dialled the default `:8787`, failed, and told the reader
+   * nothing was listening at an address they had not asked for. Found by opening the page against
+   * a real `hydra gui` on a non-default port; a component test with a mocked fetch would have
+   * asserted the request was made and never noticed where it went.
+   *
+   * `call` reads the ref, so the address a request uses is the address that was last set rather
+   * than the one that was current when the callback was built.
+   */
+  const baseRef = useRef(DEFAULT_BASE);
+  const useBase = useCallback((v: string) => { baseRef.current = v; setBase(v); }, []);
+
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.slice(1));
     const t = hash.get("t");
     const b = hash.get("b");
     if (t) token.current = t;
-    if (b) setBase(b);
+    if (b) useBase(b);
     // Out of the address bar before anything else can read it — including a screenshot.
     if (t || b) {
       history.replaceState(null, "", window.location.pathname + window.location.search);
@@ -186,7 +207,7 @@ export function Session() {
       init?: { method: "POST"; body?: unknown },
     ): Promise<{ ok: true; data: T } | { ok: false; err: Refusal }> => {
       try {
-        const res = await fetch(`${base.replace(/\/$/, "")}/v1/gui${path}`, {
+        const res = await fetch(`${baseRef.current.replace(/\/$/, "")}/v1/gui${path}`, {
           method: init?.method ?? "GET",
           headers: {
             ...(token.current ? { "x-hydra-token": token.current } : {}),
@@ -214,7 +235,7 @@ export function Session() {
         return { ok: false, err: UNREACHABLE };
       }
     },
-    [base],
+    [],
   );
 
   const connect = useCallback(async () => {
@@ -340,214 +361,212 @@ export function Session() {
   const live = !!status;
 
   return (
-    <div className={live ? "dash-grid" : "dash-grid is-wire"}>
+    <div className="tg">
       {/*
-        ⛔ **THE STRIP IS THE CONNECTION, AND IT IS ALWAYS THE SAME HEIGHT.**
+        ⛔ **THE CONNECTION LIVES IN THE HEADER AND IS THE SAME HEIGHT ALWAYS.**
 
-        Before a session exists it holds the address field; after one exists it holds the machine's
-        fingerprint and route. It does not appear or disappear, because a control that moves the
-        rest of the layout when it resolves is a control that makes a reader re-find everything
-        they were looking at.
+        It used to be a second full-width bar under the chrome, which cost a row of vertical space
+        on every screen to hold a field a reader touches once. The vitals sit beside it because
+        they answer the same question — which machine is this, and can the page reach it.
       */}
-      <header className="dash-strip">
-        <form
-          className="dash-connect"
-          onSubmit={(e) => { e.preventDefault(); void connect(); }}
-        >
+      <header className="tg-top">
+        <span className="tg-brand">HYDRA</span>
+
+        {/*
+          ⛔ **A `<details>`, NOT A CLICK-TO-RENDER PANEL.** `test/site.test.ts:854` reads the
+          BUILT HTML and matches the legend's text, so markup that only exists after a click is
+          markup that is not in the document — the build fails, correctly. A `<details>` keeps
+          every word in the shipped page and merely folds it, which is the difference between
+          hiding a disclosure and not shipping one.
+        */}
+        <details className="tg-help">
+          <summary aria-label="What this page is and what the marks mean">?</summary>
+          <div className="tg-help-body">
+            {/*
+              The detail behind the header's one-word states. The strip says `failing (7)`; this
+              says which host did not answer, in the API's own sentence.
+            */}
+            <section>
+              <h3>THIS MACHINE</h3>
+              <StatusPanel status={status} />
+            </section>
+            <section>
+              <h3>UPLOADS</h3>
+              <UploadHealth queue={status?.queue} />
+            </section>
+            {disclosure}
+          </div>
+        </details>
+
+        <form className="tg-connect" onSubmit={(e) => { e.preventDefault(); void connect(); }}>
           <label htmlFor="base" className="prose-label">LOCAL API</label>
-          <input
-            id="base" name="base" type="text" value={base} spellCheck={false}
-            autoComplete="off" onChange={(e) => setBase(e.target.value)}
-          />
+          <input id="base" name="base" type="text" value={base} spellCheck={false}
+                 autoComplete="off" onChange={(e) => useBase(e.target.value)} />
           <button className="button" type="submit">{live ? "Reconnect" : "Connect"}</button>
         </form>
-        <dl className="dash-vitals">
+
+        <dl className="tg-vitals">
           <Vital k="IDENTITY" v={status?.fingerprint} />
           <Vital k="ROUTE" v={status?.route} />
-          <Vital k="VAULT" v={status?.vault?.url} />
           <Vital k="INVITES" v={status ? String(status.invitesLeft) : undefined} />
+          {/*
+            ⛔ THE QUEUE KEEPS ITS THREE STATES IN THE COMPACT HEADER. Compressing a signal into a
+            strip is where "no attempt yet" quietly becomes a blank that reads as "fine" — the
+            defect this field was added to close, arriving back by a different route.
+          */}
+          <Vital k="UPLOADS" v={uploadsWord(status?.queue)} />
         </dl>
       </header>
 
-      <Pane title="CONVERSATIONS" className="dash-a">
-        {channels && channels.length > 0 ? (
-          <ul className="session-channels">
-            {channels.map((c) => (
-              <li key={c.name}>
-                <button type="button" onClick={() => void openChannel(c.name)}
-                        className={c.name === open ? "is-open" : undefined}>
-                  <span className="ch-name">{c.name}</span>
-                  <span className="ch-peer">{c.peer}</span>
-                  <span className="ch-count">{c.messages}</span>
+      <div className="tg-body">
+        <aside className="tg-list">
+          {channels && channels.length > 0 ? (
+            <ul className="tg-rows">
+              {channels.map((c) => (
+                <li key={c.name}>
+                  <button type="button" onClick={() => void openChannel(c.name)}
+                          className={c.name === open ? "is-open" : undefined}>
+                    <span className="tg-row-name">{c.name}</span>
+                    {/*
+                      A FINGERPRINT, NOT A KEY, and a count — which is what `/channels` actually
+                      carries. Telegram shows the last message and its time; this payload has
+                      neither, so the row shows what exists rather than a plausible blank.
+                    */}
+                    <span className="tg-row-peer">{c.peer.slice(0, 12)}</span>
+                    <span className="tg-row-count">{c.messages}</span>
+                    {c.removedUnderProcess > 0 && (
+                      <span className="ch-removed">
+                        {c.removedUnderProcess} removed under legal process
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ul className="tg-rows">
+              {[0, 1, 2].map((i) => (
+                <li key={i}><span className="wire wire-row" /></li>
+              ))}
+            </ul>
+          )}
+        </aside>
+
+        <section className="tg-thread">
+          <header className="tg-thread-head">
+            <h2>{open ?? "No conversation open"}</h2>
+            <ThreadLinkability how={open ? howLinkable : null} />
+            {open && (
+              <span className="dash-acts">
+                <button type="button" onClick={() => void readNow()} disabled={working !== null}>
+                  {working === "read" ? "reading…" : "fetch new"}
                 </button>
-                {/*
-                  Shown whenever it is non-zero, never folded into the message count.
-                  `vault-server/src/observations.ts`: a removal indistinguishable from an expiry
-                  is invisible to the people it happened to.
-                */}
-                {c.removedUnderProcess > 0 && (
-                  <span className="ch-removed">
-                    {c.removedUnderProcess} removed under legal process
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <ul className="session-channels">
-            {[0, 1, 2].map((i) => (
-              <li key={i}><span className="wire wire-row" /></li>
-            ))}
-          </ul>
-        )}
-      </Pane>
+                <button type="button" onClick={() => void flushNow()} disabled={working !== null}>
+                  {working === "flush" ? "uploading…" : "upload due"}
+                </button>
+              </span>
+            )}
+          </header>
 
-      {/*
-        ⛔ **LINKABILITY IS A PANE, NOT A FOOTNOTE, AND IT SITS ABOVE THE CONVERSATION.**
+          {/*
+            ⛔ `data-basis-host` STAYS ON THE ELEMENT REAL MESSAGES RENDER IN. `figure-geometry.ts`
+            injects the longest `basis` the product can produce and measures whether it clips; it
+            has to inject where a message actually lives or it measures a width no message has.
+            The previous redesign took this anchor away as a class and the gate certified nothing
+            until somebody read the output — which is why it is an attribute now.
+          */}
+          <div className="tg-messages is-scroll" data-basis-host>
+            {messages && messages.length > 0 ? (
+              <ol className="session-messages">
+                {messages.map((m) => (
+                  <li key={m.id} className={m.mine ? "msg mine" : "msg"}>
+                    <p className="msg-text">{m.text}</p>
+                    {/*
+                      ⛔ `basis` is TEXT, beside every message, always. Not a tooltip, not a
+                      colour, not a class. The mark is an indicator and the basis is the claim,
+                      and the two signed cases are told apart only by the basis.
+                    */}
+                    <p className="msg-basis">
+                      <span className="msg-mark" aria-hidden>{m.mark}</span>
+                      <span className="msg-basis-text">{m.basis}</span>
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <ol className="session-messages">
+                {[0, 1].map((i) => (
+                  <li key={i} className="msg">
+                    <span className="wire wire-text" />
+                    <span className="wire wire-basis" />
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
 
-        It qualifies everything below it, so it is placed where a reader meets it before the
-        messages rather than after them. This is the one thing this surface says that an ordinary
-        messenger would never say, and the layout should not make it the easiest thing to miss.
-      */}
-      <Pane title={open ? `LINKABILITY — ${open}` : "LINKABILITY"} className="dash-b1" scroll={false}>
-        {howLinkable
-          ? <LinkabilityNote how={howLinkable} />
-          : <p className="dash-empty">Open a conversation to see how linkable it is.</p>}
-      </Pane>
-
-      <Pane
-        title={open ?? "MESSAGES"}
-        className="dash-b2"
-        basisHost
-        right={open ? (
-          <span className="dash-acts">
-            <button type="button" onClick={() => void readNow()} disabled={working !== null}>
-              {working === "read" ? "reading…" : "fetch new"}
-            </button>
-            <button type="button" onClick={() => void flushNow()} disabled={working !== null}>
-              {working === "flush" ? "uploading…" : "upload due"}
-            </button>
-          </span>
-        ) : undefined}
-      >
-        {messages && messages.length > 0 ? (
-          <ol className="session-messages">
-            {messages.map((m) => (
-              <li key={m.id} className={m.mine ? "msg mine" : "msg"}>
-                <p className="msg-text">{m.text}</p>
-                {/*
-                  ⛔ `basis` is TEXT, beside every message, always. Not a tooltip, not a colour,
-                  not a class. See the header — the mark is an indicator and the basis is the
-                  claim, and the two signed cases are told apart only by the basis.
-                */}
-                <p className="msg-basis">
-                  <span className="msg-mark" aria-hidden>{m.mark}</span>
-                  <span className="msg-basis-text">{m.basis}</span>
-                </p>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <ol className="session-messages">
-            {[0, 1].map((i) => (
-              <li key={i} className="msg">
-                <span className="wire wire-text" />
-                <span className="wire wire-basis" />
-              </li>
-            ))}
-          </ol>
-        )}
-      </Pane>
-
-      {/*
-        The compose box and everything a write can answer with, in one place under the messages.
-        A refusal that appeared next to the status panel would be a sentence about an act the
-        reader performed somewhere else on the screen.
-      */}
-      <div className="dash-b3">
-        <Compose
-          draft={draft}
-          setDraft={setDraft}
-          working={working}
-          disabled={!open}
-          onSend={(signed) => void sendNow(signed)}
-        />
-        {sent && <SentNote sent={sent} />}
-        {busy && <BusyNote busy={busy} />}
-        {refusal && <RefusalNote refusal={refusal} />}
+          {/* Pinned to the bottom of the thread, where every messenger puts it. */}
+          <div className="tg-compose">
+            {sent && <SentNote sent={sent} />}
+            {busy && <BusyNote busy={busy} />}
+            {refusal && <RefusalNote refusal={refusal} />}
+            <Compose
+              draft={draft}
+              setDraft={setDraft}
+              working={working}
+              disabled={!open}
+              onSend={(signed) => void sendNow(signed)}
+            />
+          </div>
+        </section>
       </div>
-
-      <Pane title="THIS MACHINE" className="dash-c1">
-        <StatusPanel status={status} />
-      </Pane>
-
-      <Pane title="UPLOADS" className="dash-c2" scroll={false}>
-        <UploadHealth queue={status?.queue} />
-      </Pane>
-
-      {/*
-        ⛔ **THE LEGEND IS RENDERED UNCONDITIONALLY**, not inside a branch that needs data. It
-        used to sit next to the message list, so it existed only once a reader had opened a
-        channel — absent from the shipped markup entirely, and absent for a reader with no script
-        or an unreachable API. `test/site.test.ts` asserts it against the BUILT HTML for that
-        reason, which is why it must not move behind a condition again.
-      */}
-      <Pane title="WHAT THE MARKS MEAN" className="dash-c3" scroll={false}>
-        <AttributionLegend />
-      </Pane>
     </div>
   );
 }
 
 /**
- * The instrument's structural primitive: a titled pane that owns its own scroll.
+ * The queue's three states as one word, for the header strip.
  *
- * The header is a fixed strip with a mono label, so every pane's title sits on the same baseline
- * across the screen. `min-height: 0` on the body is the load-bearing detail — without it a grid
- * child refuses to shrink below its content and the pane grows the page instead of scrolling,
- * which silently turns a one-screen instrument back into a document.
+ * ⛔ **`null` IS NOT SUCCESS AND ABSENT IS NOT SUCCESS.** Compressing this into a strip is exactly
+ * where a three-valued signal turns back into a blank that reads as "fine" — and a blank reading
+ * as fine is the defect `lastAttempt` was added to close. Every state gets a word; none gets
+ * silence. The sentence behind each is in the `?` panel.
  */
-function Pane({
-  title, right, className, scroll = true, basisHost, children,
-}: {
-  title: string;
-  right?: React.ReactNode;
-  className?: string;
-  scroll?: boolean;
-  /**
-   * ⛔ **MARKS THIS PANE AS THE HOST `scripts/figure-geometry.ts` MEASURES IN, AND IT IS NOT A
-   * STYLE HOOK.**
-   *
-   * That script injects a message with the longest `basis` string the product can produce and
-   * measures whether it clips — the qualification that separates a signature under a published
-   * key from one under a key nobody can look up. It has to inject into the element real messages
-   * render in, or it measures a width no message ever has.
-   *
-   * It anchored on `class="session"` until this page became a dashboard, and a correct
-   * restyling removed that class — so the gate found no host and certified nothing on any route.
-   * **A `data-` attribute whose only job is this cannot be removed by a refactor that does not
-   * know what it is for**, which a presentational class always can. The same file already
-   * anchors on `[data-deck]` and `[data-slide]` for the same reason.
-   *
-   * If you remove this, `check:figures` fails loudly rather than passing — verified.
-   */
-  basisHost?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className={`dash-pane ${className ?? ""}`}>
-      <header className="dash-pane-head">
-        <h2>{title}</h2>
-        {right}
-      </header>
-      <div
-        className={scroll ? "dash-pane-body is-scroll" : "dash-pane-body"}
-        data-basis-host={basisHost ? "" : undefined}
-      >
-        {children}
-      </div>
-    </section>
-  );
+function uploadsWord(queue: Status["queue"]): string | undefined {
+  if (!queue) return undefined;                       // not connected: the strip shows a rule
+  const a = queue.lastAttempt;
+  if (a === undefined || a === null) return "none yet";
+  return a.ok ? "ok" : `failing (${a.consecutiveFailures})`;
+}
+
+/**
+ * Linkability in the thread header — the slot a messenger uses for "242 members, 112 online".
+ *
+ * ⛔ **THE WHOLE GENERATED TEXT, UNFOLDED, AND THE FOLD WAS TRIED FIRST.**
+ *
+ * `crowd` may never appear without `lines`, so the obvious port — figure in the header, caveat
+ * behind a click — is exactly the shape that rule forbids: the reader who never clicks has been
+ * shown the flattering half. The next attempt put the caveat in the summary and the figure behind
+ * the fold, which fails safe but produced this in the header:
+ *
+ *     you are counted as people.
+ *
+ * **`lines` is WRAPPED OUTPUT, not a list of sentences.** `describe(...)` returns display lines,
+ * so the last entry is the tail of a wrapped clause and any first-or-last choice yields a
+ * fragment. Selecting one of them at all was the mistake; the array is prose that was broken for
+ * a terminal, and a browser rewraps it.
+ *
+ * So it is all of it, joined back into prose, standing in the header. It costs two or three lines
+ * of vertical space and that is the correct price: **this is the one thing this surface says that
+ * an ordinary messenger would never say**, and matching a messenger's chrome must not be how it
+ * gets lost. `known: false` is a third value and not a crowd of zero, and its text is short.
+ *
+ * Every word is generated. This component joins and renders; it writes nothing —
+ * `no-invented-claims.test.ts` holds that no front end makes a privacy claim in its own words.
+ */
+function ThreadLinkability({ how }: { how: HowLinkable | null }) {
+  if (!how) return null;
+  return <p className="tg-link-flat">{how.lines.join(" ")}</p>;
 }
 
 /** One figure in the connection strip. Absent reads as a rule, never as a blank. */

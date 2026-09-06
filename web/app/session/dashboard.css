@@ -1,33 +1,17 @@
 /**
- * The session instrument's layout.
+ * The session instrument's layout: a conversation list, a thread, and a compose box at the foot
+ * of the thread.
  *
- * ⛔ **NOT IN `globals.css`, AND THE REASON IS BOTH STRUCTURAL AND PRACTICAL.**
+ * ⛔ **NOT IN `globals.css`.** Next scopes a CSS import to the route that imports it, so this
+ * ships with `/session` and nowhere else — and `globals.css` is edited by every lane at once,
+ * with no hunk-level staging, so two lanes touching layout there means one waits or sweeps up
+ * the other's half-finished rule.
  *
- * Structural: three hundred lines of single-page grid in a sheet every route loads is scope
- * nobody asked for. Next's App Router scopes a CSS import to the route that imports it, so this
- * ships with `/session` and nowhere else.
- *
- * Practical: `globals.css` is edited by every lane working on this site at once, and there is no
- * hunk-level staging here — so two lanes touching layout in the same file means one of them
- * commits the other's half-finished rule or waits. Sequencing only postpones that; moving out
- * ends it.
- *
- * The chrome suppression at the bottom reaches OUTSIDE this page's markup, to elements the root
- * layout renders for every route. It still belongs here rather than in the global sheet: it is
- * scoped by `body:has(.dash)`, so it applies only when this page is the one on screen, and it is
- * a rule ABOUT this route rather than a rule every route needs to know.
+ * ⛔ **ONE SCREEN, NO PAGE SCROLL.** The thread scrolls; the page does not. `min-height: 0` on
+ * the flex and grid children is the load-bearing detail — without it a child refuses to shrink
+ * below its content, the pane grows the document, and the whole thing quietly becomes a page
+ * again.
  */
-
-/* ---------------------------------------------------------------------------------------------
-   THE SESSION INSTRUMENT.
-
-   ⛔ ONE SCREEN, NO PAGE SCROLL. The grid is sized from the viewport and every pane scrolls
-   inside itself. That is the defining property: a reader's eye returns to the same physical
-   place for the same number, and nothing reflows underneath them when a message arrives or a
-   queue count changes. `min-height: 0` on the panes and their bodies is the load-bearing detail
-   — without it a grid child refuses to shrink below its content, the pane grows the page, and
-   the whole thing quietly becomes a document again.
-   --------------------------------------------------------------------------------------------- */
 
 .dash {
   display: flex;
@@ -36,151 +20,298 @@
   overflow: hidden;
 }
 
-.dash-chrome {
+.tg {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* ── the header: brand, help, connection, vitals ───────────────────────────────────────────── */
+
+.tg-top {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 1rem;
-  height: 2.75rem;
   padding: 0 0.85rem;
+  height: 3rem;
   border-bottom: 1px solid var(--g-12);
 }
 
-.dash-home {
-  font-family: var(--sans);
-  font-weight: 300;
-  letter-spacing: 0.02em;
+/*
+ * ⛔ **OPHELIC WAS ASKED FOR AND IS NOT IN THIS REPOSITORY.**
+ *
+ * `public/fonts/` holds Geist, Geist Mono, Instrument Serif and NON Natural Grotesk — the face
+ * licensed for this work. There is no Ophelic file, so this is NON Natural Grotesk: same foundry,
+ * same intent, and a one-line swap here when the licensed file arrives. Named rather than
+ * substituted silently, so it is a known task instead of a rediscovery.
+ */
+.tg-brand {
+  font-family: "NON Natural Grotesk", var(--sans);
+  font-size: 1.0625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--white);
 }
 
-.dash-chrome-title {
-  font-family: var(--mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.2em;
-  color: var(--g-48);
-}
+.tg-help { position: relative; }
 
-.dash-chrome-link {
-  margin-left: auto;
+.tg-help > summary {
+  list-style: none;
+  cursor: pointer;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--g-20);
+  border-radius: 50%;
   font-family: var(--mono);
   font-size: 0.6875rem;
   color: var(--g-64);
 }
 
-.dash-grid {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 15rem minmax(0, 1fr) 21rem;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-  grid-template-areas:
-    "strip strip strip"
-    "a     b1    c1"
-    "a     b2    c1"
-    "a     b3    c2"
-    "a     b3    c3";
+.tg-help > summary::-webkit-details-marker { display: none; }
+.tg-help > summary:hover { color: var(--white); border-color: var(--g-32); }
+
+/*
+ * The panel OVERLAYS rather than expanding the header: a disclosure that pushed the thread down
+ * would move every message a reader was looking at, which is the cost the fold was meant to avoid.
+ */
+.tg-help-body {
+  position: absolute;
+  top: 1.9rem;
+  left: 0;
+  z-index: 60;
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: 70vh;
+  overflow: auto;
+  padding: 1rem 1.1rem;
+  background: #000;
+  border: 1px solid var(--g-20);
 }
 
-.dash-strip { grid-area: strip; }
-.dash-a { grid-area: a; }
-.dash-b1 { grid-area: b1; }
-.dash-b2 { grid-area: b2; }
-.dash-b3 { grid-area: b3; min-height: 0; overflow: auto; padding: 0 0.85rem 0.85rem; }
-.dash-c1 { grid-area: c1; }
-.dash-c2 { grid-area: c2; }
-.dash-c3 { grid-area: c3; }
+.tg-help-body section + section { margin-top: 1.25rem; }
 
-.dash-a, .dash-b1, .dash-b2, .dash-b3 { border-right: 1px solid var(--g-12); }
-.dash-b1, .dash-b2, .dash-c1, .dash-c2 { border-bottom: 1px solid var(--g-12); }
-
-/* The connection strip: the same height whether or not a session exists. */
-.dash-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1rem 1.5rem;
-  padding: 0.6rem 0.85rem;
-  border-bottom: 1px solid var(--g-12);
+.tg-help-body h3 {
+  margin: 0 0 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  color: var(--g-48);
 }
 
-.dash-connect {
+.tg-help-body .prose-body { font-size: 0.9375rem; line-height: 1.45; margin: 0 0 0.5rem; }
+
+.tg-connect {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.dash-connect .prose-label { margin-bottom: 0; }
+.tg-connect .prose-label { margin-bottom: 0; }
 
-.dash-connect input {
-  padding: 0.35rem 0.5rem;
+.tg-connect input {
+  padding: 0.3rem 0.5rem;
   background: var(--g-4);
   border: 1px solid var(--g-20);
   color: var(--white);
   font-family: var(--mono);
   font-size: 0.75rem;
-  min-width: 14rem;
+  min-width: 13rem;
 }
 
-.dash-connect input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.tg-connect input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 
-.dash-vitals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.5rem;
-  margin: 0;
-}
+.tg-vitals { display: flex; gap: 1.25rem; margin: 0; }
 
-.dash-vital dd {
+.tg-vitals .prose-label { margin-bottom: 0.1rem; font-size: 0.5rem; }
+
+.tg-vitals dd {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--g-80);
-  max-width: 18rem;
+  max-width: 9rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dash-vital .prose-label { margin-bottom: 0.15rem; font-size: 0.5625rem; }
+/* ── the two panes ─────────────────────────────────────────────────────────────────────────── */
 
-/* The pane primitive. */
-.dash-pane {
+.tg-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 19rem minmax(0, 1fr);
+}
+
+.tg-list {
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--g-12);
+}
+
+.tg-rows { list-style: none; margin: 0; padding: 0; }
+
+.tg-rows li { border-bottom: 1px solid var(--g-12); }
+
+/* The wireframe rows need the padding the real ones get from the button. */
+.tg-rows li > .wire { display: block; margin: 0.7rem 0.85rem; }
+
+.tg-rows button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.15rem 0.75rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tg-rows button:hover { background: var(--g-4); }
+.tg-rows button.is-open { background: var(--g-8); }
+
+.tg-row-name {
+  font-family: var(--sans);
+  font-size: 0.9375rem;
+  color: var(--g-80);
+}
+
+.tg-rows button.is-open .tg-row-name { color: var(--white); }
+
+.tg-row-peer {
+  grid-column: 1;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--g-48);
+}
+
+.tg-row-count {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--g-48);
+}
+
+.tg-thread {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
 }
 
-.dash-pane-head {
+/* ── the thread header, which is where linkability lives ───────────────────────────────────── */
+
+.tg-thread-head {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  height: 1.75rem;
-  padding: 0 0.85rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.6rem 0.85rem;
   border-bottom: 1px solid var(--g-12);
 }
 
-.dash-pane-head h2 {
+/* The disclosure spans the full width under the name, so it wraps as prose rather than as a chip. */
+.tg-thread-head .tg-link-flat { grid-column: 1 / -1; }
+
+.tg-thread-head h2 {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 0.625rem;
-  font-weight: 400;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--g-48);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 1rem;
+  color: var(--white);
   white-space: nowrap;
 }
 
-.dash-pane-body {
-  min-height: 0;
-  flex: 1 1 auto;
-  padding: 0.6rem 0.85rem;
+.tg-thread-head .dash-acts { margin-left: auto; flex: 0 0 auto; }
+
+/*
+ * ⛔ THE QUALIFICATION IS THE PART THAT IS ALWAYS VISIBLE. The count is behind the expansion.
+ * `crowd` may never appear without `lines`, so the summary carries the generated caveat and the
+ * figure comes with the rest of the sentences when opened — the reverse arrangement would show a
+ * reassuring number to every reader who never clicks.
+ */
+.tg-link, .tg-link-flat { min-width: 0; }
+
+.tg-link-flat {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--g-64);
 }
 
-.dash-pane-body.is-scroll { overflow: auto; }
+.tg-link > summary {
+  cursor: pointer;
+  font-family: var(--serif);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--g-64);
+}
+
+.tg-link > summary:hover { color: var(--g-80); }
+
+.tg-link-body {
+  position: absolute;
+  z-index: 55;
+  margin-top: 0.4rem;
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: 60vh;
+  overflow: auto;
+  padding: 0.85rem 1rem;
+  background: #000;
+  border: 1px solid var(--accent);
+}
+
+.tg-link-body p {
+  margin: 0 0 0.5rem;
+  font-family: var(--serif);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--g-80);
+}
+
+/* ── messages and compose ──────────────────────────────────────────────────────────────────── */
+
+.tg-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.85rem;
+  /*
+   * ⛔ MESSAGES SIT AT THE BOTTOM, WHICH IS WHERE A CONVERSATION IS READ FROM.
+   *
+   * `margin-top: auto` on the list rather than `justify-content: flex-end` on the container: the
+   * latter breaks scrolling upward once the thread is longer than the pane, because the flex
+   * container starts overflowing at the top where a scrollbar cannot reach it. This pushes a
+   * short thread down and leaves a long one alone.
+   */
+  display: flex;
+  flex-direction: column;
+}
+
+.tg-messages .session-messages { margin-top: auto; }
+
+.tg-messages.is-scroll { overflow: auto; }
+
+.tg-compose {
+  flex: 0 0 auto;
+  padding: 0.6rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--g-12);
+}
+
+.tg-compose .session-compose { border-top: none; margin-top: 0; padding-top: 0; }
+.tg-compose .session-busy,
+.tg-compose .session-sent,
+.tg-compose .session-refusal { margin: 0 0 0.6rem; }
 
 .dash-acts { display: flex; gap: 0.5rem; }
 
@@ -206,74 +337,33 @@
   color: var(--g-48);
 }
 
-.session-channels button.is-open { color: var(--white); }
-.session-channels button.is-open .ch-name { color: var(--accent); }
-
-/* In a pane the compose box has the pane's border above it already. */
-.dash-b3 .session-compose { border-top: none; padding-top: 0.6rem; margin-top: 0; }
-.dash-b3 .session-linkability,
-.dash-b3 .session-busy,
-.dash-b3 .session-sent,
-.dash-b3 .session-refusal { margin-top: 0.75rem; }
-
-.dash-foot {
-  flex: 0 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 2rem;
-  padding: 0.5rem 0.85rem;
-  border-top: 1px solid var(--g-12);
-}
-
-.dash-foot p {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: 0.8125rem;
-  line-height: 1.35;
-  color: var(--g-48);
-  max-width: 48ch;
-}
-
-/*
- * ⛔ NARROW SCREENS GET A COLUMN AND THE PAGE SCROLLS.
- *
- * A one-screen grid at 380px is nine panes of four lines each, which is not an instrument, it is
- * a list of stubs. The property worth keeping at this width is ORDER — the conversation and what
- * qualifies it come before the machine's vitals — not the absence of scrolling.
- */
-@media (max-width: 60rem) {
-  .dash { height: auto; overflow: visible; }
-  .dash-grid {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-    grid-template-areas: "strip" "a" "b1" "b2" "b3" "c1" "c2" "c3";
-  }
-  .dash-a, .dash-b1, .dash-b2, .dash-b3 { border-right: none; }
-  .dash-a, .dash-b3, .dash-c1, .dash-c2, .dash-c3 { border-bottom: 1px solid var(--g-12); }
-  .dash-pane-body.is-scroll { overflow: visible; }
-  .dash-b3 { overflow: visible; }
-}
-
 /*
  * ⛔ THE SITE'S CHROME IS SUPPRESSED ON THE INSTRUMENT, AND ONLY THERE.
  *
  * `Backdrop` and `PageFrame` are rendered by the root layout for every route: a static glyph
- * field and four corner letters, which are right for a document and wrong behind a tool. They
- * sit BEHIND the panes rather than inside them, so they show through every gap and every
- * transparent body — measured at 1440x900, the machine's status rows were unreadable against
- * the field.
- *
- * Done with `:has()` rather than by editing the layout, because the layout is shared with nine
- * other pages that want both. One route opting out is a rule about this route; a prop threaded
- * through the layout would make every future page answer a question it does not have.
+ * field and four corner letters, right for a document and wrong behind a tool. They sit BEHIND
+ * the panes, so they show through every gap — measured at 1440x900, the machine's status rows
+ * were unreadable against the field. Scoped with `:has()` rather than by editing the shared
+ * layout, so one route opts out without every future page answering a question it does not have.
  */
 body:has(.dash) .field,
 body:has(.dash) .frame,
-body:has(.dash) .solids {
-  display: none;
-}
+body:has(.dash) .solids { display: none; }
 
-/* Nothing behind the instrument but the page colour. */
-body:has(.dash) {
-  background: var(--black, #000);
+body:has(.dash) { background: #000; }
+
+/*
+ * ⛔ NARROW SCREENS GET ONE COLUMN AND THE PAGE SCROLLS.
+ *
+ * A two-pane thread view at 390px is two stubs. What is worth keeping at this width is ORDER —
+ * the conversation and what qualifies it before anything else — not the absence of scrolling.
+ */
+@media (max-width: 52rem) {
+  .dash { height: auto; overflow: visible; }
+  .tg-top { height: auto; flex-wrap: wrap; padding: 0.6rem 0.85rem; gap: 0.6rem 1rem; }
+  .tg-connect { margin-left: 0; width: 100%; }
+  .tg-connect input { min-width: 0; flex: 1 1 auto; }
+  .tg-body { grid-template-columns: minmax(0, 1fr); }
+  .tg-list { max-height: 14rem; border-right: none; border-bottom: 1px solid var(--g-12); }
+  .tg-messages.is-scroll { overflow: visible; }
 }
