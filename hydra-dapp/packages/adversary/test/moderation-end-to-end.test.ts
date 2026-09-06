@@ -129,11 +129,20 @@ test("POST, REPORT, REVIEW, REMOVE, APPEAL, PUBLISH — against an object a user
       //    operator's command did not print until this test asked for it.
       assert.match(report, new RegExp(post.id),
         "the report does not name the removed object, though the disclosure table says it does");
-      // AND IT DOES NOT CLAIM THE LIST PROVES ANYTHING. Absence is checkable; existence is not,
-      // because a public post makes no on-chain commitment. A transparency report that overstates
-      // its own auditability is worse than one that admits it has none — see decisions/0039.
+      // AND IT DOES NOT OVERSTATE ITS OWN AUDITABILITY. A report generated without a corpus
+      // commitment — which is this one — can show that an id is absent and cannot show the object
+      // was ever here. One that overstates that is worse than one admitting it has none.
+      //
+      // **THE ASSERTION USED TO PIN THE WORDING AND THE WORDING WAS HALF WRONG.** The block said
+      // flatly that the list "DOES NOT PROVE ANYTHING" and was "SELF-REPORTED", unconditionally,
+      // while `commitmentNote` — printed a few lines later in the SAME report — says a published
+      // root is "what makes the list above auditable rather than self-reported". One document,
+      // two answers. The block is conditional now and this asserts the property.
       assert.match(report, /SELF-REPORTED/);
-      assert.match(report, /cannot check that the object ever existed/);
+      assert.match(report, /nothing attests the object was ever here/);
+      assert.match(report, /depends on the corpus commitment/i,
+        "the removed list decides its own auditability, and it is not the part of the report that "
+        + "knows whether a commitment was published");
     } finally {
       chain.close();
       intake.server.close();

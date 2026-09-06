@@ -214,12 +214,12 @@ function connect(m: Model, size: Size, height: number): string[] {
     "",
     ...note("Enter opens a channel and delivers the prekey message through the vault. the "
       + "storage server can then see that they are reachable and count what is waiting for "
-      + "them — unavoidable without accounts, and accounts would disclose more. "
-      + "(decisions/0013)", size.cols - 4),
+      + "them — unavoidable without accounts, and an account is a name the server could count "
+      + "against over time.", size.cols - 4),
     "",
     ...note("AND: that write is not scheduled the way message uploads are. if you send in the "
       + "next few minutes, the chain publish nearest it is yours, and anyone holding both "
-      + "records reads it off. measured above 90%. (decisions/0018)", size.cols - 4),
+      + "records reads it off. measured above 90%.", size.cols - 4),
     "",
     ...note("`e` writes your own bundle to the path above; give that file to whoever wants to "
       + "reach you. `c` accepts whatever is waiting in your vault mailbox.", size.cols - 4),

@@ -267,11 +267,14 @@ export function report(
           "public — it is how anyone fetched it — and naming it costs a permanent index of",
           "removed content.",
           "",
-          "WHAT THIS LIST DOES NOT DO IS PROVE ANYTHING. You can ask for one of these ids and",
-          "find it absent; you cannot check that the object ever existed, because nothing",
-          "attests that it did. A public post makes no on-chain commitment. So this list is",
-          "SELF-REPORTED: an operator who quietly dropped a post and never listed it here would",
-          "look exactly like one who never received it. See decisions/0039."]
+          "WHETHER THIS LIST CAN BE CHECKED DEPENDS ON THE CORPUS COMMITMENT BELOW, and that",
+          "paragraph is the one that knows. With a commitment, an id in the previous period's",
+          "root and absent from this one was removed, and you can establish that without our",
+          "cooperation. Without one, this list is SELF-REPORTED: you can ask for an id and find",
+          "it absent, but nothing attests the object was ever here, so an operator who quietly",
+          "dropped a post and never listed it would look exactly like one who never received",
+          "it. A public post makes no on-chain commitment of its own — the commitment is over",
+          "this vault's corpus, and it is published by us."]
         : []),
       "",
       "Encrypted objects removed UNDER LEGAL PROCESS are counted above when there were any, and",
@@ -302,6 +305,13 @@ export function report(
  * stop and republish. Collapsing them means a vault that was down during the monthly report
  * produces a self-reported list that looks exactly like a deliberate choice not to commit — which
  * is the shape `decisions/0039` exists to prevent, one level up.
+ *
+ * **AND THE LIST ABOVE MUST NOT DECIDE THIS QUESTION FOR ITSELF.** The removed-ids block used to
+ * assert flatly that it *"DOES NOT PROVE ANYTHING"* and was *"SELF-REPORTED"*, unconditionally,
+ * while this function — printed a few lines later in the same report — said a published root is
+ * *"what makes the list above auditable rather than self-reported."* **One document, two answers,
+ * and a reader believed whichever they reached.** The block defers to this paragraph now, because
+ * this is the only part of the report that knows which of the three states it is in.
  *
  * A FUNCTION HERE RATHER THAN A BRANCH IN `main.ts`, because `main.ts` runs on import and cannot
  * be driven from a test. The wording of the thing that says a report is unverifiable should not be

@@ -188,12 +188,20 @@ test("the moderation table names every surface moderation actually has", () => {
   const asserted = unquoted(published.why);
   assert.ok(!/commitment still stands/.test(asserted),
     "the row claims an on-chain commitment that a public post does not create");
-  assert.match(published.why, /decisions\/0039/, "the row does not point at the open decision");
+  // **PINS THE REMEDY, NOT A POINTER — AND THE OLD MESSAGE WAS STALE TWICE OVER.** It asserted the
+  // row cites `decisions/0039` and called it "the open decision"; that decision is BUILT, and the
+  // citation was into a directory no reader of this repository can open. What the row owes a
+  // reader is the mechanism that closes the gap it just admitted to.
+  assert.match(published.why, /Merkle root over all public id/,
+    "the row admits the list is self-reported and does not name what fixes it");
+  assert.match(published.why, /BUILT/,
+    "the row does not say whether the remedy exists, so a reader cannot tell an admission from a "
+    + "plan");
 
   // `compelled.removal` must record the POSITION CHANGE rather than quietly agreeing with what was
   // last built, and must not carry a field for content the operator cannot know.
   const compelled = MODERATION_OBSERVABLE.find((o) => o.id === "compelled.removal")!;
-  assert.match(compelled.why, /POSITION IN .decisions\/0035. §1 CHANGED AND THE OLD REASONING WAS NOT WRONG/);
+  assert.match(compelled.why, /POSITION HERE CHANGED AND THE OLD REASONING WAS NOT WRONG/);
   assert.match(compelled.why, /NO CLAIM ABOUT CONTENT/);
   assert.match(compelled.why, /countable/i);
   assert.match(compelled.what, /nothing else, ever/);
