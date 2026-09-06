@@ -247,7 +247,7 @@ export const KEY_LOCKED: Warning = {
  */
 export const LOOKUP_KEY_NOT_PERSON: Warning = {
   id: "lookup.keyNotPerson",
-  surfaces: ["cli", "tui"],
+  surfaces: ["cli", "tui", "gui"],
   because: "`bundleOf` verifies the record's anchor signature against the address before "
     + "returning anything, so the key provably belongs to that address and to no other — which "
     + "is a different question from whether the address is the party you mean, and nothing in "
@@ -269,7 +269,7 @@ export const LOOKUP_KEY_NOT_PERSON: Warning = {
  */
 export const LOOKUP_NO_ONE_TIME: Warning = {
   id: "lookup.noOneTime",
-  surfaces: ["cli", "tui"],
+  surfaces: ["cli", "tui", "gui"],
   because: "`myRecord` publishes no one-time prekey — there are many, they are consumed, and a "
     + "chain record charges per felt — so a bundle read off chain has only the signed prekey; "
     + "`cli/src/commands.ts` `myRecord`",
@@ -292,7 +292,7 @@ export const LOOKUP_NO_ONE_TIME: Warning = {
  */
 export const LOOKUP_NODE_SEES: Warning = {
   id: "lookup.nodeSees",
-  surfaces: ["cli", "tui"],
+  surfaces: ["cli", "tui", "gui"],
   because: "the lookup is two `starknet_call` requests to the configured RPC, so that node learns "
     + "your address asked about theirs — where a vault fetch would disclose the same interest to "
     + "the peer, and the node is the party you pick; `cli/src/commands.ts` `bundleFromChain`",

@@ -33,8 +33,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 
 import { anchorOf, attributionLabel, describeFailure, fingerprint, publishBundle, sendMessage,
-  readChannel, flush, linkabilityOf, gapsOf, RECONFIGURE, FLUSH_LIMIT } from "../../cli/src/commands.ts";
+  readChannel, flush, linkabilityOf, gapsOf, RECONFIGURE, FLUSH_LIMIT, bundleFromChain, openAndSend }
+  from "../../cli/src/commands.ts";
 import { describe as describeLinkability } from "../../channel/src/crowd.ts";
+import { LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES }
+  from "../../claims/src/warnings.ts";
 import { BUSY, type Exclusive } from "./serialise.ts";
 import type { Chain } from "../../cli/src/chain.ts";
 import { oneTimeRemaining } from "../../handshake/src/prekeys.ts";
@@ -57,6 +60,12 @@ export type GuiDeps = {
   readonly save: (state: State) => void;
   /** Injected so a test can drive a write without a chain. */
   readonly chainFor: (state: State) => Chain;
+  /**
+   * The `fetch` a lookup asks the node and the vault with, for the same reason `chainFor` is
+   * injected: `POST /v1/gui/lookup` is the one route whose ORDER OF REQUESTS is the security
+   * property, and a test cannot observe an order it cannot intercept.
+   */
+  readonly fetchImpl: typeof fetch;
   readonly now: () => number;
   /** Shared with the flush ticker — see `serialise.ts`. One lock, not one per entry point. */
   readonly exclusive: Exclusive;
@@ -503,19 +512,31 @@ export function guiServer(deps: GuiDeps): Server {
 
     const sendTo = /^\/v1\/gui\/channels\/([^/]+)\/send$/.exec(path);
     const readFrom = /^\/v1\/gui\/channels\/([^/]+)\/read$/.exec(path);
+    // **NOT UNDER `/channels/:name/`, BECAUSE THERE IS NO CHANNEL YET.** This is the route that
+    // MAKES one, and it is the only thing on this API a caller with nothing can usefully do: every
+    // other write names a conversation that already exists, so a page opened by a source who has
+    // never spoken to anyone could previously do nothing at all and had to reach a terminal first.
+    // `invite` and `collect` are the other two ways in and would be siblings here, not verbs on a
+    // channel that has not been opened.
+    const lookUp = path === "/v1/gui/lookup";
 
-    if (req.method === "POST" && (sendTo || readFrom || path === "/v1/gui/flush")) {
+    if (req.method === "POST" && (sendTo || readFrom || lookUp || path === "/v1/gui/flush")) {
       // Named out here because the `catch` below needs it too, and an operator-side log that does
       // not say which operation failed is a log that costs a reader the one thing it had.
-      const what = sendTo ? "send" : readFrom ? "read" : "flush";
+      const what = sendTo ? "send" : readFrom ? "read" : lookUp ? "lookup" : "flush";
       void (async () => {
         const channel = decodeURIComponent((sendTo ?? readFrom)?.[1] ?? "");
 
         // The body is read BEFORE the lock on purpose: it is a network wait on a client that may
         // be slow or hostile, and holding the write lock across it would let any caller stall
         // every other write by dribbling bytes. Nothing here touches state.
-        let body: { text?: unknown; signed?: unknown } = {};
-        if (sendTo) {
+        let body: { text?: unknown; signed?: unknown; name?: unknown; address?: unknown } = {};
+        // The address, parsed OUT HERE. `BigInt("nonsense")` throws, and inside the lock that
+        // throw would reach the 500 path — reporting a caller's typo as a failure of this process
+        // and spending the write lock to do it. Parsing is synchronous, so it adds no `await`
+        // between the snapshot and the acquisition; see `serialise.ts`.
+        let address = 0n;
+        if (sendTo || lookUp) {
           const raw = await readBody(req);
           if (raw === null) {
             return refuse(res, { status: 413, code: "body_too_large",
@@ -527,10 +548,29 @@ export function guiServer(deps: GuiDeps): Server {
               condition: "the request body is not JSON",
               remedy: `send { "text": "…", "signed": false }` });
           }
-          if (typeof body.text !== "string" || body.text.trim() === "") {
+          if (sendTo && (typeof body.text !== "string" || body.text.trim() === "")) {
             return refuse(res, { status: 400, code: "no_text",
               condition: "the request carried no message text",
               remedy: `send { "text": "…" } — an empty message is not a message` });
+          }
+          if (lookUp) {
+            if (typeof body.name !== "string" || body.name.trim() === "") {
+              return refuse(res, { status: 400, code: "no_name",
+                condition: "the request named no channel to open",
+                remedy: `send { "name": "…", "address": "0x…" } — the name is yours to choose and `
+                  + "is what you will see this conversation under" });
+            }
+            // **A BARE `BigInt()` WOULD ACCEPT `""` AS ZERO**, and zero reads as "no identity" on
+            // this contract, so an empty address would travel all the way to the node and come
+            // back as "they have published nothing" — a true sentence about a question nobody
+            // asked. Refused here, where it is still a typo.
+            if (typeof body.address !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(body.address)) {
+              return refuse(res, { status: 400, code: "not_an_address",
+                condition: `${JSON.stringify(body.address ?? null)} is not a Starknet address`,
+                remedy: "a Starknet address is `0x` and up to 64 hex digits. This is the address "
+                  + "they published their record under, which they tell you or publish somewhere" });
+            }
+            address = BigInt(body.address);
           }
         }
 
@@ -560,6 +600,45 @@ export function guiServer(deps: GuiDeps): Server {
                 + "opened it" } satisfies Fail;
           }
 
+          if (lookUp) {
+            const name = (body.name as string).trim();
+            // CHECKED IN HERE FOR A REASON THAT IS NOT TIDINESS. `openAndSend` deletes
+            // `state.channels[name]` when the vault post fails, to avoid leaving a channel the
+            // other side will never know about. Against a name that was ALREADY TAKEN, that undo
+            // deletes somebody else's conversation — so a lookup onto an existing name is refused
+            // before `open` can overwrite it, against the fresh state, for the same reason the
+            // 404 above is.
+            if (state.channels[name]) {
+              return { status: 409, code: "name_taken",
+                condition: `there is already a conversation called ${JSON.stringify(name)}`,
+                remedy: "pick another name — this one is in use, and opening over it would lose "
+                  + "the conversation that has it" } satisfies Fail;
+            }
+            // **TWO STEPS, ONE HANDLER, AND THE ORDER IS THE CLAIM.** `bundleFromChain` asks the
+            // node and verifies the record's anchor signature against the address; only if that
+            // succeeds does anything reach the vault. A lookup that finds nothing therefore
+            // discloses nothing to the vault operator — which is the whole of `LOOKUP_NODE_SEES`,
+            // and it is false the instant these two awaits are swapped, because a mistyped
+            // address would then write a prekey message into a stranger's mailbox.
+            // `gui-api.test.ts` fails if the vault is contacted by a lookup that found no record.
+            const bundle = await bundleFromChain(state, address, deps.fetchImpl);
+            const { slot } = await openAndSend(state, name, bundle, deps.fetchImpl);
+            deps.save(state);
+            return {
+              op: "lookup", channel: name, address: body.address as string,
+              // The fingerprint is what makes the channel mean anything, and it has to be checked
+              // by some route that is not this one — the same sentence both other front ends
+              // print beside it.
+              fingerprint: fingerprint(bundle), slot,
+              // **THE CAVEATS TRAVEL IN THE RESPONSE, NOT IN THE PAGE'S OWN WORDS.** These are the
+              // `claims/src/warnings.ts` entries the CLI and the TUI render, shipped as data so a
+              // page cannot summarise, reorder or drop one — the failure `claims-not-duplicated`
+              // exists for, arriving on a surface where it would have been invisible because the
+              // wording would have lived in a different repository directory.
+              warnings: [LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES]
+                .map((w) => ({ id: w.id, short: w.short, full: w.full })),
+            };
+          }
           if (sendTo) {
             // SIGNED IS EXPLICIT AND DEFAULTS TO DENIABLE, the way both other front ends have it:
             // `send` and `publish` are two verbs rather than a flag, because a user who cannot
@@ -617,7 +696,7 @@ export function guiServer(deps: GuiDeps): Server {
     refuse(res, { status: 404, code: "no_such_route",
       condition: `${req.method} ${path} is not a route this API serves`,
       remedy: "the routes are /v1/gui/status, /v1/gui/channels and "
-        + "/v1/gui/channels/<name>/messages, and POST to "
+        + "/v1/gui/channels/<name>/messages, and POST to /v1/gui/lookup, "
         + "/v1/gui/channels/<name>/send, /v1/gui/channels/<name>/read and /v1/gui/flush. There is "
         + "no general command endpoint, deliberately" });
   });

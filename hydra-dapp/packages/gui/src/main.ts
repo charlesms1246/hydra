@@ -87,7 +87,7 @@ let lastFlush: FlushAttempt | null = null;
 let consecutiveFailures = 0;
 
 const server = guiServer({
-  token, stateNow, save, chainFor, now: () => Date.now(), exclusive,
+  token, stateNow, save, chainFor, fetchImpl: fetch, now: () => Date.now(), exclusive,
   lastFlush: () => lastFlush,
 });
 

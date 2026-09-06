@@ -37,8 +37,55 @@ import { Vault } from "../../vault-server/src/server.ts";
 import { serve } from "../../vault-server/src/http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
 import { describe as describeLinkability, NOT_DISCOUNTED } from "../../channel/src/crowd.ts";
+import { recordFor, encodeRecord, RECORD_FELTS } from "../../handshake/src/record.ts";
+import { createStore, mintOneTime } from "../../handshake/src/prekeys.ts";
+import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
+  from "../../identity/src/domains.ts";
+import { LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES }
+  from "../../claims/src/warnings.ts";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
+/**
+ * A THIRD PARTY WHO HAS PUBLISHED A RECORD, and a node that will serve it.
+ *
+ * The whole point of `lookup` is a peer the client has never met and holds no file from, so the
+ * fixture has to be somebody neither `alice` nor `bob` has ever spoken to. `ORG_ADDRESS` is the
+ * one `bundle-lookup.test.ts` uses, against the same encoder.
+ */
+const ORG_ADDRESS = "0x2afa2039a4173a1c327f6bb87d49bac815c5c50dfd9afa57f24609c2426c157";
+const NO_RECORD = "0x2993";
+const orgStore = (() => { const s = createStore(); mintOneTime(s, 2); return s; })();
+const org = derive(VAULT_DOMAIN,
+  rootSeed(entropyFrom(fromTestVector(new Uint8Array(32).fill(21), "an organisation"))));
+
+/**
+ * A `fetch` that is a node for the RPC and the real vault for everything else.
+ *
+ * **THE SPLIT IS THE INSTRUMENT.** Every request a lookup makes lands in `asked`, so a test can
+ * assert on the ORDER and the DESTINATIONS rather than on the result — which is the only way to
+ * check the property `LOOKUP_NODE_SEES` actually claims.
+ */
+function nodeAndVault(state: State, asked: string[] = []): { fetchImpl: typeof fetch;
+  asked: string[] } {
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    const at = String(url);
+    asked.push(at);
+    if (!at.startsWith(state.rpcUrl)) return fetch(url as string, init);
+    const req = JSON.parse(String(init?.body)) as
+      { params: { request: { calldata: string[] } } };
+    const isIdLookup = req.params.request.calldata.length === 1;
+    // The address is the first felt of the id call; anything but the organisation owns nothing.
+    const wanted = BigInt(req.params.request.calldata[0]!) === BigInt(ORG_ADDRESS);
+    const felts = encodeRecord(recordFor(org, orgStore, BigInt(ORG_ADDRESS)));
+    const result = isIdLookup
+      ? [wanted ? "0x1092" : "0x0"]
+      : [`0x${RECORD_FELTS.toString(16)}`, ...felts.map((f) => `0x${f.toString(16)}`)];
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }),
+      { headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  return { fetchImpl, asked };
+}
+
 const BLOCK = 30_000;
 const T0 = 1_800_000_000_000;
 const FILE = "/home/somebody/.hydra-msg/state.json";
@@ -73,7 +120,7 @@ async function conversed(): Promise<{ alice: State; bob: State; close: () => voi
 async function running(source: StateSource, token = TOKEN, over: Partial<{
   chainFor: (s: State) => never; now: () => number; exclusive: Exclusive;
   stateNow: () => StateSource; save: (s: State) => void;
-  lastFlush: () => FlushAttempt | null;
+  lastFlush: () => FlushAttempt | null; fetchImpl: typeof fetch;
 }> = {}) {
   const saved: State[] = [];
   // Every `stateNow` the server takes, in order. A concurrency test needs to know WHEN a handler
@@ -84,6 +131,11 @@ async function running(source: StateSource, token = TOKEN, over: Partial<{
   const server = guiServer({
     token,
     chainFor: (s) => memoryChain() as never,
+    // A node that serves nothing by default. A test that means to look somebody UP passes its own;
+    // one that does not must still not reach the real network by accident, and a default of the
+    // global `fetch` is how a suite acquires a 10.5-second undici timeout it cannot explain.
+    fetchImpl: (async () => { throw new Error("this test did not expect a network request"); }
+    ) as unknown as typeof fetch,
     now: () => T0,
     exclusive: serialise(),
     lastFlush: () => null,
@@ -114,6 +166,12 @@ const ROUTES = (channel: string): [string, string, unknown?][] => [
   ["GET", "/v1/gui/status"],
   ["GET", "/v1/gui/channels"],
   ["GET", `/v1/gui/channels/${channel}/messages`],
+  // FIRST OF THE WRITES BECAUSE IT IS THE ONE THAT BUILDS A RESPONSE FROM A STRANGER'S KEYS.
+  // `lookup` decodes a bundle off the chain and opens a channel from it, so it handles material
+  // that did not come out of this state at all — which is a new way for the sweep below to be
+  // incomplete rather than an old one repeated, and it is a route whose response is constructed
+  // rather than stored.
+  ["POST", "/v1/gui/lookup", { name: "swept", address: ORG_ADDRESS }],
   ["POST", `/v1/gui/channels/${channel}/send`, { text: "swept" }],
   ["POST", `/v1/gui/channels/${channel}/read`],
   ["POST", "/v1/gui/flush"],
@@ -166,7 +224,8 @@ function longStrings(value: unknown, out: string[] = []): string[] {
 
 test("I6: NO RESPONSE CARRIES KEY MATERIAL — searched by value, not by field name", async () => {
   const { alice, close: closeVault } = await conversed();
-  const api = await running({ t: "ready", state: alice, file: FILE });
+  const api = await running({ t: "ready", state: alice, file: FILE },
+    TOKEN, { fetchImpl: nodeAndVault(alice).fetchImpl });
   try {
     const bodies: string[] = [];
     for (const [method, route, payload] of ROUTES("with-bob")) {
@@ -176,8 +235,18 @@ test("I6: NO RESPONSE CARRIES KEY MATERIAL — searched by value, not by field n
     }
     const all = bodies.join("\n");
     // A sweep of six empty bodies proves nothing, and a route that 500s returns a short one.
-    assert.ok(all.length > 1000, `the six routes returned ${all.length} characters between them, `
-      + "which is too little to have exercised them — the sweep would pass on nothing");
+    assert.ok(all.length > 1000, `the ${ROUTES("with-bob").length} routes returned ${all.length} `
+      + "characters between them, which is too little to have exercised them — the sweep would "
+      + "pass on nothing");
+    // **AND THE SWEEP MUST HAVE SEEN A LOOKUP THAT WORKED.** A refusal is a short body that
+    // carries no bundle, so a `lookup` that quietly started 400ing would leave every assertion
+    // below passing on a response that never handled a key. Asserted rather than assumed, for the
+    // reason the vacuity floors elsewhere in this repo exist.
+    // Matched on a claim id rather than on `"op": "lookup"`, because `send` pretty-prints and a
+    // literal written without its space passes nothing and reports a broken route. The id only
+    // appears in a lookup that got far enough to attach its caveats.
+    assert.ok(all.includes("lookup.nodeSees"),
+      "no lookup succeeded during the sweep, so the route contributed nothing to search");
 
     // The named secrets, taken as VALUES out of the state this API is serving.
     const named: [string, string][] = [
@@ -915,8 +984,8 @@ test("A WRITE IS POST AND NOT GET", async () => {
   const { alice, close: closeVault } = await conversed();
   const api = await running({ t: "ready", state: alice, file: FILE });
   try {
-    for (const path of ["/v1/gui/channels/with-bob/send", "/v1/gui/channels/with-bob/read",
-      "/v1/gui/flush"]) {
+    for (const path of ["/v1/gui/lookup", "/v1/gui/channels/with-bob/send",
+      "/v1/gui/channels/with-bob/read", "/v1/gui/flush"]) {
       const res = await api.get(path);
       assert.equal(res.status, 404, `${path} answers a GET, so a prefetch can trigger it`);
     }
@@ -949,5 +1018,116 @@ test("FLUSH REPORTS WHAT WENT AND WHAT IS STILL WAITING", async () => {
     assert.equal(res.status, 200, JSON.stringify(body));
     assert.equal(typeof body.uploaded, "number");
     assert.equal(typeof body.waiting, "number");
+  } finally { api.close(); closeVault(); }
+});
+
+// ---------------------------------------------------------------------------
+// `lookup` — the route that opens a conversation, and the only thing on this API a caller with no
+// conversations can usefully do. Every other write names one that already exists.
+// ---------------------------------------------------------------------------
+
+test("A LOOKUP THAT FINDS NOTHING NEVER TOUCHES THE VAULT", async () => {
+  // **THE ORDERING IS THE DISCLOSURE CLAIM, NOT AN OPTIMISATION**, and this is the third surface
+  // to need it said: `tui-lookup.test.ts` holds the same property for the effect. `LOOKUP_NODE_SEES`
+  // tells a user that asking costs them the RPC node knowing, and that this is the better of the
+  // two available disclosures because fetching from the peer's vault would tell THE PEER they were
+  // being considered. That sentence is true only while a failed lookup stops at the node.
+  //
+  // **WHAT THIS CAN AND CANNOT REGRESS, measured rather than asserted.** The two calls in the
+  // handler are DATA-DEPENDENT — `openAndSend` takes the bundle `bundleFromChain` returns — so
+  // they cannot literally be reordered; an attempt to start the second early was tried against
+  // this test and failed at `open`, not here. What CAN arrive is a second route to a bundle: a
+  // vault fallback when the chain has no record, or a mailbox probe before the lookup. Tried:
+  // adding a `catch` that fetches the bundle from `state.vaultUrl` makes exactly this test fail
+  // and nothing else in the file. That is the shape it guards, and naming it is more use to
+  // whoever sees it fail than the sentence about swapping awaits that used to be here.
+  const { alice, close: closeVault } = await conversed();
+  const { fetchImpl, asked } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    const res = await post(api.base, "/v1/gui/lookup", { name: "nobody", address: NO_RECORD });
+    assert.equal(res.status, 500, "a lookup against an address with no record reported success");
+    assert.ok(asked.length > 0, "nothing was asked of anybody, so this test measured nothing");
+    assert.deepEqual(asked.filter((u) => u.startsWith(alice.vaultUrl)), [],
+      `the vault was contacted ${asked.filter((u) => u.startsWith(alice.vaultUrl)).length} time(s) `
+      + "by a lookup that found no record — LOOKUP_NODE_SEES claims only the node learns");
+    assert.ok(!alice.channels.nobody, "a channel was opened for a record that does not exist");
+    // And the client's own record is untouched, so nothing was half-done under a name.
+    assert.deepEqual(api.saved, [], "a lookup that found nothing still saved state");
+  } finally { api.close(); closeVault(); }
+});
+
+test("THE THREE COSTS TRAVEL IN THE RESPONSE, WORD FOR WORD", async () => {
+  // **NOT "the page shows a warning" — the page is given the SENTENCES.** These are the entries
+  // `cli.ts` prints and the TUI's Connect page renders, shipped as data, so a browser front end
+  // cannot summarise one into a tooltip, reorder them, or drop the one that is least flattering.
+  // The wording lives in `claims/src/warnings.ts` and `claims-not-duplicated.test.ts` holds that
+  // `gui` renders all three; this holds that they reach the wire intact.
+  const { alice, close: closeVault } = await conversed();
+  const { fetchImpl } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    const res = await post(api.base, "/v1/gui/lookup", { name: "org", address: ORG_ADDRESS });
+    const text = await res.text();
+    assert.equal(res.status, 200, `the lookup failed: ${text}`);
+    const body = JSON.parse(text) as { op: string; channel: string; slot: number;
+      fingerprint: string; warnings: { id: string; short: string; full: string[] }[] };
+    assert.equal(body.op, "lookup");
+    assert.equal(body.channel, "org");
+    assert.ok(body.fingerprint.length > 0, "no fingerprint, so nothing can be checked out of band");
+    assert.deepEqual(
+      body.warnings,
+      [LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES]
+        .map((w) => ({ id: w.id, short: w.short, full: w.full })),
+      "the caveats on the wire are not the ones in the claims module — a surface restating a "
+      + "claim in its own words is the drift this repository has already paid for three times");
+    // AND THE CHANNEL IS REALLY OPEN, so this is not three sentences attached to nothing.
+    assert.ok(alice.channels.org, "the response claimed a channel that was never opened");
+    assert.equal(api.saved.length, 1, "a channel was opened and not persisted");
+  } finally { api.close(); closeVault(); }
+});
+
+test("A NAME ALREADY IN USE IS REFUSED BEFORE ANYTHING CAN OVERWRITE IT", async () => {
+  // Not politeness. `openAndSend` deletes `state.channels[name]` if the vault post fails — an undo
+  // that is correct for a name it just created and DESTROYS A CONVERSATION for one it did not. A
+  // lookup onto an occupied name could therefore lose an existing thread on a network error.
+  const { alice, close: closeVault } = await conversed();
+  const { fetchImpl, asked } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    const res = await post(api.base, "/v1/gui/lookup", { name: "with-bob", address: ORG_ADDRESS });
+    assert.equal(res.status, 409);
+    const err = await refusal(res);
+    assert.equal(err.code, "name_taken");
+    assert.ok(err.remedy.length > 10, "name_taken names no remedy");
+    assert.ok(alice.channels["with-bob"], "the existing conversation was lost to a refused lookup");
+    // REFUSED BEFORE THE NODE IS ASKED, so a name collision does not spend a disclosure either.
+    assert.deepEqual(asked, [], `a refused lookup still asked ${asked.length} party/parties`);
+  } finally { api.close(); closeVault(); }
+});
+
+test("A LOOKUP WITH NO NAME, AND WITH A BAD ADDRESS, EACH NAME A REMEDY", async () => {
+  // `BigInt("")` IS ZERO, and zero reads as "no identity published" on this contract — so an
+  // empty address would have travelled to the node and come back as a true sentence about a
+  // question nobody asked. Each of these is refused before the lock and before the network.
+  const { alice, close: closeVault } = await conversed();
+  const { fetchImpl, asked } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    for (const [body, code] of [
+      [{ address: ORG_ADDRESS }, "no_name"],
+      [{ name: "  ", address: ORG_ADDRESS }, "no_name"],
+      [{ name: "org" }, "not_an_address"],
+      [{ name: "org", address: "" }, "not_an_address"],
+      [{ name: "org", address: "not an address" }, "not_an_address"],
+      [{ name: "org", address: "0x" }, "not_an_address"],
+    ] as const) {
+      const res = await post(api.base, "/v1/gui/lookup", body);
+      assert.equal(res.status, 400, `${JSON.stringify(body)} was not refused`);
+      const err = await refusal(res);
+      assert.equal(err.code, code, `${JSON.stringify(body)} was refused as ${err.code}`);
+      assert.ok(err.remedy.length > 10, `${code} names no remedy`);
+    }
+    assert.deepEqual(asked, [], "a refused lookup reached the network");
   } finally { api.close(); closeVault(); }
 });

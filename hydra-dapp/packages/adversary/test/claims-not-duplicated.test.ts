@@ -47,8 +47,14 @@ const sourcesOf = (pkg: string) => {
 /**
  * Every package that could render a claim. Wider than any single claim's `surfaces`, because the
  * check that a surface renders NOTHING it was not declared for needs somewhere to look.
+ *
+ * `gui` IS A SURFACE EVEN THOUGH NOBODY READS IT THERE. It renders into a JSON body that a page
+ * displays, which is the same act as printing to a terminal and is why the three `lookup` claims
+ * declare it: the alternative was the page writing its own words for the same caveats, and a
+ * fourth copy in a repository that has already paid for three is not a fourth copy this guard
+ * would ever see.
  */
-const ALL_SURFACES = ["cli", "tui", "client", "vault-server", "operator", "moderation"];
+const ALL_SURFACES = ["cli", "tui", "gui", "client", "vault-server", "operator", "moderation"];
 
 test("NO CLAIM DECLARES ZERO SURFACES", () => {
   // An unrendered claim is an unreachable mechanism, and this repo has a sweep for those. It is
