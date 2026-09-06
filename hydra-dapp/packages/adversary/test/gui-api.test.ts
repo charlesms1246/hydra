@@ -119,6 +119,37 @@ const ROUTES = (channel: string): [string, string, unknown?][] => [
   ["POST", "/v1/gui/flush"],
 ];
 
+/**
+ * The values in a state that are public by construction, BY VALUE.
+ *
+ * Shared by the two guards that need it, so there is one list to audit rather than two that drift.
+ * A field-name exclusion would let a secret through the moment somebody renamed or nested it;
+ * naming the value means each entry says "this exact string is public", which is checkable.
+ */
+function publicValues(state: State): Set<string> {
+  return new Set<string>([
+    state.contract, state.rpcUrl, state.vaultUrl, FILE,
+    // A PEER FINGERPRINT IS A HASH OF TWO PUBLIC KEYS and it is the thing users read to each other
+    // out of band to check they are talking to who they think. Its second half is the first 16 hex
+    // of the peer's SIGNING key, public by construction. Withholding it would break the only
+    // verification a human can perform.
+    ...Object.values(state.channels).map((c) => c.peer),
+    // A BLOB ID IS THE PUBLIC HANDLE the vault is asked for by anyone fetching the object, and
+    // `vault-server/src/observations.ts` already publishes that the operator sees it.
+    //
+    // **AND THAT REASON IS NOT SUFFICIENT ON ITS OWN, WHICH IS WHY THE REAL ONE IS HERE.**
+    // `deletion.ts` says a blob id is not a delete capability and is public by construction —
+    // true, and it does not settle this, because a vault object's id IS the address you present to
+    // fetch it, so "public" and "harmless in a browser" are two claims and only the first was
+    // made. The exclusion is justified by I6 itself: an id is safe in a page precisely because
+    // what makes the object READABLE is the content key, and the content key is the thing I6
+    // forbids ever reaching the browser — asserted directly, by value, in the sweep below. Take
+    // that assertion away and this exclusion stops being true. Written out because an exclusion
+    // resting on its own conclusion is the kind that survives a review and should not.
+    ...Object.values(state.channels).flatMap((c) => c.history.map((h) => h.id)),
+  ]);
+}
+
 /** Every string in the state long enough to be key material. Recursive, so nothing is missed. */
 function longStrings(value: unknown, out: string[] = []): string[] {
   if (typeof value === "string") { if (value.length >= 32) out.push(value); return out; }
@@ -172,28 +203,7 @@ test("I6: NO RESPONSE CARRIES KEY MATERIAL — searched by value, not by field n
     // **THE EXCLUSIONS ARE BY VALUE AND EACH ONE IS A CLAIM.** A field-name exclusion would let a
     // secret through the moment it was renamed into an excluded field; naming the value means the
     // exclusion says "this exact string is public", which is checkable.
-    const public_ = new Set<string>([
-      alice.contract, alice.rpcUrl, alice.vaultUrl, FILE,
-      // A PEER FINGERPRINT IS A HASH OF TWO PUBLIC KEYS and it is the thing users read to each
-      // other out of band to check they are talking to who they think. Verified while writing
-      // this: its second half is the first 16 hex of the peer's SIGNING key, which is public by
-      // construction. Withholding it would break the only verification a human can perform.
-      ...Object.values(alice.channels).map((c) => c.peer),
-      // A BLOB ID IS THE PUBLIC HANDLE the vault is asked for by anyone fetching the object, and
-      // `vault-server/src/observations.ts` already publishes that the operator sees it.
-      //
-      // **AND THAT REASON IS NOT SUFFICIENT ON ITS OWN, WHICH IS WHY THE REAL ONE IS WRITTEN
-      // HERE.** `deletion.ts:9` says a blob id is not a delete capability and is public by
-      // construction — true, and it does not settle this, because a vault object's id IS the
-      // address you present to fetch it, so "public" and "harmless in a browser" are two claims
-      // and only the first was made. The exclusion is justified by I6 itself: an id is safe in a
-      // page precisely because what makes the object READABLE is the content key, and the content
-      // key is the thing I6 forbids ever reaching the browser — which is asserted directly, by
-      // value, a few lines above. Take that assertion away and this exclusion stops being true.
-      // Written out because an exclusion resting on its own conclusion is the kind that survives
-      // a review and should not.
-      ...Object.values(alice.channels).flatMap((c) => c.history.map((h) => h.id)),
-    ]);
+    const public_ = publicValues(alice);
     for (const s of longStrings(alice)) {
       if (public_.has(s)) continue;
       assert.ok(!all.includes(s),
@@ -418,53 +428,54 @@ test("A CLIENT WHOSE UPLOADS ARE FAILING DOES NOT LOOK LIKE A HEALTHY ONE", asyn
   } finally { closeVault(); }
 });
 
-test("EVERY REAL SECRET, INSIDE AN ERROR, IS KEPT OUT OF THE SENTENCE", async () => {
-  // **THE GUARD THAT DOES NOT DECAY, AND THE REASON IT IS NEEDED.** `problemOf` bounds by SHAPE,
-  // and a shape list is a scope that holds only while nobody invents a new kind of error — the
-  // same form as an entry-point list that had stopped covering seven pages. Worse here, because
-  // five sites in the client interpolate text a REMOTE party chose (the vault's response body, the
-  // node's error), and no regex can be right about bytes somebody else picks.
+test("EVERY LONG STRING IN THE STATE, INSIDE AN ERROR, IS KEPT OUT OF THE SENTENCE", async () => {
+  // **THE GUARD THAT DOES NOT DECAY — AND THE FIRST VERSION OF IT DID.** `problemOf` bounds by
+  // SHAPE, and a shape list holds only until somebody invents a new kind of error. Five sites in
+  // the client interpolate text a REMOTE party chose (the vault's response body, the node's
+  // error), so no regex here can be right about bytes somebody else picked. This test is what is
+  // supposed to catch that.
   //
-  // So this drives the actual secrets out of an actual state, by value, the way the sweep at the
-  // top of this file does — not synthetic strings, which only ever test the regex against itself.
-  // Add a credential format without adding a shape and this fails rather than shipping quietly.
+  // It could not. It named the fields it knew about — seed, prekeys, addressing keys, invites,
+  // `bodyB64` — which is **the entry-point list one more time, in the backstop written for
+  // exactly this failure.** A peer added a `randomBytes(32).toString("base64url")` field to the
+  // fixture state: 25 tests, 25 passing, and that value went through `problemOf` into a
+  // browser-bound sentence verbatim. A hand-kept list of secrets is not a walk of the state.
+  //
+  // So it WALKS, using the same `longStrings` recursion the by-value sweep uses, with the same
+  // `publicValues` exclusions. A new secret-bearing field is covered the day it is added, in
+  // whatever alphabet it arrives in, without anybody remembering this file exists.
   const { alice, close: closeVault } = await conversed();
   try {
-    // **QUEUED AND NOT FLUSHED, ON PURPOSE.** `conversed()` flushes with no limit, so `pending` is
-    // empty and there is no base64 in the state at all — the assertion below caught that, which is
-    // the whole reason it is written as a precondition rather than assumed.
+    // Queued and not flushed: `conversed()` flushes with no limit, so `pending` is empty and the
+    // base64 case would be silently untested. The precondition below caught that once already.
     await sendMessage(alice, memoryChain(), "with-bob", "ephemeral", "not yet uploaded", T0);
 
-    const secrets: [string, string][] = [
-      ["the vault root seed", alice.seedHex] as [string, string],
-      ...Object.entries(alice.prekeys.signed).map(([e, k]) => [`signed prekey ${e}`, k] as [string, string]),
-      ...Object.entries(alice.prekeys.oneTime).map(([i, k]) => [`one-time prekey ${i}`, k] as [string, string]),
-      ...Object.entries(alice.channels).flatMap(([n, c]) =>
-        [["addressSend", (c as never as Record<string, string>).addressSendHex],
-         ["addressRecv", (c as never as Record<string, string>).addressRecvHex]]
-          .filter(([, v]) => typeof v === "string")
-          .map(([w, v]) => [`${n} ${w}`, v] as [string, string])),
-      ...alice.invites.slice(0, 5).map((c, i) => [`invite code ${i}`, c] as [string, string]),
-      // **BASE64, WHICH IS THE SHAPE A HEX-ONLY BOUND MISSES.** `pending[].bodyB64` is the queued
-      // ciphertext and the by-value sweep already treats it as must-not-leak, so leaving it out of
-      // this list would have been the test agreeing with the bug.
-      ...alice.pending.slice(0, 3).map((p, i) =>
-        [`queued body ${i}`, (p as never as Record<string, string>).bodyB64] as [string, string]),
-    ].filter(([, v]) => typeof v === "string" && v.length >= 16);
+    const public_ = publicValues(alice);
+    const secrets = [...new Set(longStrings(alice))].filter((v) => !public_.has(v));
 
     assert.ok(secrets.length > 20,
-      `only ${secrets.length} secrets found in the fixture — the sweep would prove little`);
-    // A queued upload has to exist or the base64 case is silently untested.
-    assert.ok(secrets.some(([what]) => what.startsWith("queued body")),
-      "the fixture queued no uploads, so no base64 value was driven through this at all");
+      `only ${secrets.length} long strings found in the fixture — the walk is broken and this `
+      + "test would pass by measuring nothing");
+    // The walk has to actually reach the queue, or the encoding that broke this is untested.
+    assert.ok(secrets.some((v) => /^[A-Za-z0-9+/]+=*$/.test(v) && !/^[0-9a-f]+$/i.test(v)),
+      "no non-hex value in the walk — the fixture queued nothing and the base64 case is untested");
 
-    for (const [what, secret] of secrets) {
-      // Interpolated the way the client really does it — inside a message, with no `cause.code`,
+    for (const secret of secrets) {
+      // Interpolated the way the client really does it: inside a message, with no `cause.code`,
       // which is the branch that forwards prose verbatim.
       const said = problemOf(new Error(`the vault refused the read: ${secret} was rejected`));
       assert.ok(!said.includes(secret),
-        `${what} passed through problemOf into a sentence bound for a browser: ${said.slice(0, 90)}`);
+        `a ${secret.length}-character value from the state passed through problemOf into a `
+        + `sentence bound for a browser: ${secret.slice(0, 28)}…`);
     }
+
+    // **AND base64url, WHICH IS WHAT THE SHAPE LIST MISSED.** `-` and `_` are not in the standard
+    // alphabet and they break a run below the length bound, so this passed while its standard
+    // twin was withheld. It is the encoding JOSE and JWK use, so it is what a future key field
+    // arrives in. Driven explicitly as well as by the walk, because the fixture may not hold one.
+    const b64url = randomBytes(32).toString("base64url");
+    assert.ok(!problemOf(new Error(`rejected: ${b64url}`)).includes(b64url),
+      `base64url passes the shape check: ${b64url}`);
 
     // AND THE URL BRANCH, which was the bypass: a coded error returns `describeFailure`'s sentence
     // and that sentence interpolates the vault URL, so it skipped the check entirely.

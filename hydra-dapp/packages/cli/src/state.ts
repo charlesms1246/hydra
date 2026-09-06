@@ -457,12 +457,22 @@ export function save(state: State): void {
   // that will not save, which is the same lost message by a more confusing route, so it wants
   // deciding rather than improvising.
   //
-  // **TWO LIMITS THE MESSAGE HAS TO BE HONEST ABOUT.** A refused save does not re-apply itself —
-  // the change is gone and the user has to make it again — so the sentence says that rather than
-  // implying a queue. And a long-lived holder (the TUI, which loads once at startup) stays refused
-  // until it is restarted, because nothing here re-reads the file on its behalf. That is the
-  // stale-refusal failure `0048` gives as the reason not to improvise a lockfile, and it is
-  // present in a smaller form here: worth knowing before somebody meets it.
+  // **THE MESSAGE IS WRITTEN FOR THE CALLER THAT HITS IT MOST, WHICH IS NOT A PERSON.** The first
+  // version said "nothing here has been written" and told the reader to do it again. Both are
+  // wrong for the resident uploader: by the time this fires, `flush` has already put an object in
+  // the vault and SPENT AN INVITE, and doing it again spends a second one for an object the vault
+  // already holds. An invite is the credential `vault-server/src/observations.ts` calls the row
+  // that can undo every other row, and it is the one thing a client cannot mint more of.
+  //
+  // "The state file is unchanged" is the true statement and it is narrower than it sounds. What
+  // this cannot do is put the work back: the bookkeeping for an upload that really happened is
+  // gone with the refused save, so the next flush re-uploads it. That residual is bounded — one
+  // duplicate per collision, and `status` reports the failure — and it is inherent to refusing
+  // rather than merging. It is not fixed here and is written down rather than left to be found.
+  //
+  // AND A LONG-LIVED HOLDER STAYS REFUSED until it is restarted, because nothing re-reads the file
+  // on its behalf. That is the stale-refusal failure that argues against improvising a lockfile,
+  // present here in a smaller form: worth knowing before somebody meets it.
   const seen = readAs.get(state);
   if (seen) {
     const now = stampOf();
@@ -470,9 +480,13 @@ export function save(state: State): void {
       throw new Error(
         `${STATE_FILE} changed on disk after this client read it, so saving would erase whatever `
         + "wrote it — most likely another `hydra` running against the same HYDRA_HOME.\n\n"
-        + "Nothing here has been written, and this client cannot save again until it re-reads the "
-        + "file: close the other one, then start this one again.\n\n"
-        + "Your change is not queued anywhere and will need doing again.");
+        + "THE STATE FILE IS UNCHANGED. That is not the same as nothing having happened: "
+        + "whatever this operation had already done outside the file — an object uploaded, a "
+        + "commitment published, an invite spent — has happened, and is now not recorded "
+        + "anywhere.\n\n"
+        + "So do not simply repeat it. Close the other client, start this one again, and read "
+        + "`hydra status` first: repeating an upload spends a second invite for an object the "
+        + "vault already holds.");
     }
   }
   mkdirSync(dirname(STATE_FILE), { recursive: true, mode: 0o700 });

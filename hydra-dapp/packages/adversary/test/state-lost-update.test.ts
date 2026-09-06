@@ -64,12 +64,17 @@ test("A SECOND PROCESS DOES NOT SILENTLY ERASE THE FIRST ONE'S WRITE", async () 
       + "user needs to know what they lost");
     assert.match(out.stdout, /hydra|again|re-?run|retry/i,
       "the refusal names no remedy, so a user is told they cannot save and not what to do");
-    // **AND IT MUST NOT PROMISE A QUEUE.** The refused change is gone; nothing re-applies it. A
-    // remedy implying otherwise is the reassuring kind of wrong — a user who believes their
-    // message is waiting will not send it again.
-    assert.match(out.stdout, /will need doing again|not queued/i,
-      "the refusal implies the change is held somewhere. It is not, and a user who believes it is "
-      + "will never re-send the message they think is pending");
+    // **AND IT MUST NOT SAY NOTHING HAPPENED.** The caller that hits this most is the resident
+    // uploader, not a person: by the time the guard fires, `flush` has already put an object in
+    // the vault and spent an invite. "Nothing here has been written" is true of the FILE and reads
+    // as true of the world, and the remedy that followed it — do it again — is what spends a
+    // second invite for an object the vault already holds.
+    assert.match(out.stdout, /state file is unchanged/i,
+      "the refusal does not distinguish the file from the world, so a reader takes it to mean "
+      + "nothing happened");
+    assert.match(out.stdout, /invite|already holds|do not simply repeat/i,
+      "the refusal tells the reader to repeat the operation without saying what repeating costs — "
+      + "and an invite is the one credential a client cannot obtain more of");
   });
 });
 

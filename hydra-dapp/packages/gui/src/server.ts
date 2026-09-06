@@ -116,6 +116,14 @@ export type FlushAttempt = {
  * And **base64**: `pending[].bodyB64` is base64 and the by-value sweep already treats it as
  * must-not-leak, so a hex-only test would have passed while that string went straight through.
  *
+ * **AND THE BASE64 SHAPE WAS STILL WRONG, WHICH IS THE POINT ABOUT DENYLISTS MADE TWICE.** It
+ * matched standard base64 and not base64url: `-` and `_` are outside the class, so they break the
+ * run below the length bound and a value like `3914EZad3_00_HhmVq_mwn6_58XrvA-Uyk__pCuSjV8` went
+ * to a browser verbatim while its standard-alphabet twin was withheld. base64url is the encoding
+ * JOSE and JWK use — `handshake/src/keys.ts` already writes key coordinates in it — so it is the
+ * alphabet a future field arrives in, not an exotic case. Found by a peer driving it, one message
+ * after this comment claimed the list had been walked.
+ *
  * **AND ONE SHAPE THAT DEFEATS ANY DENYLIST, WHICH IS THE REASON THE TEST BELOW IS THE REAL
  * GUARD.** Five sites interpolate text chosen by a remote party — `commands.ts:1052` and `:907`
  * echo the vault's response body, `chain.ts:89` and `:324` and `commands.ts:806` echo the node's
@@ -123,12 +131,14 @@ export type FlushAttempt = {
  * fixable by adding shapes, and pretending otherwise is how a denylist becomes an entry-point list
  * that stopped covering seven pages.
  *
- * So: this is a cheap guard with a decaying scope, `gui-api.test.ts` drives the REAL secrets out
- * of a REAL state through this function, and neither is a general secret filter. Adding a
- * credential format without adding a shape here fails that test rather than shipping quietly.
+ * So: this is a cheap guard with a decaying scope, and the test in `gui-api.test.ts` is the thing
+ * that does not decay — **it WALKS the state for long strings rather than naming the fields it
+ * knows about.** The first version named them, which is the entry-point list one more time, in the
+ * test written to be the backstop for exactly this: a peer added a base64url field to the fixture
+ * and all 25 tests passed while that value went through here into a browser-bound sentence.
  */
 const CREDENTIAL_SHAPED =
-  /[0-9a-f]{32,}|[A-Za-z0-9+/]{32,}={0,2}|\benc:|\/\/[^/@\s]+:[^/@\s]+@/i;
+  /[0-9a-f]{32,}|[A-Za-z0-9+/_-]{32,}={0,2}|\benc:|\/\/[^/@\s]+:[^/@\s]+@/i;
 
 export function problemOf(e: unknown, vaultUrl?: string): string {
   const code = (e as { cause?: { code?: string } })?.cause?.code;
