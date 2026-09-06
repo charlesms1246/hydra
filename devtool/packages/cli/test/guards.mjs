@@ -29,6 +29,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { check as doctorCheck } from "../src/doctor.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +37,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PKGS = join(HERE, "..", "..");
 
 let failed = 0;
+const check_rows = () => doctorCheck().length;
+
 const check = (name, fn) => {
   try {
     const detail = fn();
@@ -175,6 +178,46 @@ check("the refusal wording is shared, and its comment matches its use", () => {
     throw new Error(`comment says ${claimed} call sites, source has ${uses}`);
   }
   return `${uses} call sites, as claimed`;
+});
+
+/**
+ * The README states how many rows `doctor` prints. Run it and compare.
+ *
+ * ⚠ THIS IS A NUMBER IN PROSE ASSERTING SOMETHING THE CODE PRODUCES, which is the class this
+ * repository keeps finding — and these two were wrong the moment a pin was added. `cargo` joined
+ * `PINS` because `BUILD_HINTS.discoveryService` is `cargo build --release` and nothing checked
+ * that the tool was present; the counts silently became eight and fourteen while the README still
+ * said seven and thirteen.
+ *
+ * `web/test/site.test.ts` has the same shape for the website — "no hand-written sentence asserts a
+ * number the code did not produce" — but it compares against a number produced in the same build.
+ * This one is produced by RUNNING A COMMAND on a machine, and it differs by whether a checkout is
+ * present, so the honest version runs it both ways.
+ */
+check("the README's doctor row counts are the counts doctor prints", () => {
+  const readme = readFileSync(join(PKGS, "..", "..", "README.md"), "utf8");
+  const words = { seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+    thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16 };
+  const withText = /\*\*(\w+)\*\* once it does/.exec(readme)?.[1];
+  const withoutText = /\*\*(\w+)\*\* before the checkout exists/.exec(readme)?.[1];
+  if (!withText || !withoutText) throw new Error("the README no longer states both counts");
+
+  const saved = process.env.HYDRA_UPSTREAM;
+  let withRows, withoutRows;
+  try {
+    withRows = check_rows();
+    // A path that cannot exist, so the `upstream checkout` row and the six artifact rows drop.
+    process.env.HYDRA_UPSTREAM = join(PKGS, "..", "no-such-checkout-for-this-test");
+    withoutRows = check_rows();
+  } finally {
+    if (saved === undefined) delete process.env.HYDRA_UPSTREAM;
+    else process.env.HYDRA_UPSTREAM = saved;
+  }
+
+  if (words[withoutText] !== withoutRows || words[withText] !== withRows) {
+    throw new Error(`README says ${withoutText}/${withText}, doctor prints ${withoutRows}/${withRows}`);
+  }
+  return `${withoutRows} without a checkout, ${withRows} with — as stated`;
 });
 
 console.log(failed ? `\n${failed} failed` : "\nall guards pass");

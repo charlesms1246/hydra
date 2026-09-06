@@ -22,7 +22,8 @@ filled in, so it is not repeated here.
 # 1. HYDRA itself. The published package is `hydra-devtool`; until it is published,
 #    run it from a clone.
 git clone https://github.com/charlesms1246/hydra.git && cd hydra
-hydra-dev() { node devtool/packages/cli/src/cli.mjs "$@"; }   # from the repository root
+npm install --prefix devtool                        # deps, and links hydra-dev
+export PATH="$PWD/devtool/node_modules/.bin:$PATH"  # or say `npx --prefix devtool hydra-dev`
 
 # 2. the checkout it drives. Run doctor first — its `upstream checkout` row prints the
 #    exact two commands, pin included. They look like this:
@@ -32,8 +33,6 @@ git -C .upstream checkout <the commit doctor printed>
 
 # 3. the stack. `.upstream/` inside this repo is found automatically; a checkout anywhere
 #    else needs HYDRA_UPSTREAM=<dir>.
-hydra-dev bootstrap # install node dependencies — the TUI and the linter need them,
-                    # doctor, the CLI and `up` do not
 hydra-dev doctor    # fourteen rows now; it prints the exact fix for anything missing
 hydra-dev up        # devnet + pool + funded accounts + local discovery service
 hydra-dev           # the TUI
