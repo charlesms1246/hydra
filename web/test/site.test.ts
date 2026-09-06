@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { SITE } from "../content.ts";
@@ -862,6 +863,89 @@ test("the session page ships an attribution legend that admits the mark is ambig
     text,
     /Read that, not the glyph/,
     "the legend must point the reader at the per-message basis rather than at the mark",
+  );
+});
+
+/**
+ * No tracked file carries the build machine's identity.
+ *
+ * ⛔ **`git ls-files`, not a filesystem walk, and the difference is the whole point.** Three files
+ * carrying an absolute path under a named person's home directory were committed by a stray
+ * directory `git add`, then deleted on disk by another session without the deletion being
+ * committed. **They were in `HEAD` and absent from the working tree**, so every filesystem check
+ * reported clean while the repository shipped them. What ships is what is tracked.
+ *
+ * `scripts/capture-tui.ts` already refuses to write a rendered frame containing `homedir()` or
+ * `$USER` — it exists because the first capture put a real username on a public marketing page.
+ * That check guards the output and not the source that produces it, and this is the same
+ * assertion one level up. **A project whose subject is what leaks when nobody decided to leak it
+ * does not get to commit its author's username**, and a hackathon submission is read by people
+ * looking specifically at how the authors handle disclosure.
+ *
+ * `HYDRA_HOME` in `capture-tui.ts` is `/home/you/…` — a placeholder, and deliberately not this
+ * machine's — so the check is about the real value, not about the shape of a path.
+ */
+test("no tracked file carries this machine's home directory or username", () => {
+  const tracked = execFileSync("git", ["ls-files", "-z"], {
+    cwd: ROOT,
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  })
+    .split("\0")
+    .filter(Boolean);
+
+  // Vacuity: a `git ls-files` that returns nothing would make this pass by finding no files.
+  assert.ok(
+    tracked.length > 50,
+    `git ls-files returned ${tracked.length} paths — too few for this check to mean anything`,
+  );
+
+  const home = homedir();
+  const user = process.env.USER ?? "";
+  const needles = [
+    ...(home.length > 3 ? [["home directory", home] as const] : []),
+    ...(user.length > 2 ? [["username", user] as const] : []),
+  ];
+  assert.ok(needles.length > 0, "neither homedir() nor $USER is usable; this check saw nothing");
+
+  const hits: string[] = [];
+  for (const rel of tracked) {
+    const abs = join(ROOT, rel);
+    if (!existsSync(abs)) continue; // tracked but deleted on disk: read from HEAD below
+    let body: string;
+    try {
+      body = readFileSync(abs, "utf8");
+    } catch {
+      continue; // binary or unreadable — fonts and images cannot carry a path meaningfully
+    }
+    for (const [what, value] of needles) {
+      if (body.includes(value)) hits.push(`${rel} contains this machine's ${what}`);
+    }
+  }
+
+  /*
+   * And the ones tracked but deleted on disk, which are exactly the case that made this
+   * necessary. `git show` reads HEAD rather than the working tree.
+   */
+  for (const rel of tracked) {
+    if (existsSync(join(ROOT, rel))) continue;
+    let body: string;
+    try {
+      body = execFileSync("git", ["show", `HEAD:${rel}`], { cwd: ROOT, encoding: "utf8" });
+    } catch {
+      continue;
+    }
+    for (const [what, value] of needles) {
+      if (body.includes(value)) hits.push(`${rel} (in HEAD, deleted on disk) contains ${what}`);
+    }
+  }
+
+  assert.deepEqual(
+    hits,
+    [],
+    "a tracked file carries the build machine's identity. Derive the path from `os.homedir()` "
+    + "rather than naming one — see `scripts/figure-geometry.ts`, which had exactly this and now "
+    + "globs the Playwright cache under `homedir()` instead",
   );
 });
 

@@ -40,8 +40,9 @@
 
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
+import { homedir } from "node:os";
 import { tmpdir } from "node:os";
 
 /** Widths that matter: a phone, a small tablet, a laptop, a desktop. */
@@ -72,6 +73,27 @@ const ROUTES = [
 const MIN_FIGURES = 3;
 const MIN_TEXTS = 20;
 
+/**
+ * Where to look for a browser, in order.
+ *
+ * ⛔ **The last entry is DERIVED, never a literal path.** It named a specific home directory —
+ * `/home/<a person>/.cache/…` — which is this machine's owner's username committed into a public
+ * repository by the project whose subject is what leaks when nobody decided to leak it. Building
+ * it from `homedir()` costs nothing and has a second, independent benefit: it works on every
+ * machine rather than one.
+ *
+ * The Playwright cache directory is version-numbered (`chromium-1234`), so it is globbed rather
+ * than pinned — a bumped Playwright would otherwise silently drop this candidate and the check
+ * would fall back to failing loudly, which is correct but avoidable.
+ */
+function playwrightChrome(): string[] {
+  const base = join(homedir(), ".cache", "ms-playwright");
+  if (!existsSync(base)) return [];
+  return readdirSync(base)
+    .filter((d) => d.startsWith("chromium-"))
+    .map((d) => join(base, d, "chrome-linux64", "chrome"));
+}
+
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   process.env.CHROME_BIN,
@@ -79,7 +101,7 @@ const CHROME_CANDIDATES = [
   "/usr/bin/google-chrome-stable",
   "/usr/bin/chromium",
   "/usr/bin/chromium-browser",
-  "/home/xavio/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome",
+  ...playwrightChrome(),
 ].filter((p): p is string => typeof p === "string" && p.length > 0);
 
 function findChrome(): string {
