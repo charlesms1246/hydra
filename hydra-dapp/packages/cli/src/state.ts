@@ -20,7 +20,9 @@
  * design exists to deny.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync }
+  from "node:fs";
+import { randomBytes } from "node:crypto";
 import { isEnvelope, open as openEnvelope, promptPassphrase, seal } from "./at-rest.ts";
 import type { PrekeyStore } from "../../handshake/src/prekeys.ts";
 import type { DhState } from "../../handshake/src/dh-ratchet.ts";
@@ -414,7 +416,23 @@ export function save(state: State): void {
   // interrupted mid-write leaves a truncated file, and `load` then refuses it — correctly — so the
   // user has no state at all. `rename` is atomic within a filesystem, so a reader sees the old
   // file or the new one and never a half of either.
-  const tmp = `${STATE_FILE}.writing`;
+  //
+  // **THE NAME IS PER-WRITER, AND THE SENTENCE ABOVE IS WHY IT HAD TO BECOME ONE.** That guarantee
+  // was reasoned about for READERS, against one process interrupted; the second WRITER arrived
+  // later, and against two the atomicity works the wrong way. Sharing `${STATE_FILE}.writing`
+  // meant writer A could be partway through `writeFileSync` when writer B renamed that same file
+  // into place — atomically publishing bytes that were already partial. `load` then refuses the
+  // result, correctly, and the user has a state file they cannot open with their identity behind
+  // it. The same contention crashed the loser: `chmodSync` and `renameSync` below name a path the
+  // winner has already renamed away, so `save` — the one function every front end calls — threw
+  // ENOENT as a stack of Node internals, which is the failure `gui/src/main.ts` rewrites for a
+  // taken port and had reproduced here uninstrumented.
+  //
+  // A unique name is not a lock and does not pretend to be one: two processes still overwrite each
+  // other's *state*, which is `decisions/0048` and a compare-and-swap. What it removes is the pair
+  // of failures that need no lock to explain — a corrupt file, and a crash — because neither is
+  // reachable once no two writers contend for one path.
+  const tmp = `${STATE_FILE}.writing.${process.pid}.${randomBytes(4).toString("hex")}`;
   const plain = `${JSON.stringify({ version: STATE_VERSION, ...state }, null, 2)}\n`;
   // LOCKED IF IT WAS LOCKED, OR IF A PASSPHRASE IS SET. A save must never silently downgrade a
   // locked file to plaintext — that would remove the protection at the moment of an ordinary
@@ -423,9 +441,20 @@ export function save(state: State): void {
   const body = secret && (locked() || state.lockedAtRest)
     ? `${JSON.stringify(seal(plain, secret), null, 2)}\n`
     : plain;
-  writeFileSync(tmp, body, { mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, STATE_FILE);
+  // **CLEANED UP ON A THROW, BECAUSE A UNIQUE NAME IS A NAME NOBODY REUSES.** The shared path had
+  // one virtue: a temporary left by a dead process was overwritten by the next save. Per-writer
+  // names accumulate instead, and each one is a second copy of the root key beside the first —
+  // `state-versioning.test.ts` says so, and it is a worse thing to leave lying about than a stale
+  // file. `force` because the success path has already renamed this away.
+  //
+  // A process killed outright still leaves one. That is not fixable here and is not new.
+  try {
+    writeFileSync(tmp, body, { mode: 0o600 });
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, STATE_FILE);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
   // Set explicitly as well as at creation: `writeFileSync`'s mode applies only when the file
   // does not already exist, so a file created some other way would keep its own permissions.
   chmodSync(STATE_FILE, 0o600);

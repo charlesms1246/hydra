@@ -14,7 +14,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
@@ -87,7 +87,15 @@ test("THE WRITE IS ATOMIC, so an interrupted save cannot leave a half-file", asy
     assert.equal(before.mode & 0o777, 0o600);
     // The temporary is gone after a successful save — a leftover would be a second copy of the
     // root key sitting beside the first.
-    await assert.rejects(() => stat(join(home, "state.json.writing")));
+    //
+    // **BY PREFIX, NOT BY THE ONE NAME.** This read `state.json.writing` exactly, and the temporary
+    // is now `…writing.<pid>.<random>` so that two processes cannot contend for one path. The
+    // assertion would have gone on passing while every save on the machine left a copy of the root
+    // key in the directory, because the name it watches is a name nothing writes any more — a
+    // guard narrowed by an unrelated correct change, which is the same shape as a field name
+    // defeating the reachability sweep.
+    const left = (await readdir(home)).filter((f) => f.startsWith("state.json.writing"));
+    assert.deepEqual(left, [], "a temporary file survived a successful save");
   });
 });
 
