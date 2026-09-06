@@ -21,6 +21,8 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
+
+import { spans } from "../scripts/ansi.ts";
 import { fileURLToPath } from "node:url";
 
 import { SITE } from "../content.ts";
@@ -885,6 +887,46 @@ test("the session page ships an attribution legend that admits the mark is ambig
  * `HYDRA_HOME` in `capture-tui.ts` is `/home/you/…` — a placeholder, and deliberately not this
  * machine's — so the check is about the real value, not about the shape of a path.
  */
+/**
+ * The ANSI mapper handles the cases the renderer actually emits.
+ *
+ * ⛔ **`ESC[7;1m` is the one a rewrite regresses.** hydra-31 enumerated every escape `render()`
+ * produces across all seven pages at two widths: seven distinct sequences, all SGR, no cursor or
+ * screen control — those live in `frame()` and `screen()`, which only `main.ts` writes to a TTY.
+ * Six are single codes and one is compound: `paint(" HYDRA ", "inverse", "bold")` in the nav.
+ *
+ * A mapper that splits on `;` and takes the first code passes every other case and silently drops
+ * the bold. This pins it, because the shared `spans()` now feeds both the captured frame and the
+ * live render, so a regression here would be wrong in two places at once.
+ */
+test("the ANSI mapper handles every escape the renderer emits", () => {
+  const cases: [string, { t: string; c: string[] }[]][] = [
+    ["plain", [{ t: "plain", c: [] }]],
+    ["\u001b[1mbold\u001b[0m", [{ t: "bold", c: ["bold"] }]],
+    ["\u001b[90mdim\u001b[0m", [{ t: "dim", c: ["gray"] }]],
+    ["\u001b[33mwarn\u001b[0m", [{ t: "warn", c: ["yellow"] }]],
+    ["\u001b[36mfocus\u001b[0m", [{ t: "focus", c: ["cyan"] }]],
+    ["\u001b[7minverse\u001b[0m", [{ t: "inverse", c: ["inverse"] }]],
+    // The compound one, and the reason this test exists.
+    ["\u001b[7;1m HYDRA \u001b[0m", [{ t: " HYDRA ", c: ["inverse", "bold"] }]],
+    // A reset mid-line, which is what every painted run ends with.
+    ["\u001b[1ma\u001b[0mb", [{ t: "a", c: ["bold"] }, { t: "b", c: [] }]],
+  ];
+
+  for (const [input, want] of cases) {
+    assert.deepEqual(
+      spans(input),
+      want,
+      `spans() mis-parsed ${JSON.stringify(input)} — the mapper feeds both the captured frame and `
+      + "the live render, so this is wrong twice",
+    );
+  }
+
+  // Vacuity: an implementation returning [] for everything would satisfy nothing above, but a
+  // future one returning the input untouched would satisfy the first case alone.
+  assert.equal(spans("\u001b[7;1mx\u001b[0m")[0].c.length, 2, "compound codes lost their tones");
+});
+
 test("no tracked file carries this machine's home directory or username", () => {
   const tracked = execFileSync("git", ["ls-files", "-z"], {
     cwd: ROOT,

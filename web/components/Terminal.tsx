@@ -29,7 +29,8 @@ import { join } from "node:path";
  * rather than wrong.
  */
 
-type Span = { t: string; c: string[] };
+import type { Span } from "../scripts/ansi.ts";
+
 type Frames = { chats: Span[][]; status: Span[][] };
 
 function frames(): Frames {

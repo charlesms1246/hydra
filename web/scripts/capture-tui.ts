@@ -22,10 +22,17 @@
  *
  * ## ⛔ EXCLUDED FROM `web/`'s TYPECHECK, AND THIS IS NOT A LOOPHOLE
  *
- * `tsc` follows imports, so checking this file drags every module `view.ts` reaches into the web
- * lane's typecheck — forty-three files belonging to `hydra-dapp`. That made `npm run typecheck`
- * here go red for **type errors in another lane's tree**, which is a gate failing for a reason
- * nobody in this lane can fix and everybody in this lane learns to ignore.
+ * `tsc` follows imports, so checking this file drags what it imports into the web lane's
+ * typecheck. That made `npm run typecheck` here go red for **type errors in another lane's tree**,
+ * which is a gate failing for a reason nobody in this lane can fix and everybody in this lane
+ * learns to ignore.
+ *
+ * ⛔ **Re-measured after the platform lane's split, and the blocker moved.** `view.ts` now reaches
+ * ten files and none of them are forbidden — it used to be forty-three and four. But this script
+ * also imports `app.ts` for `start` and `viewOf`, and that still reaches
+ * `client/src/public.ts` and `handshake/src/inbox.ts`, both of which have type errors today. So
+ * the exclusion stays, and the reason is now **`app.ts`, not `view.ts`** — which is the thing to
+ * re-check next time, rather than re-deriving the whole argument.
  *
  * Those files are typechecked by `hydra-dapp`'s own `npm run typecheck`. Excluding them here drops
  * no coverage; it stops duplicating another lane's coverage inside this one and inheriting its
@@ -42,10 +49,17 @@
  * the loop performs is worse than no comment. If the fixture grows another key-shaped field, add
  * it to the loop in the same commit.
  */
-
 import { writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { spans } from "./ansi.ts";
+import {
+  FIXTURE_HOME,
+  FIXTURE_STATE,
+  identityNeedles,
+  renderOnlyNeedles,
+} from "./tui-fixture.ts";
 
 /*
  * ⛔ SET BEFORE THE IMPORT, WHICH IS WHY THE IMPORTS BELOW ARE DYNAMIC.
@@ -56,97 +70,26 @@ import { join } from "node:path";
  * onto a public page** — which is what the first capture did, and what the check below now catches
  * rather than trusting this to be remembered.
  */
-process.env.HYDRA_HOME = "/home/you/.hydra-msg";
+process.env.HYDRA_HOME = FIXTURE_HOME;
 
 const { render } = await import("../../hydra-dapp/packages/tui/src/view.ts");
-const { start } = await import("../../hydra-dapp/packages/tui/src/app.ts");
-type Model = Parameters<typeof render>[0];
+const { start, viewOf } = await import("../../hydra-dapp/packages/tui/src/app.ts");
+type View = Parameters<typeof render>[0];
 
-/**
- * Nothing here is real, and nothing here resembles a real value closely enough to be quoted.
- *
- * ⛔ The seed is DISTINCT from every other fixture value on purpose. It was `"0".repeat(64)` and
- * the contract was all zeros too, so the leak check below matched the contract and refused to
- * write — a true firing of a correct guard against a fixture I had made collide with itself. A
- * canary that can be triggered by something other than the thing it watches for teaches people to
- * widen it.
- */
-const SEED = "5e5e".repeat(16);
-
-const fixtureState = {
-  vaultUrl: "http://127.0.0.1:8080",
-  rpcUrl: "http://127.0.0.1:5050",
-  contract: "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  fromBlock: 1,
-  accountsFile: "/tmp/accounts.json",
-  account: "demo",
-  network: "devnet",
-  blockMs: 1000,
-  seedHex: SEED,
-  prekeys: { epoch: 0, privates: {} },
-  invites: [],
-  /* Every field the State type declares. `pending` is the upload queue; an empty one is the
-     state a screenshot should show, because a queue mid-flush is a moment rather than the tool. */
-  pending: [],
-  channels: {
-    ana: {
-      peer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      role: "initiator",
-      readTo: 0,
-      messages: [],
-    },
-    bo: { peer: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", role: "responder", readTo: 0, messages: [] },
-  },
-} as unknown as Parameters<typeof start>[0];
+const fixtureState = FIXTURE_STATE as unknown as Parameters<typeof start>[0];
 
 function frames() {
-  const base: Model = start(fixtureState, 0);
-  const chats: Model = { ...base, page: "chats", channel: 0, typing: false };
-  const status: Model = { ...base, page: "status", typing: false };
+  /* `render()` takes a `View`, not a `Model` — `viewOf` derives the fields it reads, including
+     `linked`, which `start()` does not set. A `Model` passed straight in throws on `l.known`. */
+  const base = start(fixtureState, 0);
+  const chats: View = viewOf({ ...base, page: "chats", channel: 0, typing: false });
+  const status: View = viewOf({ ...base, page: "status", typing: false });
   return {
     /* 20 rows: a common terminal height, and the fixture has three lines of thread — at 26
        the pane is mostly empty and reads as a bug rather than as a quiet conversation. */
     chats: render(chats, { cols: 96, rows: 20 }),
     status: render(status, { cols: 96, rows: 16 }),
   };
-}
-
-/**
- * ANSI to spans.
- *
- * The renderer emits SGR codes — `screen.ts` `CODES`, only the ones the product actually uses.
- * They are translated to tone names here rather than to colours, so the site's palette decides
- * what "warn" looks like and the terminal's does not leak in.
- */
-const TONE: Record<string, string> = {
-  "1": "bold", "2": "dim", "7": "inverse",
-  "31": "red", "32": "green", "33": "yellow", "34": "blue",
-  "35": "magenta", "36": "cyan", "90": "gray",
-};
-
-type Span = { t: string; c: string[] };
-
-function spans(line: string): Span[] {
-  const out: Span[] = [];
-  let tones: string[] = [];
-  let i = 0;
-  while (i < line.length) {
-    const esc = /^\x1b\[([0-9;]*)m/.exec(line.slice(i));
-    if (esc) {
-      const codes = esc[1].split(";").filter(Boolean);
-      tones = codes.length === 0 || codes.includes("0")
-        ? []
-        : codes.map((c) => TONE[c]).filter(Boolean);
-      i += esc[0].length;
-      continue;
-    }
-    const next = line.indexOf("\x1b", i);
-    const end = next === -1 ? line.length : next;
-    const text = line.slice(i, end);
-    if (text) out.push({ t: text, c: tones });
-    i = end;
-  }
-  return out;
 }
 
 const captured = frames();
@@ -157,40 +100,41 @@ const out = {
 };
 
 /*
- * ⛔ THE CHECKS BELOW READ `out` — THE THING WRITTEN — NOT `captured`.
+ * ⛔ ONE LOOP, ONE NEEDLE LIST, AND IT COVERS BOTH RENDERS.
  *
- * They used to read the intermediate. Today the two cannot disagree, because `spans` only splits
- * a string; the day it gains a transform, a check on the intermediate is measuring something that
- * is no longer shipped, and it keeps passing while doing it. **Assert on the artifact.**
+ * It reads `out` — the thing written — rather than the intermediate it was derived from. Today the
+ * two cannot disagree, because `spans` only splits a string; the day it gains a transform, a check
+ * on the intermediate measures something no longer shipped and keeps passing while it does.
+ *
+ * **And it reads `FIXTURE_STATE`, because a live render never passes through here.** That path
+ * runs in the browser with no build step between its fixture and a reader, and it draws from the
+ * same object — so this is the only gate either render has, asserted on behalf of both. Two
+ * fixtures would leave the static frame guarded and the live one not, which is one generator and
+ * two artifacts with a check on one.
+ *
+ * The needle list is imported rather than written here, so the two paths cannot come to disagree
+ * about what counts as a leak — and the docstring above no longer has to describe the loop, since
+ * the loop is the list.
  */
-const flat = JSON.stringify(out);
+const rendered = JSON.stringify(out);
+const fixture = JSON.stringify(FIXTURE_STATE);
 
-/*
- * ⛔ The output must not carry the fixture's secrets. This is cheap and it is the assertion that
- * makes the whole approach safe: a renderer that started printing state would otherwise put it on
- * a marketing page, and nothing downstream reads terminal output looking for a seed.
- */
-for (const secret of [SEED, SEED.slice(0, 16)]) {
-  if (flat.includes(secret)) {
+/* The seed is the fixture's own field. What matters is that it never reaches a rendered frame. */
+for (const [what, value] of renderOnlyNeedles()) {
+  if (rendered.includes(value)) {
     throw new Error(
-      "the rendered terminal frame contains fixture key material. The renderer is printing state "
-      + "it should not, and this script is the last thing between that and a public page.",
+      `the rendered terminal frame contains ${what}. The renderer is printing state it should `
+      + "not, and this script is the last thing between that and a public page.",
     );
   }
 }
 
-/*
- * ⛔ And nothing about the machine that built it.
- *
- * The status pane prints the state file's path. The first capture put `/home/<the author>/…` into
- * a public asset — not key material, but a real person's username on a marketing page, published
- * by a project whose subject is what leaks without anyone deciding to leak it.
- */
-for (const [what, value] of [["home directory", homedir()], ["username", process.env.USER ?? ""]]) {
-  if (value && value.length > 2 && flat.includes(value)) {
+/* The machine's identity must be in neither — see `identityNeedles` for why the fixture counts. */
+for (const [what, value] of identityNeedles(homedir(), process.env.USER ?? "")) {
+  if (rendered.includes(value) || fixture.includes(value)) {
     throw new Error(
-      `the rendered terminal frame contains this machine's ${what} (${value}). Set HYDRA_HOME `
-      + "before the renderer is imported — see the top of this file.",
+      `the terminal frame or its fixture contains this machine's ${what} (${value}). Set `
+      + "HYDRA_HOME before the renderer is imported — see the top of this file.",
     );
   }
 }
