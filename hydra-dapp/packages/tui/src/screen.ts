@@ -4,9 +4,21 @@
  * The Devtool's TUI is Ink and React and that was the right call there: it is a developer tool
  * whose dependency tree is nobody's threat model. This is not that. This process holds the vault
  * root — `cli/src/state.ts` says so in its header — and every package in its tree is a package
- * that can read the file. Measured on this machine: `packages/tui/node_modules` in the Devtool
- * is 40 entries; the whole platform client is 2 (`@scure`, `@noble`). Forty more for a
- * rectangle-drawer is not a trade this client should make, so the rectangles are here.
+ * that can read the file.
+ *
+ * **Measured like for like, re-measured 2026-09-06 on a fresh archive of HEAD with
+ * `npm ls --omit=dev --all`: the whole platform client is THREE installed packages** —
+ * `@scure/starknet`, declared by `packages/channel`, which pulls `@noble/curves` and
+ * `@noble/hashes`. The Devtool's `packages/tui` alone is 40, and its whole tree is 170. Thirty-odd
+ * more for a rectangle-drawer is not a trade this client should make, so the rectangles are here.
+ *
+ * **THIS SAID "2 (`@scure`, `@noble`)" AND WAS COUNTING TWO DIFFERENT THINGS.** Two SCOPES on one
+ * side against forty installed ENTRIES on the other — right about the scopes and wrong as a
+ * comparison, because `@scure/starknet` brings two `@noble` packages with it. The conclusion is
+ * unchanged at 3 against 40, which is exactly why it was worth correcting: **a number that
+ * survives its own error is one nobody re-checks**, and this one is load-bearing for an I8
+ * argument rather than decorative. Found when `hydra-dapp` gained npm workspaces and somebody
+ * asked what the tree actually looked like.
  *
  * What that costs is about two hundred lines of ANSI and no layout engine. What it buys is that
  * `packages/tui` adds nothing to `npm ls` at all.
