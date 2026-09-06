@@ -29,7 +29,8 @@ import { guiServer, problemOf, type FlushAttempt, type StateSource }
   from "../../gui/src/server.ts";
 import { serialise, type Exclusive } from "../../gui/src/serialise.ts";
 import { init, publishBundle, open, accept, sendMessage, readChannel, flush,
-  SIGNED_MARK, UNVERIFIABLE_MARK } from "../../cli/src/commands.ts";
+  encodeWire, openAndSend, rotatePrekey, SIGNED_MARK, UNVERIFIABLE_MARK }
+  from "../../cli/src/commands.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import type { State } from "../../cli/src/state.ts";
@@ -41,8 +42,8 @@ import { recordFor, encodeRecord, RECORD_FELTS } from "../../handshake/src/recor
 import { createStore, mintOneTime } from "../../handshake/src/prekeys.ts";
 import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
   from "../../identity/src/domains.ts";
-import { LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES }
-  from "../../claims/src/warnings.ts";
+import { LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES,
+  INVITE_VAULT_SEES, INVITE_UNSCHEDULED } from "../../claims/src/warnings.ts";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
 /**
@@ -109,7 +110,7 @@ async function conversed(): Promise<{ alice: State; bob: State; close: () => voi
     blockMs: BLOCK, invites: [...invites] });
   const bob = init({ vaultUrl: url, contract: "0xc0ffee", fromBlock: 7,
     blockMs: BLOCK, invites: [...invites] });
-  accept(bob, "with-alice", open(alice, "with-bob", publishBundle(bob, 0)));
+  accept(bob, "with-alice", open(alice, "with-bob", publishBundle(bob)));
   const chain = memoryChain();
   const sent = await sendMessage(alice, chain, "with-bob", "ephemeral", "the usual place", T0);
   await flush(alice, sent.uploadAt + MIN_JITTER_BLOCKS * BLOCK, undefined, Infinity);
@@ -162,7 +163,7 @@ async function running(source: StateSource, token = TOKEN, over: Partial<{
  * sweep did not look at. Same shape as an entry-point list that had quietly stopped covering seven
  * pages: the check was not wrong, it had stopped being complete.
  */
-const ROUTES = (channel: string): [string, string, unknown?][] => [
+const ROUTES = (channel: string, bundle = ""): [string, string, unknown?][] => [
   ["GET", "/v1/gui/status"],
   ["GET", "/v1/gui/channels"],
   ["GET", `/v1/gui/channels/${channel}/messages`],
@@ -172,6 +173,12 @@ const ROUTES = (channel: string): [string, string, unknown?][] => [
   // incomplete rather than an old one repeated, and it is a route whose response is constructed
   // rather than stored.
   ["POST", "/v1/gui/lookup", { name: "swept", address: ORG_ADDRESS }],
+  // `invite` for the same reason as `lookup` — a response built from a bundle that did not come
+  // out of this state — and `collect` because it is the only route whose result comes off the
+  // VAULT rather than out of stored state or the chain, so it is the one place a mailbox object
+  // could arrive carrying more than it should.
+  ["POST", "/v1/gui/invite", { name: "swept-invite", bundle }],
+  ["POST", "/v1/gui/collect"],
   ["POST", `/v1/gui/channels/${channel}/send`, { text: "swept" }],
   ["POST", `/v1/gui/channels/${channel}/read`],
   ["POST", "/v1/gui/flush"],
@@ -223,12 +230,14 @@ function longStrings(value: unknown, out: string[] = []): string[] {
 // ---------------------------------------------------------------------------
 
 test("I6: NO RESPONSE CARRIES KEY MATERIAL — searched by value, not by field name", async () => {
-  const { alice, close: closeVault } = await conversed();
+  const { alice, bob, close: closeVault } = await conversed();
   const api = await running({ t: "ready", state: alice, file: FILE },
     TOKEN, { fetchImpl: nodeAndVault(alice).fetchImpl });
   try {
     const bodies: string[] = [];
-    for (const [method, route, payload] of ROUTES("with-bob")) {
+    // BOB'S REAL BUNDLE, so `invite` handles key material that did not come out of the state this
+    // API is serving — the sweep then covers a response constructed from somebody else's keys.
+    for (const [method, route, payload] of ROUTES("with-bob", encodeWire(publishBundle(bob)))) {
       bodies.push(await (await api.get(route, method === "GET" ? {} : {
         method, ...(payload ? { body: JSON.stringify(payload) } : {}),
       })).text());
@@ -247,6 +256,10 @@ test("I6: NO RESPONSE CARRIES KEY MATERIAL — searched by value, not by field n
     // appears in a lookup that got far enough to attach its caveats.
     assert.ok(all.includes("lookup.nodeSees"),
       "no lookup succeeded during the sweep, so the route contributed nothing to search");
+    assert.ok(all.includes("invite.vaultSees"),
+      "no invite succeeded during the sweep, so the route contributed nothing to search");
+    assert.ok(all.includes(`"op": "collect"`),
+      "no collect succeeded during the sweep, so the route contributed nothing to search");
 
     // The named secrets, taken as VALUES out of the state this API is serving.
     const named: [string, string][] = [
@@ -984,8 +997,8 @@ test("A WRITE IS POST AND NOT GET", async () => {
   const { alice, close: closeVault } = await conversed();
   const api = await running({ t: "ready", state: alice, file: FILE });
   try {
-    for (const path of ["/v1/gui/lookup", "/v1/gui/channels/with-bob/send",
-      "/v1/gui/channels/with-bob/read", "/v1/gui/flush"]) {
+    for (const path of ["/v1/gui/lookup", "/v1/gui/invite", "/v1/gui/collect",
+      "/v1/gui/channels/with-bob/send", "/v1/gui/channels/with-bob/read", "/v1/gui/flush"]) {
       const res = await api.get(path);
       assert.equal(res.status, 404, `${path} answers a GET, so a prefetch can trigger it`);
     }
@@ -1129,5 +1142,155 @@ test("A LOOKUP WITH NO NAME, AND WITH A BAD ADDRESS, EACH NAME A REMEDY", async 
       assert.ok(err.remedy.length > 10, `${code} names no remedy`);
     }
     assert.deepEqual(asked, [], "a refused lookup reached the network");
+  } finally { api.close(); closeVault(); }
+});
+
+test("INVITE OPENS FROM A BUNDLE, AND THE TWO COSTS TRAVEL WITH IT", async () => {
+  // The peer with no published record — the case `lookup` does not cover. The bundle arrives as
+  // TEXT rather than as a path; see the route's own comment for why that is not a convenience.
+  const { alice, bob, close: closeVault } = await conversed();
+  const { fetchImpl } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    const res = await post(api.base, "/v1/gui/invite",
+      { name: "second-bob", bundle: encodeWire(publishBundle(bob)) });
+    const text = await res.text();
+    assert.equal(res.status, 200, `the invite failed: ${text}`);
+    const body = JSON.parse(text) as { op: string; channel: string; fingerprint: string;
+      slot: number; warnings: { id: string; short: string; full: string[] }[] };
+    assert.equal(body.op, "invite");
+    assert.equal(body.channel, "second-bob");
+    assert.ok(body.fingerprint.length > 0, "no fingerprint, so nothing can be checked out of band");
+    assert.deepEqual(
+      body.warnings,
+      [INVITE_VAULT_SEES, INVITE_UNSCHEDULED].map((w) => ({ id: w.id, short: w.short, full: w.full })),
+      "the costs on the wire are not the ones in the claims module — these two spent their whole "
+      + "life as hand-written copies in two front ends and had already drifted");
+    assert.ok(alice.channels["second-bob"], "the response claimed a channel that was never opened");
+  } finally { api.close(); closeVault(); }
+});
+
+test("A PATH IS NOT A BUNDLE — the API takes bytes, so the token is not a local file read", async () => {
+  // **THE ONE PLACE THIS API SHAPE DIFFERS FROM BOTH OTHER FRONT ENDS, DELIBERATELY.** `hydra
+  // invite` and the TUI's Enter take a FILENAME, correctly: they run as the user, from the user's
+  // shell. A loopback route that did the same would hand whatever holds the token an arbitrary
+  // local file read, and the decode failure would carry the first line of what it read back to
+  // the page. Asserted rather than left to the docstring, because the convenience argument for a
+  // path is obvious and the reason against it is not.
+  const { alice, close: closeVault } = await conversed();
+  const { fetchImpl, asked } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    const res = await post(api.base, "/v1/gui/invite",
+      { name: "sneaky", bundle: "/home/somebody/.hydra-msg/state.json" });
+    assert.equal(res.status, 400);
+    const err = await refusal(res);
+    assert.equal(err.code, "not_a_bundle");
+    // AND THE SENTENCE SAYS SO, so nobody adds the path parameter back as a missing feature.
+    assert.match(err.remedy, /the bytes, not a path/);
+    assert.ok(!alice.channels.sneaky, "a channel was opened from something that is not a bundle");
+    assert.deepEqual(asked, [], "a refused invite reached the network");
+  } finally { api.close(); closeVault(); }
+});
+
+test("AN INVITE ONTO AN OCCUPIED NAME IS REFUSED — the same guard lookup needed", async () => {
+  // **`openAndSend` IS REACHED BY BOTH ROUTES, SO A GUARD IN ONE OF THEM IS HALF A GUARD.** It
+  // deletes `state.channels[name]` when the vault post fails — right for a name it just made, and
+  // it destroys an existing conversation for one it did not. The check is written once, over both
+  // opening routes; this is the half that would otherwise have gone untested.
+  const { alice, bob, close: closeVault } = await conversed();
+  const { fetchImpl } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    const before = alice.channels["with-bob"];
+    const res = await post(api.base, "/v1/gui/invite",
+      { name: "with-bob", bundle: encodeWire(publishBundle(bob)) });
+    assert.equal(res.status, 409);
+    assert.equal((await refusal(res)).code, "name_taken");
+    assert.equal(alice.channels["with-bob"], before,
+      "the existing conversation was replaced by a refused invite");
+  } finally { api.close(); closeVault(); }
+});
+
+test("AN INVITE WITH NO NAME, AND NO BUNDLE, EACH NAME A REMEDY", async () => {
+  const { alice, close: closeVault } = await conversed();
+  const { fetchImpl } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    for (const [body, code] of [
+      [{ bundle: "{}" }, "no_name"],
+      [{ name: "  ", bundle: "{}" }, "no_name"],
+      // The missing-file case: a page that read a file that was not there sends "".
+      [{ name: "x" }, "no_bundle"],
+      [{ name: "x", bundle: "   " }, "no_bundle"],
+      [{ name: "x", bundle: "not json at all" }, "not_a_bundle"],
+    ] as const) {
+      const res = await post(api.base, "/v1/gui/invite", body);
+      assert.equal(res.status, 400, `${JSON.stringify(body)} was not refused`);
+      const err = await refusal(res);
+      assert.equal(err.code, code, `${JSON.stringify(body)} was refused as ${err.code}`);
+      assert.ok(err.remedy.length > 10, `${code} names no remedy`);
+    }
+  } finally { api.close(); closeVault(); }
+});
+
+test("COLLECT ACCEPTS WHAT IS WAITING — the receiving side, which had no browser route", async () => {
+  // **THE ONLY ROUTE ON THIS API THAT IS NOT THE SOURCE'S.** Without it a person can be reached
+  // through a browser and cannot answer through one: an organisation publishing an address would
+  // have to drop to a terminal to accept a first contact, which is the ordering this product
+  // exists to invert. Driven end to end — alice really opens against bob through the real vault,
+  // and bob's API really collects it.
+  const { alice, bob, close: closeVault } = await conversed();
+  const { fetchImpl } = nodeAndVault(bob);
+  const api = await running({ t: "ready", state: bob, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    // Nothing waiting yet: a real state, a real vault, an empty mailbox.
+    const empty = await post(api.base, "/v1/gui/collect");
+    const emptyText = await empty.text();
+    assert.equal(empty.status, 200, emptyText);
+    assert.deepEqual(JSON.parse(emptyText) as unknown,
+      { op: "collect", accepted: [], rejected: 0 });
+
+    // A stranger opens a conversation with bob, through the vault, the way `invite` does.
+    const carol = init({ vaultUrl: bob.vaultUrl, contract: "0xc0ffee", fromBlock: 7,
+      blockMs: BLOCK, invites: [...alice.invites] });
+    await openAndSend(carol, "to-bob", publishBundle(bob));
+
+    const got = await post(api.base, "/v1/gui/collect");
+    const gotText = await got.text();
+    assert.equal(got.status, 200, gotText);
+    const r = JSON.parse(gotText) as { op: string; accepted: string[]; rejected: number };
+    assert.equal(r.accepted.length, 1, `nothing was accepted: ${JSON.stringify(r)}`);
+    assert.equal(r.rejected, 0);
+    // Named after the sender's fingerprint, because at this point that is genuinely all we know.
+    assert.match(r.accepted[0]!, /^from-[0-9a-f]{12}$/);
+    assert.ok(bob.channels[r.accepted[0]!], "collect reported a channel it did not open");
+    assert.ok(api.saved.length > 0, "an accepted contact was not persisted");
+  } finally { api.close(); closeVault(); }
+});
+
+test("NOTHING WAITING AND SOMETHING THAT WOULD NOT OPEN ARE DIFFERENT ANSWERS", async () => {
+  // **A SLOT IS WRITABLE BY ANYONE, so a rejection is expected rather than exceptional** — and a
+  // page told only `accepted: []` would report "somebody wrote you something unreadable" as
+  // "nobody has written". Both figures travel; the two cases are distinguishable on the wire.
+  const { alice, bob, close: closeVault } = await conversed();
+  const { fetchImpl } = nodeAndVault(bob);
+  const api = await running({ t: "ready", state: bob, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    // Junk into bob's mailbox, written through the real vault by a real client — the slot ids are
+    // a public function of his identity key, which is the whole of `INVITE_VAULT_SEES`.
+    const carol = init({ vaultUrl: bob.vaultUrl, contract: "0xc0ffee", fromBlock: 7,
+      blockMs: BLOCK, invites: [...alice.invites] });
+    await openAndSend(carol, "to-bob", publishBundle(bob));
+    // Rotating destroys the prekey the message was addressed to, so it can no longer open — the
+    // ordinary way this happens, rather than a corrupted fixture.
+    rotatePrekey(bob);
+
+    const r = await (await post(api.base, "/v1/gui/collect")).json() as
+      { accepted: string[]; rejected: number };
+    assert.deepEqual(r.accepted, [], "a message addressed to a destroyed prekey opened anyway");
+    assert.equal(r.rejected, 1,
+      "a slot that held something unreadable is reported as an empty mailbox, so a page cannot "
+      + "tell 'nobody wrote' from 'somebody wrote and it would not open'");
   } finally { api.close(); closeVault(); }
 });

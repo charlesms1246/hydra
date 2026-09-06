@@ -38,7 +38,8 @@ import type { Page, View } from "./model.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
 import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED,
-  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES, REMOVED_UNDER_PROCESS }
+  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES, REMOVED_UNDER_PROCESS,
+  INVITE_VAULT_SEES, INVITE_UNSCHEDULED }
   from "../../claims/src/warnings.ts";
 import { RECONFIGURE } from "../../claims/src/setup.ts";
 
@@ -256,15 +257,16 @@ function connect(m: View, size: Size, height: number): string[] {
     "",
     ...fieldBlock(m, size.cols),
     "",
-    ...note("Enter opens a channel and delivers the prekey message through the vault. the "
-      + "storage server can then see that they are reachable and count what is waiting for "
-      + "them — unavoidable without accounts, and an account is a name the server could count "
-      + "against over time.", size.cols - 4),
-    "",
-    ...note("AND: that write is not scheduled the way message uploads are. if you send in the "
-      + "next few minutes, the chain publish nearest it is yours, and anyone holding both "
-      + "records reads it off. measured above 90%.", size.cols - 4),
-    "",
+    ...note("Enter opens a channel and delivers the prekey message through the vault.",
+      size.cols - 4),
+    // **THESE TWO WERE THIS PAGE'S OWN WORDS AND `cli.ts`'S OWN WORDS, SEPARATELY.** The vault
+    // sentence had already drifted — "can THEN see" here, "can NOW see" there — and the 90%
+    // figure was reachable on this surface and on no other, which is drift in the direction that
+    // loses a measured claim rather than merely rewording one. Neither had a symbol, so the guard
+    // that exists for exactly this could not see either. Found while `invite` was arriving on the
+    // GUI API; a claim about to be written a third time is the last cheap moment to stop it.
+    ...[INVITE_VAULT_SEES, INVITE_UNSCHEDULED]
+      .flatMap((w) => note(w.full.join(" "), size.cols - 4).concat("")),
     ...note("`e` writes your own bundle to the path above; give that file to whoever wants to "
       + "reach you. `c` accepts whatever is waiting in your vault mailbox.", size.cols - 4),
     "",

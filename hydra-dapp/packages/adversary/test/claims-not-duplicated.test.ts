@@ -98,6 +98,11 @@ test("EVERY FRONT END RENDERS THE SAME CLAIMS, from the same place", () => {
     // claim is the moment it can drift, which is what this map exists to prevent.
     "lookup.keyNotPerson": "LOOKUP_KEY_NOT_PERSON", "lookup.noOneTime": "LOOKUP_NO_ONE_TIME",
     "lookup.nodeSees": "LOOKUP_NODE_SEES",
+    // The two that had NO symbol here and were therefore invisible to this guard while being
+    // asserted twice — `cli.ts` and `tui/src/view.ts`, in different words, already drifted at the
+    // tense on one and reachable on a single surface for the other. Found when `invite` reached
+    // the GUI API and was about to become a third copy.
+    "invite.vaultSees": "INVITE_VAULT_SEES", "invite.unscheduled": "INVITE_UNSCHEDULED",
     // The claim the TUI could not make at all until 2026-09-06, because the projection dropped
     // the field rather than the renderer forgetting it.
     "channel.removedUnderProcess": "REMOVED_UNDER_PROCESS" };

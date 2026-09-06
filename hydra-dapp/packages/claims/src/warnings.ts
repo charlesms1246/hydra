@@ -227,6 +227,63 @@ export const KEY_LOCKED: Warning = {
 };
 
 /**
+ * Delivering a prekey message through the vault, and what the operator can then count.
+ *
+ * **THIS WAS ASSERTED TWICE, IN DIFFERENT WORDS, AND NEITHER COPY HAD A SYMBOL.** `cli.ts` printed
+ * *"the storage server can NOW see that they are reachable and count what is waiting for them"*;
+ * `tui/src/view.ts`'s Connect page printed *"the storage server can THEN see that they are
+ * reachable and count what is waiting for them"*. Same claim, two hand-written copies, already
+ * diverging at the tense — which is the exact state the three signing claims were in before this
+ * module existed, and it survived the guard only because nothing in the symbol map covered it.
+ *
+ * Found while bringing `invite` to a third surface. A claim about to be written a third time is
+ * the last cheap moment to stop it being written at all.
+ */
+export const INVITE_VAULT_SEES: Warning = {
+  id: "invite.vaultSees",
+  surfaces: ["cli", "tui", "gui"],
+  because: "the mailbox slot ids are a public function of the recipient's identity key, because a "
+    + "stranger must be able to write to you before you share any secret — so anyone who can open "
+    + "a conversation with you can compute them and so can the operator; "
+    + "`vault-server/src/observations.ts` `inbox.exists`",
+  short: "the vault operator can see they are reachable and count what is waiting for them",
+  full: [
+    "The storage server can see that they are reachable and count what is waiting for them. That",
+    "is unavoidable without accounts, and accounts would disclose more: an account is a name the",
+    "server counts against over time, and this way it counts against a key that tells it nothing",
+    "else about you.",
+  ],
+};
+
+/**
+ * The prekey write is not on the upload schedule, and that is the sharper of the two costs.
+ *
+ * **THE TUI SAID THIS AND THE CLI DID NOT** — the same drift as `INVITE_VAULT_SEES`, running the
+ * other way, which is what says it is not one careless file. It is also the more serious claim of
+ * the pair, because it is a measured number rather than a structural fact, and it was reachable on
+ * exactly one of the two front ends.
+ */
+export const INVITE_UNSCHEDULED: Warning = {
+  id: "invite.unscheduled",
+  surfaces: ["cli", "tui", "gui"],
+  because: "`openAndSend` posts the prekey message immediately rather than queuing it the way "
+    + "message uploads are scheduled, so it is not covered by the jitter window that exists to "
+    + "break the timing join — and `channel/src/pointer.ts` records that matching each pointer to "
+    + "the nearest upload in time *succeeds on every pair* when a client uploads as it publishes, "
+    + "with `adversary/test/i3-timeline-join.test.ts` asserting the undefended case succeeds",
+  short: "this write is not scheduled — send within minutes and the nearest chain publish is yours",
+  full: [
+    "AND THIS WRITE IS NOT SCHEDULED the way message uploads are. If you send in the next few",
+    "minutes, the chain publish nearest it is yours, and anyone holding both records reads it",
+    "off. Measured above 90%.",
+    // The figure is the TUI's, moved rather than retyped — its analysis lives in the handshake
+    // timing decision record, which is not in a clone, so the `because` above cites the tracked
+    // mechanism and the test that asserts the undefended case instead of pointing at a document
+    // no reader of this repository can open.
+  ],
+};
+
+/**
  * Opening a conversation from a published record, and the three things it costs.
  *
  * **THESE WERE FOUR `console.error` LINES IN `cli.ts` AND NOWHERE ELSE.** `hydra lookup` turns a
@@ -348,4 +405,5 @@ export const REMOVED_UNDER_PROCESS: Warning = {
 export const WARNINGS: readonly Warning[] =
   [SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, TLS_TERMINATION,
     KEY_IN_CLEAR, KEY_LOCKED,
-    LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES, REMOVED_UNDER_PROCESS];
+    LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES,
+    INVITE_VAULT_SEES, INVITE_UNSCHEDULED, REMOVED_UNDER_PROCESS];

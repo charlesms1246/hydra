@@ -49,7 +49,8 @@
 
 import { describePost, describeFetch } from "../../client/src/public.ts";
 import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED,
-  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES, REMOVED_UNDER_PROCESS }
+  LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES, REMOVED_UNDER_PROCESS,
+  INVITE_VAULT_SEES, INVITE_UNSCHEDULED }
   from "../../claims/src/warnings.ts";
 import { verifyProof } from "../../vault-server/src/root.ts";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -433,15 +434,15 @@ switch (command) {
     save(state);
     console.log(`channel ${name} opened with ${fingerprint(bundle)}, delivered to slot ${slot}`);
     console.log("check that fingerprint with them by some other means. nothing here can.");
-    console.log("");
-    console.log("the storage server can now see that they are reachable and count what is");
-    console.log("waiting for them. that is unavoidable without accounts, and accounts would");
-    console.log("disclose more: an account is a name the server counts against over time, and");
-    console.log("this way it counts against a key that tells it nothing else about you.");
-    console.log("");
-    console.log("AND: this write is not scheduled the way message uploads are. if you `send`");
-    console.log("in the next few minutes, the chain publish nearest this write is yours, and");
-    console.log("anyone with both records reads it off. measured above 90%. see 0018.");
+    // **THESE TWO WERE TYPED HERE AND TYPED AGAIN IN `tui/src/view.ts`, IN DIFFERENT WORDS.**
+    // Neither copy had a symbol, so `claims-not-duplicated.test.ts` could not see either — the
+    // vault sentence had already drifted to a different tense between the two, and the 90% figure
+    // was reachable on the TUI and nowhere else. Both are `warnings.ts` entries declaring
+    // `surfaces: ["cli", "tui", "gui"]` now, found while `invite` was arriving on a third surface.
+    for (const w of [INVITE_VAULT_SEES, INVITE_UNSCHEDULED]) {
+      console.log("");
+      for (const line of w.full) console.log(line);
+    }
     break;
   }
 
