@@ -269,8 +269,8 @@ export function publishBundle(state: State, oneTimeIndex?: number): Bundle {
  *
  * WHY THIS IS NOT `publishBundle` WITH AN ADDRESS BOLTED ON. A bundle is public bytes, so
  * anybody can copy yours into their own name and a stranger checking a signature would be told
- * they wrote it — the forgery `decisions/0026` closed, moved up a level to somebody who needs no
- * shared secret at all. The record carries a second signature over the address, so a copy lands
+ * they wrote it — the same forgery the authorship signature closes for messages, moved up a level
+ * to somebody who needs no shared secret at all. The record carries a second signature over the address, so a copy lands
  * at an address its own signature does not name and `verifyRecord` refuses it.
  *
  * `owner` is passed in rather than read from `state.account`, which is a name in an accounts
@@ -554,11 +554,11 @@ export async function sendMessage(
     attribution: attribution === "signed" ? "signed" : "unverifiable",
   });
 
-  // THE DELETE CAPABILITY, AND WHOSE IT IS DEPENDS ON THE CLASS — `decisions/0035` §1 and
-  // `channel/src/deletion.ts`. Signed content is evidentiary, so only its author may withdraw it;
-  // a channel-derived token would let the COUNTERPARTY destroy it, leaving the commitment and the
-  // signature standing with nothing to check them against. That is `0026`'s guarantee from the
-  // other side — it closed "a counterparty can fabricate your authorship", and this is "a
+  // THE DELETE CAPABILITY, AND WHOSE IT IS DEPENDS ON THE CLASS — see `channel/src/deletion.ts`.
+  // Signed content is evidentiary, so only its author may withdraw it; a channel-derived token
+  // would let the COUNTERPARTY destroy it, leaving the commitment and the signature standing with
+  // nothing to check them against. That is the authorship guarantee from the other side — the
+  // signature closes "a counterparty can fabricate your authorship", and this closes "a
   // counterparty can destroy it", on the same submission surface.
   const deleteFrom = attribution === "signed"
     ? subKey(vaultRootOf(state), "authorship signing")
@@ -577,9 +577,10 @@ export async function sendMessage(
     // this client calls it once per message. The recipient derives the same number from the
     // sequence it read off the chain.
     // SALTED WITH THE COMMITMENT this message just put on chain, and indexed by `k` alone.
-    // The commitment is what makes two devices at the same sequence mint different decoys —
-    // `decisions/0023`'s residual — and it is also why the global `coverIndex` is no longer
-    // needed here: the salt already separates one message's decoys from another's.
+    // The commitment is what makes two devices at the same sequence mint different decoys — the
+    // residual left over from making channels two-way — and it is also why the global
+    // `coverIndex` is no longer needed here: the salt already separates one message's decoys from
+    // another's.
     const body = coverBody(channel, d.bucket, d.index, saltFrom(commitment));
     state.pending.push({
       channel: name, id: coverId(body),
@@ -629,8 +630,8 @@ export async function sendMessage(
 /**
  * Narrow this channel's crowd by the uploads a message just scheduled.
  *
- * INTERSECTION, NOT A MINIMUM. `decisions/0029` measured that a crowd is set by its worst-covered
- * message: one message of six sent while the chain was quiet took it from 34.9 to zero. Keeping a
+ * INTERSECTION, NOT A MINIMUM. A crowd is set by its worst-covered message, measured: one message
+ * of six sent while the chain was quiet took it from 34.9 to zero. Keeping a
  * minimum over per-message counts would be wrong in the unsafe direction, because the minimum of
  * two counts is an upper bound on the size of their intersection and never a lower one — two
  * disjoint crowds of ten intersect to nothing.
@@ -758,13 +759,14 @@ export async function fetchPosts(
 /**
  * Read somebody's prekey bundle off the chain, given their address.
  *
- * THE STEP THAT HAD NO PATH. `decisions/0038` step 3: a bundle could only reach a stranger out of
- * band, so **a source needed a prior relationship with the organisation they were anonymously
- * contacting** — the same shape as the invite gate, a prerequisite sitting in front of the surface
+ * THE STEP THAT HAD NO PATH, found by walking a source's route end to end: a bundle could only
+ * reach a stranger out of band, so **a source needed a prior relationship with the organisation
+ * they were anonymously contacting** — the same shape as the invite gate, a prerequisite sitting in front of the surface
  * and quietly undoing its premise.
  *
- * Composition rather than new protocol. `decisions/0031` verified the identity contract's data ABI
- * against live mainnet and Sepolia and landed a real record; `BundleRecord` already carries the
+ * Composition rather than new protocol. The identity contract's data ABI is verified against live
+ * mainnet and Sepolia — `cli/src/anchor.ts` holds the addresses and the class hash — and a real
+ * record has been landed; `BundleRecord` already carries the
  * identity key, the signing key, the signed prekey and its signature; and `bundleOf` **verifies
  * before it returns**, refusing a record whose anchor signature does not name the address it was
  * read from. That last part is the whole attack: a bundle read from a record nobody verified is a
@@ -854,8 +856,8 @@ export async function flush(
   // decoy whose scheduled time is already past goes up at the next flush, not in the past. The
   // ordering survives; the wall-clock lead does not. That makes the defence depend on flush
   // cadence — a client that flushes once an hour uploads a message and all its cover in one
-  // burst, and a burst is a message. `claude-docs/decisions/0011-cli-client.md` says so, and
-  // it is why a real client wants a resident process rather than a command.
+  // burst, and a burst is a message. That is why a real client wants a resident process rather
+  // than a command, and why `hydra gui` and the TUI both flush on a timer.
   //
   // `limit` IS THE BURST DEFENCE, and it is a parameter rather than a constant because the two
   // things it trades off belong to the caller. Uploading every due object at once hands the
@@ -1299,8 +1301,9 @@ export async function forget(
   // and, as a side effect, gives up the ability to delete anything. Unrecoverable, and the exact
   // opposite of what "forget" means.
   //
-  // A message this client RECEIVED and that was SIGNED is not ours to withdraw — that is
-  // `decisions/0035` working, not a failure — so it is counted and reported rather than attempted.
+  // A message this client RECEIVED and that was SIGNED is not ours to withdraw. Only its author
+  // holds that capability, by design and not by omission — see `channel/src/deletion.ts` — so it
+  // is counted and reported rather than attempted.
   const channel = sending(state, name);
   const recv = receiving(state, name);
   let removed = 0;
@@ -1350,8 +1353,7 @@ export async function forget(
  * Zero unless a second client is running on the same identity — the same seed copied to a phone
  * and a laptop, which is the obvious thing to do with a state file.
  *
- * THE COVER COLLISION THIS USED TO DESCRIBE IS FIXED — `decisions/0033`. Two devices sharing a
- * seed share a ROLE, so they were one direction and minted byte-identical decoys at the same
+ * THE COVER COLLISION THIS USED TO DESCRIBE IS FIXED. Two devices sharing a seed share a ROLE, so they were one direction and minted byte-identical decoys at the same
  * sequence; ten uploads became six objects, and a colliding content-addressed id proved two
  * clients shared an identity. Cover is salted by the message's on-chain COMMITMENT now, which
  * descends from a per-message random blind, so two devices at the same sequence mint different
