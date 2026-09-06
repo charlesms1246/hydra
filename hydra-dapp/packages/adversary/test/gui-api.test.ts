@@ -35,6 +35,7 @@ import type { State } from "../../cli/src/state.ts";
 import { Vault } from "../../vault-server/src/server.ts";
 import { serve } from "../../vault-server/src/http.ts";
 import { BUCKETS } from "../../vault-client/src/buckets.ts";
+import { describe as describeLinkability, NOT_DISCOUNTED } from "../../channel/src/crowd.ts";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
 const BLOCK = 30_000;
@@ -209,6 +210,55 @@ test("MESSAGES CARRY THEIR ATTRIBUTION — I7 on a third surface", async () => {
       + "signature backs this name");
     assert.equal(m!.mine, false);
   } finally { api.close(); closeVault(); }
+});
+
+test("THE CROWD FIGURE AND ITS CAVEAT TRAVEL TOGETHER OR NOT AT ALL", async () => {
+  // **THE DEFECT: this surface said nothing about linkability whatsoever.** The CLI and the TUI
+  // both tell a reader that the operator can name them as the sender of every message here. The
+  // GUI — the front end that looks most like an ordinary messenger, and so the one a person is
+  // likeliest to use having read none of this — served a chat and never mentioned it. The absence
+  // read as nothing to say.
+  //
+  // Not a number bolted onto a route. The failure worth designing against is the one where a page
+  // renders a reassuring `14` and the qualification lives in a repository its author never opens,
+  // so the assertion is that the figure NEVER appears without the sentences that qualify it.
+  const { bob, close: closeVault } = await conversed();
+  try {
+    // Measured, because the fixture's channels are not: `linkabilityOf` returns `known: false`
+    // until something has asked a node, and testing only that branch would assert the caveat is
+    // present in the one case where there is no figure to caveat.
+    const channel = bob.channels["with-alice"] as unknown as { crowd: unknown };
+    channel.crowd = [
+      { account: "0x1", times: [1] }, { account: "0x2", times: [2] }, { account: "0x3", times: [3] },
+    ];
+
+    const api = await running({ t: "ready", state: bob, file: FILE });
+    try {
+      // BOTH ROUTES THAT RETURN A CONVERSATION. `read` is where the figure can have just changed —
+      // a chain scan is the only thing that learns who else was publishing — so a payload carrying
+      // it on the GET and not on the POST would go missing exactly when it was newest.
+      const views = [
+        await (await api.get("/v1/gui/channels/with-alice/messages")).json(),
+        await (await api.get("/v1/gui/channels/with-alice/read", { method: "POST" })).json(),
+      ] as { howLinkable: { known: boolean; crowd: number; lines: string[] } }[];
+
+      for (const view of views) {
+        const l = view.howLinkable;
+        assert.ok(l, "a conversation payload carries no linkability at all");
+        assert.equal(l.crowd, 3);
+        assert.equal(l.known, true);
+        for (const sentence of NOT_DISCOUNTED) {
+          assert.ok(l.lines.includes(sentence),
+            `the payload reports a crowd of ${l.crowd} without "${sentence.slice(0, 36)}…", so a `
+            + "page can render the number and cannot render what qualifies it");
+        }
+        // VERBATIM `describe`, NOT A PARAPHRASE — the point of the row is that three front ends
+        // say one thing. A second wording here would be a fourth thing to keep in step.
+        assert.deepEqual(l.lines, describeLinkability({ known: true, crowd: 3 }),
+          "the API words this differently from the CLI and the TUI");
+      }
+    } finally { api.close(); }
+  } finally { closeVault(); }
 });
 
 test("THE CLAIM IS THREE-VALUED AND THE MARK IS TWO — every message carries its basis", async () => {

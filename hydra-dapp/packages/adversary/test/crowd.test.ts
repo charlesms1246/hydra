@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 
 import {
   crowdOf, accuracyAgainst, regularity, prune, linkability, describe, DEFAULT_PRUNING,
+  NOT_DISCOUNTED,
 } from "../../channel/src/crowd.ts";
 import type { Publisher } from "../../channel/src/crowd.ts";
 import { readFileSync } from "node:fs";
@@ -146,6 +147,30 @@ test("THE ZERO COPY IS WRITTEN FIRST, because zero is the usual answer", () => {
     "the zero case does not say that the operator is right every time");
   assert.match(zero.join(" "), /usual answer/,
     "the zero case reads as exceptional; it is the common one");
+});
+
+test("EVERY BRANCH THAT REPORTS A NUMBER SAYS THE NUMBER IS NOT DISCOUNTED", () => {
+  // **NOTHING PINNED THIS, WHICH IS HOW IT WAS FOUND.** The caveat went in and the whole suite
+  // passed with it deleted from both branches — the only guard near it is the line-count one
+  // above, and that compares the two branches to each other, so removing it from BOTH is
+  // invisible to it. A guard that compares two things cannot see a change that moves them
+  // together, and a caveat is exactly the kind of line somebody deletes in both places while
+  // tidying.
+  //
+  // Driven over a range rather than one value, because the caveat first landed on the comfortable
+  // branch alone and a test that only asked about a crowd of 11 would have agreed with it.
+  for (const crowd of [0, 1, 3, 11, 40]) {
+    const lines = describe({ known: true, crowd });
+    for (const sentence of NOT_DISCOUNTED) {
+      assert.ok(lines.includes(sentence),
+        `a crowd of ${crowd} is reported without "${sentence.slice(0, 40)}…" — the figure counts `
+        + "batchers as people and does not say so, which errs toward telling somebody they are safer");
+    }
+  }
+  // And NOT on the unmeasured branch, which reports no number for it to qualify. A caveat about a
+  // count, printed where there is no count, is noise that trains a reader to skip it.
+  assert.ok(!describe({ known: false, crowd: 0 }).some((l) => NOT_DISCOUNTED.includes(l as never)),
+    "the not-measured branch carries a caveat about a figure it does not report");
 });
 
 test("not knowing is not the same as knowing zero", () => {

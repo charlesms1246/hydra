@@ -304,7 +304,7 @@ export function linkability(
  * makes this a reassurance meter with a bug. The guard was right: a caveat that only appears when
  * the number looks good is a caveat attached to the wrong half.
  */
-const NOT_DISCOUNTED = [
+export const NOT_DISCOUNTED = [
   "This count is not discounted for automated accounts. The rule that would remove them needs",
   "more activity than the window this client reads, so batchers and bots publishing alongside",
   "you are counted as people.",

@@ -33,7 +33,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 
 import { anchorOf, attributionLabel, fingerprint, publishBundle, sendMessage, readChannel, flush,
-  FLUSH_LIMIT } from "../../cli/src/commands.ts";
+  linkabilityOf, FLUSH_LIMIT } from "../../cli/src/commands.ts";
+import { describe as describeLinkability } from "../../channel/src/crowd.ts";
 import { BUSY, type Exclusive } from "./serialise.ts";
 import type { Chain } from "../../cli/src/chain.ts";
 import { oneTimeRemaining } from "../../handshake/src/prekeys.ts";
@@ -189,7 +190,7 @@ function channels(state: State): unknown {
  * of the same message and this repository has spent a week on what that costs. `read` fetches and
  * then returns what is stored, so the shapes are not merely similar — they are the same thing.
  */
-function rendered(state: State, name: string, _n: number): unknown[] {
+function rendered(state: State, name: string): unknown[] {
   const channel = state.channels[name];
   if (!channel) return [];
   return channel.history.map((m) => ({
@@ -204,6 +205,61 @@ function rendered(state: State, name: string, _n: number): unknown[] {
   }));
 }
 
+/**
+ * How linkable this conversation is — **the figure and the sentences that qualify it, in one
+ * object, from one source.**
+ *
+ * The other two front ends render `describe(...)` and nothing else, so a crowd of 14 arrives at a
+ * reader already carrying the fact that batchers publishing alongside them were counted as people.
+ * This surface used to say nothing at all about linkability, and the absence read as nothing to
+ * say — on **the front end that most resembles an ordinary messenger, and so the one a person is
+ * likeliest to use having read none of this.** The other two tell them the operator can name them
+ * as the sender of every message here.
+ *
+ * `lines` IS `describe`, THE CALL THE CLI AND TUI MAKE, not a paraphrase of it. That is the part
+ * worth having: the qualification cannot drift between surfaces, because there is one array. The
+ * two assertions are split to match — `crowd.test.ts` holds that `describe` says it at all, and
+ * `gui-api.test.ts` holds that this payload carries what `describe` said.
+ *
+ * **AND THE LIMIT, SAID PLAINLY, BECAUSE HALF OF THIS IS NOT MINE TO GUARANTEE.** What an API can
+ * do is refuse to serve the reassuring number on its own: `crowd` never appears in a payload that
+ * `lines` is missing from. What it cannot do is make a page print a paragraph next to a meter —
+ * the same gap the I7 attribution row concedes, and it is a gap, not a technicality.
+ */
+/**
+ * **NOT NAMED `linkability`, AND THE REASON IS A GUARD.** `crowd.ts` exports a `linkability` that
+ * nothing outside its own tests calls, exempted by name in `reachability-sweep.test.ts` because
+ * the client's path is stateful and reaches the property another way. That sweep decides "used" by
+ * matching the bare token across `src`, so a field called `linkability` here would have made a
+ * genuinely unwired export look wired and **quietly retired the guard watching it** — which the
+ * sweep caught, in the one test written to notice a stale exemption.
+ *
+ * `howLinkable` is also the phrase the product already uses: `describe`'s first line is "How
+ * linkable this conversation is".
+ */
+function howLinkable(state: State, name: string): unknown {
+  const l = linkabilityOf(state, name);
+  return {
+    // Three-valued in effect: not measured, measured at zero, measured above zero. `known: false`
+    // is "nothing has asked a node who else was publishing", which is NOT a crowd of zero and not
+    // a good answer either — the sentences are what tell those two apart.
+    known: l.known,
+    crowd: l.crowd,
+    identified: l.identified,
+    lines: describeLinkability(l),
+  };
+}
+
+/**
+ * The conversation as the page sees it. **One shape for `GET …/messages` and `POST …/read`**, for
+ * the reason `rendered` gives: two constructions of one view are two descriptions that agree until
+ * somebody edits one. Attaching the linkability object at two call sites would have been exactly
+ * that, and this file has already paid for it once.
+ */
+function conversation(state: State, name: string): { howLinkable: unknown; messages: unknown[] } {
+  return { howLinkable: howLinkable(state, name), messages: rendered(state, name) };
+}
+
 function messages(state: State, name: string): unknown | Fail {
   const channel = state.channels[name];
   if (!channel) {
@@ -216,7 +272,7 @@ function messages(state: State, name: string): unknown | Fail {
     // STORED HISTORY, NO NETWORK. Fetching new messages is `POST …/read`, and it is a different
     // verb because it costs a chain scan and a vault batch. A GET that quietly did that would be a
     // GET that takes a hundred seconds on a client whose discovery failed.
-    messages: rendered(state, name, 0),
+    ...conversation(state, name),
   };
 }
 
@@ -322,9 +378,12 @@ export function guiServer(deps: GuiDeps): Server {
             return { op: "send", channel, signed, ...r };
           }
           if (readFrom) {
-            const messages = await readChannel(state, deps.chainFor(state), channel);
+            await readChannel(state, deps.chainFor(state), channel);
             deps.save(state);
-            return { op: "read", channel, messages: rendered(state, channel, messages.length) };
+            // AND THE FIGURE IS RECOMPUTED HERE, AFTER THE SCAN, not carried from before it. A
+            // read is the only thing that learns who else was publishing, so this is the one
+            // response where the crowd can have just changed.
+            return { op: "read", channel, ...conversation(state, channel) };
           }
           const r = await flush(state, deps.now(), undefined, FLUSH_LIMIT);
           deps.save(state);
