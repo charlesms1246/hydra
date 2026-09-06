@@ -35,8 +35,23 @@ export const SEED = "5e5e".repeat(16);
 export const FIXTURE_HOME = "/home/you/.hydra-msg";
 
 export const FIXTURE_STATE = {
-  vaultUrl: "http://127.0.0.1:8080",
-  rpcUrl: "http://127.0.0.1:5050",
+  /*
+   * ⛔ **CONFIGURED, AND STILL VISIBLY FAKE — BOTH HALVES ARE REQUIREMENTS.**
+   *
+   * These were the devnet defaults, so `setupGaps` correctly reported three blockers and the demo's
+   * Status page opened with fourteen rows of "nobody chose this" above any actual status. Every
+   * word of that was true OF THIS FIXTURE, which is what made it a fixture problem: the demo exists
+   * to show the interface in use, and a configured client is the ordinary state of a working
+   * install. The unconfigured state is the INSTALL page's subject, and the blockers themselves are
+   * untouched — the fixture moved, not the copy that judges it.
+   *
+   * `.example.org` is reserved by RFC 2606 and can never be real infrastructure, which is the same
+   * reason peer ids here are runs of one character: **a plausible address in a marketing asset is a
+   * string somebody eventually tries.** A real-looking vault host is worse than a real-looking
+   * fingerprint, because someone could send traffic to it.
+   */
+  vaultUrl: "https://vault.example.org",
+  rpcUrl: "https://rpc.example.org",
   contract: "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   fromBlock: 1,
   accountsFile: "/tmp/accounts.json",
@@ -58,7 +73,15 @@ export const FIXTURE_STATE = {
     oneTime: { "0": "b2b2".repeat(16) },
     nextOneTime: 1,
   },
-  invites: [],
+  /*
+   * ⛔ ONE, BECAUSE THE COUNT IS RENDERED. Enough to clear the blocker and no more: a fixture
+   * boasting fifty invites would be inventing a number a reader can see, to look busier. The code
+   * itself never reaches a page — `clientOf` copies `invites.length` and not the array, so this is
+   * safe by construction the way `seedHex` is, rather than by anything remembering to strip it.
+   * Its pattern is distinct from every other value here for the reason the seed is: a canary that
+   * can fire on the thing standing next to what it watches teaches people to widen it.
+   */
+  invites: ["c4c4".repeat(8)],
   pending: [],
   channels: {
     ana: { peer: "a".repeat(32), role: "initiator", readTo: 0, messages: [] },
