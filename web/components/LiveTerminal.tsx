@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { render } from "../../hydra-dapp/packages/tui/src/view.ts";
+import { channelNames } from "../../hydra-dapp/packages/tui/src/model.ts";
 import type { View } from "../../hydra-dapp/packages/tui/src/model.ts";
+import { navigate } from "../../hydra-dapp/packages/tui/src/nav.ts";
+import type { Key } from "../../hydra-dapp/packages/tui/src/keys.ts";
 import { spans } from "../scripts/ansi.ts";
 import type { Span } from "../scripts/ansi.ts";
 import { Screen } from "./Screen.tsx";
@@ -44,6 +47,35 @@ import { Screen } from "./Screen.tsx";
  * one inside this text is a sequence that only ever costs something later.
  */
 
+/**
+ * A DOM key event as the product's `Key`.
+ *
+ * ⚠ This is a translation, NOT a second implementation. `keys.ts` parses escape sequences off a
+ * terminal's stdin; a browser hands us named keys instead, so something has to map one input
+ * source onto the other. What it must not do is decide what a key MEANS — that is `nav.ts`, which
+ * `app.ts` calls too. This function only says which `Key` was pressed.
+ *
+ * `null` for anything the product has no key for, so an unmapped browser key does nothing rather
+ * than something invented.
+ */
+function keyOf(e: React.KeyboardEvent): Key | null {
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
+  switch (e.key) {
+    case "Enter": return { t: "enter" };
+    case "Backspace": return { t: "backspace" };
+    case "Tab": return e.shiftKey ? { t: "shift-tab" } : { t: "tab" };
+    case "Escape": return { t: "escape" };
+    case "ArrowUp": return { t: "up" };
+    case "ArrowDown": return { t: "down" };
+    case "ArrowLeft": return { t: "left" };
+    case "ArrowRight": return { t: "right" };
+    case "PageUp": return { t: "page-up" };
+    case "PageDown": return { t: "page-down" };
+    default:
+      return e.key.length === 1 ? { t: "char", value: e.key } : null;
+  }
+}
+
 /** Columns below this stop being a terminal and start being a column of single words. */
 const MIN_COLS = 40;
 
@@ -60,7 +92,7 @@ const MIN_ROWS = 12;
  * the same surface showing a different thing — a terminal beside a styled code block would be
  * two treatments of one idea.
  */
-export function LiveTerminal({ view, commands, children }: {
+export function LiveTerminal({ view: initial, commands, children }: {
   view: View;
   commands: readonly string[];
   children: React.ReactNode;
@@ -69,6 +101,16 @@ export function LiveTerminal({ view, commands, children }: {
   /** `null` until measured. A guessed default would draw one frame at the wrong size and jump. */
   const [size, setSize] = useState<{ cols: number; rows: number } | null>(null);
   const [tab, setTab] = useState<"tui" | "commands">("tui");
+  /**
+   * The demo's own copy of the view, moved by the PRODUCT'S OWN key handling.
+   *
+   * `nav.ts` `navigate` is the same function `app.ts` calls, so `2`, `j`, `k`, `i`, `[`, `]` and
+   * `?` do here exactly what they do in the client — not because this agrees with the product,
+   * but because it IS the product's code. Anything `navigate` returns `null` for is an effect
+   * (send, read, flush) and there is no chain, vault or filesystem here to run one against, so it
+   * correctly does nothing.
+   */
+  const [view, setView] = useState<View>(initial);
 
   useEffect(() => {
     const el = box.current;
@@ -133,7 +175,26 @@ export function LiveTerminal({ view, commands, children }: {
           </button>
         ))}
       </div>
-      <div ref={box} className="term-live-box" data-live-terminal={size ? size.cols : "measuring"}>
+      <div
+        ref={box}
+        className="term-live-box"
+        data-live-terminal={size ? size.cols : "measuring"}
+        data-page={view.page}
+        tabIndex={tab === "tui" ? 0 : -1}
+        role={tab === "tui" ? "application" : undefined}
+        aria-label={tab === "tui" ? "The terminal interface. Try 1 to 6, j, k, i and ?" : undefined}
+        onKeyDown={(e) => {
+          if (tab !== "tui") return;
+          const k = keyOf(e);
+          if (!k) return;
+          const moved = navigate(view, k, channelNames(view).length);
+          if (!moved) return;
+          // Only once the product has actually consumed it — otherwise Tab would stop moving
+          // focus out of a widget a reader may not have meant to enter.
+          e.preventDefault();
+          setView(moved);
+        }}
+      >
         {lines && size
           ? <Screen lines={lines} cols={size.cols} fit="fixed" />
           : children}

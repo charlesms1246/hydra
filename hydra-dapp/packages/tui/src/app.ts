@@ -24,7 +24,8 @@ import { SIGNED, DENIABLE } from "../../claims/src/warnings.ts";
 import type { Key } from "./keys.ts";
 import type { State, ReceivedMessage as Received } from "../../cli/src/state.ts";
 import { PAGES, FIELDS } from "./model.ts";
-import type { Client, Identity, LogLine, Page, Shown, View } from "./model.ts";
+import { navigate } from "./nav.ts";
+import type { Client, Identity, LogLine, Page, Satisfies, Shown, View } from "./model.ts";
 import { attributionLabel, linkabilityOf } from "../../cli/src/commands.ts";
 import { bundleFrom, oneTimeRemaining } from "../../handshake/src/prekeys.ts";
 import { derive, rootSeed, entropyFrom, fromStoredSeed, VAULT_DOMAIN }
@@ -291,90 +292,31 @@ function key(m: Model, k: Key): Step {
     return just(m);
   }
   if (k.t === "ctrl" && k.value === "c") return just({ ...m, quit: true });
-  // ANY key, and it is checked AFTER `confirm` on purpose. Help is a reminder and dismissing it
-  // should cost no thought; a consent dialog is the opposite, so opening help over one must not
-  // become a way to answer it. Nothing else is consumed — the page underneath is untouched, so
-  // the keystroke that puts it away is the only one help costs.
-  if (m.help) {
-    if (k.t === "up" || (k.t === "char" && k.value === "k")) {
-      return just({ ...m, helpScroll: Math.max(0, m.helpScroll - 1) });
-    }
-    if (k.t === "down" || (k.t === "char" && k.value === "j")) {
-      return just({ ...m, helpScroll: m.helpScroll + 1 });
-    }
-    return just({ ...m, help: false });
-  }
-  if (m.typing) return typed(m, k);
-  return command(m, k);
-}
 
-const fieldsOf = (m: Model) => FIELDS[m.page];
+  /*
+   * The cursor moves live in `nav.ts` and the WEBSITE CALLS THE SAME FUNCTION.
+   *
+   * `app.ts` reaches four modules I6 forbids in a browser, so the live demo cannot import this
+   * file. It could have had its own reducer; that would have been a second description of what
+   * pressing `2` does, agreeing with this one until somebody edited one of them. Instead the pure
+   * branches moved out and both callers use them. `null` means the key was not a cursor move, so
+   * the effectful half below still owns `enter`, `q` and every page action.
+   *
+   * `channelNames(m).length` is the count `nav.ts` needs — see the warning on `navigate` about
+   * both callers having to compute it the same way.
+   */
+  const moved = navigate(m, k, channelNames(m).length);
+  if (moved) return just(moved);
 
-function typed(m: Model, k: Key): Step {
-  const fields = fieldsOf(m);
-  const current = fields[m.field];
-  if (!current) return just({ ...m, typing: false });
-  switch (k.t) {
-    case "escape":
-      return just({ ...m, typing: false });
-    case "tab":
-    case "down":
-      return just({ ...m, field: (m.field + 1) % fields.length });
-    case "shift-tab":
-    case "up":
-      return just({ ...m, field: (m.field + fields.length - 1) % fields.length });
-    case "backspace":
-      return just({ ...m, fields: { ...m.fields, [current.key]: m.fields[current.key].slice(0, -1) } });
-    case "enter":
-      return submit(m);
-    case "char":
-      return just({ ...m, fields: { ...m.fields, [current.key]: m.fields[current.key] + k.value } });
-    default:
-      return just(m);
-  }
-}
-
-function command(m: Model, k: Key): Step {
-  const fields = fieldsOf(m);
-  if (k.t === "tab") return just({ ...m, field: fields.length ? (m.field + 1) % fields.length : 0 });
-  if (k.t === "shift-tab") {
-    return just({ ...m, field: fields.length ? (m.field + fields.length - 1) % fields.length : 0 });
-  }
   if (k.t === "enter") return submit(m);
-  if (k.t === "up" || (k.t === "char" && k.value === "k")) return move(m, -1);
-  if (k.t === "down" || (k.t === "char" && k.value === "j")) return move(m, 1);
-  if (k.t === "page-up") return move(m, -10);
-  if (k.t === "page-down") return move(m, 10);
-
   if (k.t === "char") {
-    const digit = "123456".indexOf(k.value);
-    if (digit >= 0 && m.page !== "setup") return just(go(m, PAGES[digit].id));
-    if (k.value === "]" && m.page !== "setup") return just(cycle(m, 1));
-    if (k.value === "[" && m.page !== "setup") return just(cycle(m, -1));
-    if (k.value === "?") return just({ ...m, help: true, helpScroll: 0 });
-    if (k.value === "i" && fields.length) return just({ ...m, typing: true });
     if (k.value === "q") return just({ ...m, quit: true });
     return action(m, k.value);
   }
   return just(m);
 }
 
-const go = (m: Model, page: Page): Model => ({ ...m, page, field: 0, scroll: 0, typing: false });
 
-function cycle(m: Model, by: number): Model {
-  const i = PAGES.findIndex((p) => p.id === m.page);
-  return go(m, PAGES[(i + by + PAGES.length) % PAGES.length].id);
-}
-
-/** j/k means "next channel" on the page with a channel list, and "scroll" everywhere else. */
-function move(m: Model, by: number): Step {
-  if (m.page === "chats") {
-    const n = channelNames(m).length;
-    if (n === 0) return just(m);
-    return just({ ...m, channel: Math.min(n - 1, Math.max(0, m.channel + by)), scroll: 0 });
-  }
-  return just({ ...m, scroll: Math.max(0, m.scroll + by) });
-}
 
 /** Enter: the page's primary action. One per page, and only one. */
 function submit(m: Model): Step {
@@ -639,3 +581,17 @@ export function viewOf(m: Model): View {
     now: m.now,
   };
 }
+
+/**
+ * `Model` satisfies `Nav`, asserted here and not in `model.ts`.
+ *
+ * The matching assertion for `View` is in `model.ts`. This one cannot join it: `model.ts` is
+ * imported by `view.ts`, which the website bundles, and `module-graph.ts` follows type-only edges
+ * — so an `import type { Model }` there drags this file's whole graph across the I6 boundary.
+ * Measured when it was written that way: `view.ts` went from 10 files and 0 forbidden to 46 and 4.
+ *
+ * So each type is asserted in the file that already holds it, and neither file learns about the
+ * other. If this goes red, `nav.ts` moves a field this `Model` no longer has under that name.
+ */
+type ModelIsNav = Satisfies<Model>;
+export type { ModelIsNav };

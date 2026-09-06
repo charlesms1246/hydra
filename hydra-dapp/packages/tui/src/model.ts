@@ -44,6 +44,8 @@
  * Field names deliberately match `State`'s. The projection is meant to read as a projection.
  */
 
+import type { Nav } from "./nav.ts";
+
 export type Page = "chats" | "connect" | "identity" | "record" | "disclosure" | "status";
 
 export const PAGES: readonly { readonly id: Page; readonly label: string }[] = [
@@ -258,3 +260,24 @@ export const selected = (v: View): string | null => channelNames(v)[v.channel] ?
 
 export const due = (v: View): number =>
   (v.client?.pending ?? []).filter((p) => p.uploadAt <= v.now).length;
+
+/**
+ * `View` and `Model` both satisfy `Nav`, asserted here rather than discovered at a call site.
+ *
+ * `nav.ts` holds the cursor moves as `<T extends Nav>` so that `app.ts` can call them on a
+ * `Model` and the website can call them on a `View` — one implementation, two callers. A
+ * `T extends Nav` constraint fails at whichever call site the compiler reaches first, which is a
+ * confusing place to learn that somebody renamed a field. This fails here, with this comment.
+ *
+ * If it goes red: a field `nav.ts` moves has been renamed or retyped on one of the two, and the
+ * question to answer is whether the other should follow — not whether to widen `Nav`.
+ *
+ * ⚠ ONLY `View` IS ASSERTED HERE. The matching one for `Model` is at the bottom of `app.ts`, and
+ * that split is not tidiness — it is I6. Importing `Model` into this file to assert it here costs
+ * nothing at runtime and `tsc` accepts it, but `module-graph.ts` FOLLOWS TYPE-ONLY EDGES, so it
+ * put `app.ts` back in `view.ts`'s closure: **10 files and 0 forbidden became 46 and 4.** Measured,
+ * because I wrote it that way first. The assertion belongs where the type already lives.
+ */
+export type Satisfies<T extends Nav> = T;
+type ViewIsNav = Satisfies<View>;
+export type { ViewIsNav };
