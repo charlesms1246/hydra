@@ -2900,3 +2900,90 @@ html[data-build="public"] .wordmark {
 .term-live {
   font-size: clamp(9px, 2.6cqw, 13px);
 }
+
+/* ---------------------------------------------------------------------------------------------
+   The write surface: compose, the two send acts, and the three things a write can tell a reader.
+   --------------------------------------------------------------------------------------------- */
+
+.session-actions,
+.session-compose-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.session-compose {
+  margin-top: clamp(1.5rem, 4vh, 2.5rem);
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--g-12);
+}
+
+.session-compose textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--g-4);
+  border: 1px solid var(--g-20);
+  color: var(--white);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.session-compose textarea:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/*
+ * ⛔ QUIETER THAN A REFUSAL, DELIBERATELY.
+ *
+ * `.session-refusal` carries the accent border because something went wrong. `busy` is the client
+ * working as designed — one write at a time — and the flush ticker takes that same lock every
+ * second, so a reader meets this without having started two operations. Drawing it like an error
+ * would put a red mark on the page during entirely normal use, and a page that cries wolf is a
+ * page whose real refusals get skipped.
+ */
+.session-busy,
+.session-sent {
+  margin: 1rem 0 0;
+  padding-left: 1rem;
+  border-left: 1px solid var(--g-32);
+  color: var(--g-64);
+}
+
+.session-busy .msg-text,
+.session-busy .prose-body,
+.session-sent .prose-body {
+  font-size: 1rem;
+  line-height: 1.45;
+  margin: 0.35rem 0;
+}
+
+/*
+ * The linkability disclosure, which is NOT a footnote.
+ *
+ * It sits above the conversation rather than under it, because it qualifies everything in the
+ * conversation. The figure is set in the label style and the sentences in body text — the number
+ * is the smaller half and must not be the part that reads as the answer.
+ */
+.session-linkability {
+  margin: 0 0 1.25rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--accent);
+}
+
+.session-linkability .prose-label {
+  font-family: var(--mono);
+  margin-bottom: 0.35rem;
+}
+
+.session-linkability .prose-body {
+  font-size: 1rem;
+  line-height: 1.45;
+  margin: 0.25rem 0;
+  color: var(--g-64);
+}
