@@ -235,6 +235,43 @@
 
 .tg-opened-costs li + li { margin-top: 0.6rem; }
 
+.tg-open-form input[type="file"] {
+  padding: 0.3rem 0;
+  border: none;
+  background: none;
+  font-size: 0.6875rem;
+  color: var(--g-64);
+}
+
+/*
+ * The receiving side. A rule above it rather than a fold, because it is not one of the ways to
+ * contact somebody and reading it as one is the misunderstanding worth spending a border on.
+ */
+.tg-mailbox {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--g-12);
+}
+
+.tg-mailbox button {
+  padding: 0.3rem 0.6rem;
+  background: var(--g-4);
+  border: 1px solid var(--g-20);
+  color: var(--white);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.tg-mailbox button:disabled { color: var(--g-32); cursor: default; }
+.tg-mailbox button:not(:disabled):hover { border-color: var(--g-32); }
+
+.tg-mailbox-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--g-64);
+}
+
 .tg-rows { list-style: none; margin: 0; padding: 0; }
 
 .tg-rows li { border-bottom: 1px solid var(--g-12); }

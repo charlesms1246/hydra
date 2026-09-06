@@ -119,9 +119,19 @@ type Refusal = { code: string; condition: string; remedy: string };
  * would be the fourth copy of a sentence this product has already had drift three times.
  */
 type Opened = {
-  op: "lookup"; channel: string; address: string; fingerprint: string; slot: number;
+  op: "lookup" | "invite"; channel: string; address?: string; fingerprint: string; slot: number;
   warnings: { id: string; short: string; full: string[] }[];
 };
+
+/**
+ * What `POST /collect` answers with — **and `rejected` is why it is two numbers, not a list.**
+ *
+ * A mailbox slot is writable by anyone, so something that will not open is expected rather than
+ * exceptional. A page shown only `accepted` renders "somebody wrote you something unreadable" and
+ * "nobody has written" as the same empty state, which is a false statement about a mailbox made by
+ * a layout. Both figures arrive; `CollectedNote` says which case it is.
+ */
+type Collected = { op: "collect"; accepted: string[]; rejected: number };
 
 const DEFAULT_BASE = "http://127.0.0.1:8787";
 
@@ -169,7 +179,20 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
    */
   const [peerName, setPeerName] = useState("");
   const [peerAddress, setPeerAddress] = useState("");
+  /*
+   * The bundle FILE'S CONTENTS, read here in the page. The API takes the bytes and refuses a path,
+   * deliberately — a `{ "path": … }` on a loopback route is an arbitrary local file read granted
+   * to whatever holds the token. So the browser's own file picker, which can only give the page a
+   * file a person chose, does the reading.
+   */
+  const [peerBundle, setPeerBundle] = useState("");
   const [opened, setOpened] = useState<Opened | null>(null);
+  /*
+   * ⛔ **THE RECEIVER'S SIDE, AND IT IS THE ONLY CONTROL HERE THAT IS NOT THE SOURCE'S.** Without
+   * it somebody can be REACHED through this page and cannot answer through it — an organisation
+   * publishing an address would have to drop to a terminal to accept a first contact.
+   */
+  const [collected, setCollected] = useState<Collected | null>(null);
   /*
    * ⛔ `busy` IS NOT A FAILURE AND IS HELD SEPARATELY FROM `refusal`.
    *
@@ -398,6 +421,48 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
     await openChannel(r.channel);
   }, [peerName, peerAddress, write, call, openChannel]);
 
+  /**
+   * The other way in: a bundle from somebody with no published record.
+   *
+   * ⛔ **THE CONTENTS GO OVER THE WIRE, NEVER THE FILENAME.** Both terminal front ends take a path
+   * because they run as the user from the user's own shell. A loopback HTTP route that did the
+   * same would be an arbitrary local file read for whatever holds the token, so the API refuses a
+   * path and this reads the file with the browser's own picker — which can only hand over a file
+   * a person chose.
+   */
+  const inviteNow = useCallback(async () => {
+    if (peerName.trim() === "" || peerBundle.trim() === "") return;
+    setOpened(null);
+    const r = await write<Opened>("invite", "/invite",
+      { name: peerName.trim(), bundle: peerBundle });
+    if (!r) return;
+    setOpened(r);
+    setPeerName("");
+    setPeerBundle("");
+    const c = await call<{ channels: Channel[] }>("/channels");
+    if (c.ok) setChannels(c.data.channels);
+    await openChannel(r.channel);
+  }, [peerName, peerBundle, write, call, openChannel]);
+
+  /**
+   * Accept whatever is waiting in this client's vault mailbox.
+   *
+   * ⛔ **THIS COSTS A VAULT ROUND TRIP, so it is a verb the reader presses** — the same reason
+   * `fetch new` is not on a timer. It takes no input at all: the slots are derived from this
+   * client's own identity key, so there is nothing a caller could get wrong.
+   */
+  const collectNow = useCallback(async () => {
+    setCollected(null);
+    const r = await write<Collected>("collect", "/collect");
+    if (!r) return;
+    setCollected(r);
+    const c = await call<{ channels: Channel[] }>("/channels");
+    if (c.ok) setChannels(c.data.channels);
+    // Opened only when exactly one arrived: with several, choosing one for the reader would hide
+    // the others behind a thread they did not ask to be in.
+    if (r.accepted.length === 1) await openChannel(r.accepted[0]!);
+  }, [write, call, openChannel]);
+
   // Every route is stored-state-only — no network, no chain scan — so connecting on arrival costs
   // the reader nothing and saves them a click they would always make.
   useEffect(() => {
@@ -492,11 +557,50 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
               <button className="button" type="submit"
                       disabled={working !== null || !live
                         || peerName.trim() === "" || peerAddress.trim() === ""}>
-                {working === "lookup" ? "looking up…" : "Open"}
+                {working === "lookup" ? "looking up…" : "Open from address"}
+              </button>
+
+              {/*
+                ⛔ **THE SECOND WAY IN, FOR A PEER WHO HAS PUBLISHED NOTHING.** An address needs a
+                record on chain; a bundle file needs no chain at all and no lookup, which is also
+                why it discloses nothing to a node. The two share the name field because they are
+                two routes to one act, and a second name box would read as two features.
+
+                `accept` on the picker is a hint and not a check — the file is validated by the
+                client that has to decode it, which is the only thing that can actually say.
+              */}
+              <label htmlFor="peer-bundle" className="prose-label">OR THEIR BUNDLE FILE</label>
+              <input id="peer-bundle" name="peer-bundle" type="file" accept=".json,application/json"
+                     onChange={(e) => {
+                       const f = e.target.files?.[0];
+                       if (!f) { setPeerBundle(""); return; }
+                       // The page reads it; the API is sent the bytes. See `inviteNow`.
+                       void f.text().then(setPeerBundle);
+                     }} />
+              <button className="button" type="button"
+                      onClick={() => void inviteNow()}
+                      disabled={working !== null || !live
+                        || peerName.trim() === "" || peerBundle.trim() === ""}>
+                {working === "invite" ? "opening…" : "Open from bundle"}
               </button>
             </form>
             {opened && <OpenedNote opened={opened} />}
           </details>
+
+          {/*
+            ⛔ **THE RECEIVING SIDE, AND IT IS NOT INSIDE "OPEN A CONVERSATION".** Everything in
+            that fold is an act of contacting somebody. This is the opposite one — answering
+            somebody who contacted you — and folding it in with the others would have made the
+            organisation's half of this product look like a variant of the source's. It is always
+            visible for the same reason: a receiver arriving here has no row to click either.
+          */}
+          <div className="tg-mailbox">
+            <button type="button" onClick={() => void collectNow()}
+                    disabled={working !== null || !live}>
+              {working === "collect" ? "checking…" : "Check mailbox"}
+            </button>
+            {collected && <CollectedNote collected={collected} />}
+          </div>
 
           {channels && channels.length > 0 ? (
             <ul className="tg-rows">
@@ -813,6 +917,27 @@ function OpenedNote({ opened }: { opened: Opened }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * What was waiting, in the three states the API distinguishes.
+ *
+ * ⛔ **"NOTHING WAS WAITING" AND "SOMETHING WAS WAITING AND WOULD NOT OPEN" ARE DIFFERENT
+ * SENTENCES.** A slot is writable by anyone, so a rejection is ordinary rather than alarming — but
+ * collapsing the two into one empty state tells a receiver nobody has tried to reach them when
+ * somebody has. The count is reported plainly and is not dressed as an error.
+ */
+function CollectedNote({ collected }: { collected: Collected }) {
+  const { accepted, rejected } = collected;
+  return (
+    <p className="tg-mailbox-note" role="status">
+      {accepted.length > 0 && `accepted ${accepted.join(", ")}`}
+      {accepted.length > 0 && rejected > 0 && " · "}
+      {rejected > 0
+        && `${rejected} slot(s) held something that did not open, and were discarded`}
+      {accepted.length === 0 && rejected === 0 && "nothing waiting"}
+    </p>
   );
 }
 
