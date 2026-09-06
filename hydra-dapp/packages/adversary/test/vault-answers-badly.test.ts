@@ -27,7 +27,7 @@ import { createServer, type Server } from "node:http";
 
 import { httpTransport } from "../../handshake/src/inbox.ts";
 import { render } from "../../tui/src/view.ts";
-import { start } from "../../tui/src/app.ts";
+import { start, viewOf } from "../../tui/src/app.ts";
 
 /** A vault that answers however the test says, on a real socket. */
 async function answering(reply: (res: import("node:http").ServerResponse) => void) {
@@ -40,7 +40,7 @@ async function answering(reply: (res: import("node:http").ServerResponse) => voi
 /** What a one-row TUI log actually shows at the default xterm width. */
 function atEightyColumns(text: string): string {
   const m = start(null, 0);
-  const frame = render({ ...m, log: [{ text, tone: "warn", at: 0 }] } as never,
+  const frame = render(viewOf({ ...m, log: [{ text, tone: "warn", at: 0 }] } as never),
     { rows: 24, cols: 80 });
   return frame.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
 }

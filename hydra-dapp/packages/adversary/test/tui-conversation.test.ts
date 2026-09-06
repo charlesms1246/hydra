@@ -25,7 +25,7 @@ import { loopbackOnly } from "../src/hermetic.ts";
 
 import { DENIABLE } from "../../claims/src/warnings.ts";
 import { decode } from "../../tui/src/keys.ts";
-import { start, update, PAGES, FIELDS, selected } from "../../tui/src/app.ts";
+import { start, update, viewOf, PAGES, FIELDS, selected } from "../../tui/src/app.ts";
 import type { Model, Event } from "../../tui/src/app.ts";
 import { render } from "../../tui/src/view.ts";
 import { perform } from "../../tui/src/effects.ts";
@@ -93,7 +93,7 @@ const feed = async (m: Model, deps: Deps, keys: string): Promise<Model> => {
   return m;
 };
 
-const text = (m: Model, size = SIZE) => render(m, size).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+const text = (m: Model, size = SIZE) => render(viewOf(m), size).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
 
 /**
  * The frame as readable prose: colours gone, box drawing gone, whitespace collapsed.
@@ -176,7 +176,7 @@ test("NO DISCLOSURE ROW LOSES ITS QUALIFICATION TO THE RIGHT EDGE", async () => 
     for (const cite of [false, true])
     for (const size of [{ rows: 24, cols: 80 }, { rows: 12, cols: 46 }, { rows: 24, cols: 100 }]) {
       for (let scroll = 0; scroll < 260; scroll++) {
-        const frame = render({ ...m, page: "disclosure" as const, scroll, cite }, size);
+        const frame = render(viewOf({ ...m, page: "disclosure" as const, scroll, cite }), size);
         // The nav header and the key footer truncate by design; the box body must not.
         const body = frame.filter((l) => l.replace(/\x1b\[[0-9;]*m/g, "").startsWith("│"));
         const cut = body.find((l) => l.replace(/\x1b\[[0-9;]*m/g, "").includes("…"));
@@ -403,7 +403,7 @@ test("every page renders inside its terminal, at a width where it does not fit",
     const m = await created(h);
     for (const size of [{ rows: 24, cols: 100 }, { rows: 12, cols: 46 }, { rows: 40, cols: 200 }]) {
       for (const page of PAGES) {
-        const lines = render({ ...m, page: page.id }, size);
+        const lines = render(viewOf({ ...m, page: page.id }), size);
         assert.ok(lines.length <= size.rows,
           `${page.id} at ${size.cols}x${size.rows} drew ${lines.length} rows`);
         for (const [i, line] of lines.entries()) {

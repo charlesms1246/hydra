@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { ALT_SCREEN_OFF, ALT_SCREEN_ON } from "./screen.ts";
 import { decode } from "./keys.ts";
-import { start, update } from "./app.ts";
+import { start, update, viewOf } from "./app.ts";
 import type { Model } from "./app.ts";
 import { screen } from "./view.ts";
 import { perform } from "./effects.ts";
@@ -72,7 +72,7 @@ const size = () => ({
   cols: process.stdout.columns || 80,
 });
 
-const draw = () => process.stdout.write(screen(model, size()));
+const draw = () => process.stdout.write(screen(viewOf(model), size()));
 
 const deps = {
   save,

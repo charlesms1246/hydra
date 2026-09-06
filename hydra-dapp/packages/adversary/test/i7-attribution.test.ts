@@ -24,14 +24,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { render } from "../../tui/src/view.ts";
-import { start } from "../../tui/src/app.ts";
+import { start, viewOf } from "../../tui/src/app.ts";
 import type { Model } from "../../tui/src/app.ts";
 import { attributionLabel, SIGNED_MARK, UNVERIFIABLE_MARK } from "../../cli/src/commands.ts";
 import type { ReceivedMessage, State } from "../../cli/src/state.ts";
 
 const SIZE = { rows: 26, cols: 100 };
 
-const plain = (m: Model) => render(m, SIZE).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+const plain = (m: Model) => render(viewOf(m), SIZE).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
 
 /** A model showing one channel's transcript, with nothing else on screen to confuse the check. */
 function showing(messages: readonly ReceivedMessage[], anchor?: string): Model {

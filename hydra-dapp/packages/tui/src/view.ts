@@ -1,13 +1,28 @@
 /**
  * The model, as a screen.
  *
- * Pure: `render` takes a model and a size and returns lines. It reads no clock, no environment
- * and no disk, which is what makes a frame something a test can assert on rather than something
- * a person has to look at.
+ * Pure: `render` takes a {@link View} and a size and returns lines. It reads no clock, no
+ * environment and no disk, which is what makes a frame something a test can assert on rather than
+ * something a person has to look at.
  *
- * The one thing it computes rather than receives is the identity summary, because deriving a
- * fingerprint is an HKDF and two key generations and doing that on every keystroke would be
- * silly. It is memoised on the values it depends on — a cache, not state.
+ * **That sentence was half false until the split, and it is worth saying which half.** The
+ * environment clause was untrue: this file imported `STATE_FILE`, which `cli/src/state.ts`
+ * evaluates from `HYDRA_HOME` or the user's home directory at module load. It also computed the
+ * identity summary rather than receiving it — an HKDF and two key generations, memoised in a
+ * module-level variable **keyed on the raw seed hex**. All of that now happens in `app.ts`.
+ *
+ * ## IT DRAWS A `View`, NOT A `State`, AND THAT IS LOAD-BEARING
+ *
+ * `web/` renders this file live at the reader's width, so it is bundled and served to a browser.
+ * I6 says no pool viewing key and no vault content key may enter one, and `web/scripts/
+ * module-graph.ts` fails the build if a page reaches `packages/identity/` or
+ * `packages/vault-client/`. This file reached four such modules; it now reaches none.
+ *
+ * The rule that keeps it that way: **this file may import `./screen.ts`, `./model.ts`, and
+ * modules that hold text.** Not `./app.ts`, not `cli/src/state.ts`, not `cli/src/commands.ts` —
+ * the last is a single import away from three forbidden modules, and `State` reaches a fourth
+ * through `handshake/`. If you need a value from any of them, compute it in `app.ts` `viewOf`
+ * and put it on the `View`. See `model.ts` for why the boundary is where it is.
  *
  * WHAT THE LAYOUT IS FOR. Every page carries the cost of what it does, next to the button that
  * does it. `invite` says the vault operator learns you are reachable; `send` says the chain
@@ -17,49 +32,22 @@
  */
 
 import { box, beside, fit, frame, paint, truncate, wrap, width } from "./screen.ts";
-import { PAGES, FIELDS, channelNames, selected, due } from "./app.ts";
-import { attributionLabel } from "../../cli/src/commands.ts";
-import type { Model, Page } from "./app.ts";
+import { PAGES, FIELDS, channelNames, selected, due } from "./model.ts";
+import type { Page, View } from "./model.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
-import { linkabilityOf } from "../../cli/src/commands.ts";
-import { bundleFrom, oneTimeRemaining } from "../../handshake/src/prekeys.ts";
-import { derive, rootSeed, entropyFrom, fromStoredSeed, VAULT_DOMAIN } from "../../identity/src/domains.ts";
-import { STATE_FILE } from "../../cli/src/state.ts";
 import { SIGNED, DENIABLE, RECORD_NOT_WRITTEN, SECOND_CLIENT, KEY_IN_CLEAR, KEY_LOCKED }
   from "../../claims/src/warnings.ts";
-import type { State } from "../../cli/src/state.ts";
 
 export type Size = { readonly rows: number; readonly cols: number };
 
 const STATEMENT = statement();
 
-type Identity = { readonly fingerprint: string; readonly epoch: number; readonly oneTimeLeft: number };
-
-let cached: { readonly key: string; readonly value: Identity } | null = null;
-
-/** The fingerprint over BOTH long-term keys — see `commands.ts`, which explains why both. */
-function identityOf(state: State): Identity {
-  const key = `${state.seedHex}:${state.prekeys.epoch}:${oneTimeRemaining(state.prekeys)}`;
-  if (cached?.key === key) return cached.value;
-  const root = derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromStoredSeed(
-    new Uint8Array(Buffer.from(state.seedHex, "hex")), STATE_FILE))));
-  const bundle = bundleFrom(root, state.prekeys);
-  const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
-  const value: Identity = {
-    fingerprint: hex(bundle.identityKey).slice(0, 16) + hex(bundle.signingKey).slice(0, 16),
-    epoch: state.prekeys.epoch,
-    oneTimeLeft: oneTimeRemaining(state.prekeys),
-  };
-  cached = { key, value };
-  return value;
-}
-
 // ---------------------------------------------------------------------------
 // Furniture
 // ---------------------------------------------------------------------------
 
-const nav = (m: Model, cols: number): string => {
+const nav = (m: View, cols: number): string => {
   if (m.page === "setup") return paint(" HYDRA ", "inverse", "bold") + paint("  first run", "gray");
   const cells = PAGES.map((p, i) => (p.id === m.page
     ? paint(` ${p.label} `, "inverse")
@@ -74,11 +62,11 @@ const nav = (m: Model, cols: number): string => {
  * has to be visible or the interface is lying about what it is doing on the network — the count
  * of objects due is exactly what the vault is about to be told.
  */
-const activity = (m: Model): string => {
+const activity = (m: View): string => {
   if (m.busy) return paint(`● ${m.busy}…`, "yellow");
   const n = due(m);
   if (n) return paint(`● ${n} upload${n === 1 ? "" : "s"} due`, "cyan");
-  const waiting = m.state?.pending.length ?? 0;
+  const waiting = m.client?.pending.length ?? 0;
   return waiting ? paint(`○ ${waiting} scheduled`, "gray") : paint("○ idle", "gray");
 };
 
@@ -92,7 +80,7 @@ const KEYS: Record<Page | "setup", string> = {
   status: "f flush now · j/k scroll · 1-6 pages · q quit",
 };
 
-const field = (m: Model, index: number, key: string, label: string, cols: number): string => {
+const field = (m: View, index: number, key: string, label: string, cols: number): string => {
   const on = m.field === index && FIELDS[m.page].length > 0;
   const value = m.fields[key] ?? "";
   const caret = on && m.typing ? paint("▏", "cyan") : "";
@@ -100,7 +88,7 @@ const field = (m: Model, index: number, key: string, label: string, cols: number
   return `${on ? paint("›", "cyan") : " "} ${on ? paint(name, "bold") : paint(name, "gray")} ${value}${caret}`;
 };
 
-const fieldBlock = (m: Model, cols: number): string[] =>
+const fieldBlock = (m: View, cols: number): string[] =>
   FIELDS[m.page].map((f, i) => field(m, i, f.key, f.label, cols));
 
 const note = (text: string, cols: number): string[] =>
@@ -124,7 +112,7 @@ const bullet = (text: string, cols: number, marker = "- "): string[] => {
 // Pages
 // ---------------------------------------------------------------------------
 
-function chats(m: Model, size: Size, height: number): string[] {
+function chats(m: View, size: Size, height: number): string[] {
   const names = channelNames(m);
   const current = selected(m);
   const listWidth = Math.min(26, Math.max(16, Math.floor(size.cols / 4)));
@@ -132,7 +120,7 @@ function chats(m: Model, size: Size, height: number): string[] {
   const top = height - composeHeight;
 
   const list = names.map((n, i) => {
-    const pending = (m.state?.pending ?? []).filter((p) => p.channel === n).length;
+    const pending = (m.client?.pending ?? []).filter((p) => p.channel === n).length;
     const mark = i === m.channel ? paint("›", "cyan") : " ";
     const tail = pending ? paint(` ${pending}`, "gray") : "";
     return `${mark} ${i === m.channel ? paint(n, "bold") : n}${tail}`;
@@ -141,13 +129,14 @@ function chats(m: Model, size: Size, height: number): string[] {
   const messages = current ? m.transcript[current] ?? [] : [];
   // Where this channel's signing key is published, or null while it is only what the handshake
   // said. It changes what a tick MEANS, so it reaches both the label and the legend below.
-  const anchor = (current && m.state?.channels[current]?.anchor) || null;
+  const anchor = (current && m.client?.channels[current]?.anchor) || null;
   const body = messages.length
     ? messages.flatMap((msg) => {
-      // I7: the name and what backs it, together, from the one function that decides both. A
-      // deniable message still shows the name the reader gave this channel — their own belief is
-      // theirs to hold — but never without the mark that says the product cannot prove it.
-      const who = attributionLabel(msg, current ?? "", anchor);
+      // I7: the name and what backs it, together, from the one function that decides both —
+      // `attributionLabel`, applied in `app.ts` `viewOf` because it lives behind `commands.ts`.
+      // A deniable message still shows the name the reader gave this channel — their own belief
+      // is theirs to hold — but never without the mark that says the product cannot prove it.
+      const who = msg.who;
       const tone = msg.attribution === "signed" ? "green" : "yellow";
       return bullet(
         msg.text, size.cols - listWidth - 4,
@@ -173,7 +162,7 @@ function chats(m: Model, size: Size, height: number): string[] {
   // The crowd, on the page that composes. Plain text and no colour: it is computed from public
   // data and verified by nobody, so anything that read as a badge would be claiming more than
   // I7 allows. `describe` writes the zero case first because zero is the usual answer.
-  const linked = m.state && current ? linkabilityOf(m.state, current) : { known: false, crowd: 0 };
+  const linked = m.linked;
   const compose = [
     mode,
     fit(m.fields.compose + (m.typing && m.page === "chats" ? paint("▏", "cyan") : ""), size.cols - 4),
@@ -205,8 +194,8 @@ function chats(m: Model, size: Size, height: number): string[] {
   ];
 }
 
-function connect(m: Model, size: Size, height: number): string[] {
-  const id = m.state ? identityOf(m.state) : null;
+function connect(m: View, size: Size, height: number): string[] {
+  const id = m.client?.identity ?? null;
   const lines = [
     `${paint("your fingerprint", "gray")}  ${paint(id?.fingerprint ?? "—", "bold")}`,
     "",
@@ -227,8 +216,8 @@ function connect(m: Model, size: Size, height: number): string[] {
   return box(lines, { width: size.cols, height, title: "start a conversation", focus: m.typing });
 }
 
-function identity(m: Model, size: Size, height: number): string[] {
-  const id = m.state ? identityOf(m.state) : null;
+function identity(m: View, size: Size, height: number): string[] {
+  const id = m.client?.identity ?? null;
   const lines = [
     `${paint("fingerprint       ", "gray")}${paint(id?.fingerprint ?? "—", "bold")}`,
     `${paint("signed prekey     ", "gray")}epoch ${id?.epoch ?? "—"}`,
@@ -248,7 +237,7 @@ function identity(m: Model, size: Size, height: number): string[] {
     // the key is "in the clear" unconditionally, in three places, and a test defended it — so the
     // moment `hydra lock` shipped it would have been false everywhere with a guard holding it in
     // place. See `decisions/0040` §4.
-    ...note(`${STATE_FILE}: ${(m.state?.lockedAtRest ? KEY_LOCKED : KEY_IN_CLEAR).full.join(" ")}`,
+    ...note(`${m.statePath}: ${(m.client?.lockedAtRest ? KEY_LOCKED : KEY_IN_CLEAR).full.join(" ")}`,
       size.cols - 4),
     "",
     ...note("that file also holds every message you have sent or read, as text. it does not "
@@ -267,8 +256,8 @@ function identity(m: Model, size: Size, height: number): string[] {
  * was; a record moves the key somewhere a stranger can find it. That is a real gain and a real
  * disclosure, and the disclosure is the part a user has to see before pressing anything.
  */
-function record(m: Model, size: Size, height: number): string[] {
-  const anchored = Object.entries(m.state?.channels ?? {})
+function record(m: View, size: Size, height: number): string[] {
+  const anchored = Object.entries(m.client?.channels ?? {})
     .filter(([, c]) => c.anchor)
     .map(([n, c]) => `${paint(n.padEnd(16), "cyan")}${c.anchor}`);
   const lines = [
@@ -305,7 +294,7 @@ function record(m: Model, size: Size, height: number): string[] {
   return box(lines, { width: size.cols, height, title: "published keys", focus: m.typing });
 }
 
-function disclosure(m: Model, size: Size, height: number): string[] {
+function disclosure(m: View, size: Size, height: number): string[] {
   const inner = size.cols - 4;
   const section = (title: string, claims: readonly { says: string; from: string }[]) => [
     paint(title, "bold"),
@@ -334,13 +323,13 @@ function disclosure(m: Model, size: Size, height: number): string[] {
   });
 }
 
-function status(m: Model, size: Size, height: number): string[] {
-  const s = m.state;
+function status(m: View, size: Size, height: number): string[] {
+  const s = m.client;
   const pending = s?.pending ?? [];
   const soon = [...pending].sort((a, b) => a.uploadAt - b.uploadAt).slice(0, 8);
   const at = (t: number) => (t <= m.now ? paint("due", "cyan") : `in ${Math.ceil((t - m.now) / 1000)}s`);
   const lines = [
-    `${paint("state    ", "gray")}${STATE_FILE}`,
+    `${paint("state    ", "gray")}${m.statePath}`,
     `${paint("vault    ", "gray")}${s?.vaultUrl ?? "—"}`,
     `${paint("chain    ", "gray")}${s?.contract || "(unset)"} via ${s?.rpcUrl ?? "—"}`,
     // **A SLOW CLIENT THAT DOES NOT SAY IT IS SLOW READS AS A BROKEN ONE.** `fromBlock` is 0 with
@@ -359,7 +348,7 @@ function status(m: Model, size: Size, height: number): string[] {
         .map((l) => paint(l, "yellow"))
       : []),
     `${paint("route    ", "gray")}${s?.controlUrl ? `pool (${s.poolAccount || "alice"})` : "direct from your own account"}`,
-    `${paint("invites  ", "gray")}${s?.invites.length ?? 0} left`,
+    `${paint("invites  ", "gray")}${s?.invites ?? 0} left`,
     "",
     paint(`queue — ${pending.length} object(s), uploaded on the clock, not on your command`, "bold"),
     ...soon.map((p) => `  ${fit(p.channel, 18)}${p.real ? "message" : paint("cover  ", "gray")}  ${at(p.uploadAt)}`),
@@ -371,14 +360,14 @@ function status(m: Model, size: Size, height: number): string[] {
   return box(lines.slice(m.scroll), { width: size.cols, height, title: "status" });
 }
 
-function setup(m: Model, size: Size, height: number): string[] {
+function setup(m: View, size: Size, height: number): string[] {
   const lines = [
     ...note("no identity yet. this creates one: a fresh vault root from OS randomness, twenty "
       + "one-time prekeys, and nothing else.", size.cols - 4),
     "",
     ...FIELDS.setup.map((f, i) => field(m, i, f.key, f.label, size.cols)),
     "",
-    ...note(`Enter writes ${STATE_FILE}. that file holds your root key in the clear. it is `
+    ...note(`Enter writes ${m.statePath}. that file holds your root key in the clear. it is `
       + "mode 0600 and that is all the protection there is.", size.cols - 4),
   ];
   return box(lines, { width: size.cols, height, title: "first run", focus: m.typing });
@@ -393,7 +382,7 @@ function setup(m: Model, size: Size, height: number): string[] {
  * width, which is a consent dialog that hides the consequence — the exact failure the rest of
  * this interface is built to avoid.
  */
-function confirmBody(m: Model, size: Size, height: number): string[] {
+function confirmBody(m: View, size: Size, height: number): string[] {
   const inner = size.cols - 4;
   const lines = [
     "",
@@ -408,12 +397,12 @@ function confirmBody(m: Model, size: Size, height: number): string[] {
 // The frame
 // ---------------------------------------------------------------------------
 
-const PAGE_BODY: Record<Page | "setup", (m: Model, size: Size, height: number) => string[]> = {
+const PAGE_BODY: Record<Page | "setup", (m: View, size: Size, height: number) => string[]> = {
   setup, chats, connect, identity, record, disclosure, status,
 };
 
 /** The lines of one frame. `main.ts` is what turns these into a write. */
-export function render(m: Model, size: Size): string[] {
+export function render(m: View, size: Size): string[] {
   const head = nav(m, size.cols);
   const right = activity(m);
   const header = fit(head, Math.max(0, size.cols - width(right) - 1)) + " " + right;
@@ -430,4 +419,4 @@ export function render(m: Model, size: Size): string[] {
 }
 
 /** What gets written to the terminal. */
-export const screen = (m: Model, size: Size): string => frame(render(m, size), size.rows);
+export const screen = (m: View, size: Size): string => frame(render(m, size), size.rows);

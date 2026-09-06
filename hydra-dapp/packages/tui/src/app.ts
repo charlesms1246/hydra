@@ -22,62 +22,27 @@
 
 import { SIGNED, DENIABLE } from "../../claims/src/warnings.ts";
 import type { Key } from "./keys.ts";
-import type { State } from "../../cli/src/state.ts";
-import type { Received } from "../../cli/src/commands.ts";
-
-export type Page = "chats" | "connect" | "identity" | "record" | "disclosure" | "status";
-
-export const PAGES: readonly { readonly id: Page; readonly label: string }[] = [
-  { id: "chats", label: "Chats" },
-  { id: "connect", label: "Connect" },
-  { id: "identity", label: "Identity" },
-  /**
-   * Publishing is its own page because it is its own act, with a cost none of the others have.
-   *
-   * It went on Identity first and pushed the seed-in-the-clear disclosure off the bottom of the
-   * frame — `tui-conversation.test.ts` caught it. A page too full to show what it costs is the
-   * failure this interface is built around, so the answer is another page rather than shorter
-   * warnings.
-   */
-  { id: "record", label: "Record" },
-  { id: "disclosure", label: "Disclosure" },
-  { id: "status", label: "Status" },
-];
+import type { State, ReceivedMessage as Received } from "../../cli/src/state.ts";
+import { PAGES, FIELDS } from "./model.ts";
+import type { Client, Identity, LogLine, Page, Shown, View } from "./model.ts";
+import { attributionLabel, linkabilityOf } from "../../cli/src/commands.ts";
+import { bundleFrom, oneTimeRemaining } from "../../handshake/src/prekeys.ts";
+import { derive, rootSeed, entropyFrom, fromStoredSeed, VAULT_DOMAIN }
+  from "../../identity/src/domains.ts";
+import { STATE_FILE } from "../../cli/src/state.ts";
 
 /**
- * The fields each page owns.
+ * `Page`, `PAGES` and `FIELDS` live in `model.ts` and are re-exported here.
  *
- * `setup` is not in `PAGES` because it is not a destination: it is what the interface is when
- * there is no identity yet, and it goes away for good once there is one.
+ * They are presentation data, so they belong on the side of the split `view.ts` is allowed to
+ * import — see that file's header for why the line is where it is. Re-exported because the tests
+ * and the reducer have always taken them from here and moving them is not what this change is
+ * about.
  */
-export const FIELDS: Record<Page | "setup", readonly { readonly key: string; readonly label: string }[]> = {
-  setup: [
-    { key: "vault", label: "vault URL" },
-    { key: "rpc", label: "chain RPC" },
-    { key: "contract", label: "contract address" },
-    { key: "accountsFile", label: "sncast accounts file" },
-    { key: "account", label: "account name" },
-    { key: "network", label: "network (blank for a devnet URL)" },
-    { key: "invites", label: "upload invites, comma separated" },
-  ],
-  chats: [{ key: "compose", label: "message" }],
-  connect: [
-    { key: "peerName", label: "what to call them" },
-    { key: "peerBundle", label: "path to their bundle file" },
-    { key: "exportPath", label: "write my bundle to" },
-  ],
-  identity: [],
-  record: [
-    { key: "myAddress", label: "my Starknet address, for a published record" },
-    { key: "recordPath", label: "record felts file" },
-    { key: "anchorName", label: "whose record to check" },
-    { key: "anchorAddress", label: "their Starknet address" },
-  ],
-  disclosure: [],
-  status: [],
-};
+export { PAGES, FIELDS };
+export type { Page, LogLine };
 
-/** The fields that start with something in them. Everything else declared above starts empty. */
+/** The fields that start with something in them. Everything else in {@link FIELDS} starts empty. */
 const FIELD_DEFAULTS: Readonly<Record<string, string>> = {
   vault: "http://127.0.0.1:8080",
   rpc: "http://127.0.0.1:5050",
@@ -157,8 +122,6 @@ export type Event =
     readonly foreign: number;
   }
   | { readonly t: "error"; readonly text: string };
-
-export type LogLine = { readonly at: number; readonly text: string; readonly tone: "info" | "warn" | "bad" };
 
 export type Model = {
   readonly page: Page | "setup";
@@ -487,4 +450,144 @@ function action(m: Model, ch: string): Step {
     default:
       return just(m);
   }
+}
+
+// ---------------------------------------------------------------------------
+// The boundary
+// ---------------------------------------------------------------------------
+
+/**
+ * The identity summary. **Moved here out of `view.ts`, and not only for tidiness.**
+ *
+ * It was computed in the presentation layer and memoised in a module-level variable keyed on
+ * `${state.seedHex}:…`, which kept the raw vault root in a module-scope string for the life of
+ * the process. Contained in a Node process; in the browser bundle `web/` now serves, the one
+ * thing I6 forbids — arriving through a cache key rather than through any field anyone would
+ * think to check, and a JavaScript string cannot be zeroed.
+ *
+ * **The memo is a `WeakMap` on the state object, not a string key.** `epoch:oneTimeLeft` was
+ * the obvious replacement and it is unique only by accident: `effects.ts` `init()` mints a fresh
+ * identity in-process, and every fresh state is epoch 0 with the same one-time count, so two
+ * identities collide on one key. That is unreachable today only because `start` sends you to
+ * `setup` solely when there was no state at startup — a guarantee that lives in a different
+ * function from the cache and that nobody editing the cache would think to check. Keying on the
+ * object cannot collide however this reducer grows, and it dies with the state rather than at
+ * process exit. **Showing the wrong fingerprint is worse than any stale-cache bug**: it is the
+ * value users read aloud to each other to check who they are talking to.
+ *
+ * **AND THE OBJECT ALONE IS NOT ENOUGH, WHICH THE FIRST VERSION OF THIS GOT WRONG.** `State` is
+ * mutated IN PLACE — `rotatePrekey` writes through `state.prekeys` and the effect returns the same
+ * object, and accepting a handshake consumes a one-time key the same way. So identity is stable
+ * while the content is not, and a memo keyed on the object alone served a stale epoch and a stale
+ * one-time count forever: the Identity page went on reporting 20 keys left after a rotation.
+ * `tui-identity-memo.test.ts` drives exactly that.
+ *
+ * The discarded string key `seedHex:epoch:oneTimeLeft` had this right — the two fields it carried
+ * beyond the seed were doing real work, and dropping the seed took them with it. **A replacement
+ * that keeps only the property you were thinking about loses the ones you were not.** So the
+ * invalidating fields moved into the value: the object identity gives collision-freedom and
+ * lifetime, the compared fields give freshness, and no secret is in either.
+ */
+type Memo = { readonly epoch: number; readonly oneTimeLeft: number; readonly value: Identity };
+const identities = new WeakMap<State, Memo>();
+
+function identityOf(state: State): Identity {
+  const epoch = state.prekeys.epoch;
+  const oneTimeLeft = oneTimeRemaining(state.prekeys);
+  const hit = identities.get(state);
+  if (hit && hit.epoch === epoch && hit.oneTimeLeft === oneTimeLeft) return hit.value;
+  const root = derive(VAULT_DOMAIN, rootSeed(entropyFrom(fromStoredSeed(
+    new Uint8Array(Buffer.from(state.seedHex, "hex")), STATE_FILE))));
+  const bundle = bundleFrom(root, state.prekeys);
+  const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
+  // The fingerprint covers BOTH long-term keys — see `commands.ts`, which explains why both.
+  const value: Identity = {
+    fingerprint: hex(bundle.identityKey).slice(0, 16) + hex(bundle.signingKey).slice(0, 16),
+    epoch,
+    oneTimeLeft,
+  };
+  identities.set(state, { epoch, oneTimeLeft, value });
+  return value;
+}
+
+/**
+ * `State` narrowed to what the screen draws.
+ *
+ * **This is the only place the two descriptions meet, and that is the point.** A hand-kept
+ * `Client` would agree with `State` until somebody edited one of them; because this takes a
+ * `State` and returns a `Client`, a field renamed or retyped over there is a type error here
+ * rather than a screen that quietly renders a stale shape. If this ever stops typechecking
+ * cleanly, the boundary is in the wrong place — do not paper over it with a cast.
+ *
+ * What does NOT come across: `seedHex`, `prekeys`, and the body and delete capability of every
+ * queued upload. The view asked for a fingerprint and a queue length and was being handed the
+ * vault root to compute them itself.
+ *
+ * **NOT EXPORTED.** `viewOf` is the surface; this is how `viewOf` is built. It was exported at
+ * first and `reachability-sweep.test.ts` refused it — *"a module's exports should be its actual
+ * surface, and there is no reason to widen it for a function nobody outside can want"* — which is
+ * right, and the compiler check this function exists for happens at its signature whether anyone
+ * outside can call it or not. Exporting it to make the boundary feel official would have been the
+ * boundary being less checked, not more.
+ */
+function clientOf(state: State): Client {
+  return {
+    identity: identityOf(state),
+    lockedAtRest: state.lockedAtRest,
+    channels: Object.fromEntries(
+      Object.entries(state.channels).map(([n, c]) => [n, { anchor: c.anchor ?? null }])),
+    pending: state.pending.map((p) => ({ channel: p.channel, uploadAt: p.uploadAt, real: p.real })),
+    vaultUrl: state.vaultUrl,
+    rpcUrl: state.rpcUrl,
+    contract: state.contract,
+    fromBlock: state.fromBlock,
+    controlUrl: state.controlUrl,
+    poolAccount: state.poolAccount,
+    invites: state.invites.length,
+  };
+}
+
+/**
+ * The model as the screen sees it. `main.ts` calls this once per frame.
+ *
+ * Everything the view used to compute for itself is decided here, in Node: the fingerprint, the
+ * attribution label on every message, and the crowd the selected channel sits in. All three
+ * needed `cli/src/commands.ts`, which is the single choke point into `vault-client` — two
+ * one-use imports were carrying three forbidden modules into the view's graph.
+ */
+export function viewOf(m: Model): View {
+  const current = selected(m);
+  const anchor = (current && m.state?.channels[current]?.anchor) || null;
+  const shown = (channel: string, messages: readonly Received[]): readonly Shown[] =>
+    messages.map((msg) => ({
+      text: msg.text,
+      mine: msg.mine,
+      attribution: msg.attribution,
+      // I7: the name and what backs it, from the one function that decides both.
+      who: attributionLabel(msg, channel, anchor),
+    }));
+  return {
+    page: m.page,
+    client: m.state ? clientOf(m.state) : null,
+    // Still read from `cli/src/state.ts`, so `HYDRA_HOME` at module load still governs it —
+    // `web/scripts/capture-tui.ts` depends on that, and its leak assertions are what caught the
+    // build machine's home directory going onto a public page the first time this was captured.
+    statePath: STATE_FILE,
+    typing: m.typing,
+    field: m.field,
+    fields: m.fields,
+    channel: m.channel,
+    scroll: m.scroll,
+    transcript: Object.fromEntries(
+      Object.entries(m.transcript).map(([n, msgs]) => [n, shown(n, msgs)])),
+    foreign: m.foreign,
+    linked: m.state && current ? linkabilityOf(m.state, current) : { known: false, crowd: 0 },
+    log: m.log,
+    busy: m.busy,
+    // The effect is dropped: which button was pressed is the reducer's business.
+    confirm: m.confirm ? { question: m.confirm.question, label: m.confirm.label } : null,
+    cite: m.cite,
+    signing: m.signing,
+    now: m.now,
+  };
 }
