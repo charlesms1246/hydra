@@ -21,22 +21,22 @@ filled in, so it is not repeated here.
 ```bash
 # 1. HYDRA itself. The published package is `hydra-devtool`; until it is published,
 #    run it from a clone.
-git clone https://github.com/charlesms1246/hydra.git && cd hydra
-npm install --prefix devtool                        # deps, and links hydra-dev
-export PATH="$PWD/devtool/node_modules/.bin:$PATH"  # or say `npx --prefix devtool hydra-dev`
+git clone https://github.com/charlesms1246/hydra.git && cd hydra/devtool
 
-# 2. the checkout it drives. Run doctor first — its `upstream checkout` row prints the
-#    exact two commands, pin included. They look like this:
-hydra-dev doctor
-git clone https://github.com/starkware-libs/starknet-privacy .upstream
-git -C .upstream checkout <the commit doctor printed>
+# 2. its own dependencies. `npx` finds the binaries this links; nothing goes on your PATH.
+npm install
 
-# 3. the stack. `.upstream/` inside this repo is found automatically; a checkout anywhere
-#    else needs HYDRA_UPSTREAM=<dir>.
-hydra-dev doctor    # fourteen rows now; it prints the exact fix for anything missing
-hydra-dev up        # devnet + pool + funded accounts + local discovery service
-hydra-dev           # the TUI
+# 3. everything else. `up` clones the pool source at the pinned revision, builds it, and
+#    starts devnet + pool + funded accounts + local discovery service. It ASKS before each
+#    third-party toolchain install and shows the command first — `--yes` consents in advance,
+#    and with no terminal it refuses rather than assuming.
+npx hydra-dev up
 ```
+
+Then `npx hydra-dev` for the TUI, and `npx hydra-dev doctor` for the fourteen-row table if you
+want to see what it found. `doctor` is still the honest starting point when something is wrong —
+it prints the exact fix for every row — but you no longer have to run it first to be told what
+`up` was about to do anyway.
 
 `hydra-dev doctor` is the honest starting point, and how many rows it prints tells you where you
 are: **eight** before the checkout exists — six pinned tools, one property of the machine,

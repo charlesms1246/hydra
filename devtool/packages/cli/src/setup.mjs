@@ -36,8 +36,7 @@ import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
 
 import { check, upstreamPath } from "./doctor.mjs";
-import { UPSTREAM_REPO, UPSTREAM_SHA, INSTALL_HINTS } from "./pins.mjs";
-import { discoverOperations, runOperation } from "../../core/src/toolchain.mjs";
+import { UPSTREAM_REPO, UPSTREAM_SHA, INSTALL_HINTS, ARTIFACTS, BUILD_HINTS } from "./pins.mjs";
 
 /**
  * Ask, or refuse.
@@ -124,29 +123,38 @@ export async function ensureToolchain({ yes = false } = {}) {
 }
 
 /**
- * The build artifacts, from the operations the toolchain module already derives.
+ * The build artifacts, driven from the doctor's OWN remedies.
  *
- * Only ops whose artifact is absent, so a second `up` does not rebuild a working tree. No prompt:
- * these compile source already on the disk with tools the user has agreed to have, and they are
- * what `up` needs to do anything at all.
+ * Reads `ARTIFACTS`/`BUILD_HINTS` — the same pair `hydra-dev doctor` prints as the fix for each
+ * missing row — so this cannot build a different set from the one the doctor then checks.
+ *
+ * It used `discoverOperations` first, which was the wrong source and failed in a way only an
+ * end-to-end run showed: that function derives the **Cairo and Rust** operations by walking the
+ * workspace manifests, and two of the six artifacts are npm builds (`cd sdk && npm ci && npm run
+ * build`, and the same for `client`) that it does not and should not know about. So `up` built
+ * four of six, reported success, and then failed its own doctor check on `sdkDist` and
+ * `clientDist` — having never attempted them. `testToken` missed for a related reason: its
+ * remedy is three `scarb build`s in three separate non-workspace projects, which is a shell
+ * command rather than an operation.
+ *
+ * No prompt: these compile source already on the disk with tools the user has agreed to have, and
+ * they are what `up` needs to do anything at all. `npm ci` inside the checkout fetches from the
+ * public registry, which is the one thing here that reaches the network — named in the log line
+ * before it runs, for the same reason the toolchain prompts name their downloads.
  */
 export async function ensureBuilds() {
   const dir = upstreamPath();
-  const todo = discoverOperations(dir)
-    .filter((op) => op.group === "build" && op.artifact && !existsSync(join(dir, op.artifact)));
+  const todo = Object.keys(ARTIFACTS)
+    .filter((key) => !existsSync(join(dir, ARTIFACTS[key])) && BUILD_HINTS[key]);
   if (!todo.length) return { ok: true, did: "already built" };
-  for (const op of todo) {
-    console.log(`\n  building ${op.label} — ${op.cmd}`);
-    /*
-     * ⚠ AWAITED. `runOperation` returns a Promise; a synchronous call spawns the build and
-     * returns immediately, so `r.ok` is `undefined` rather than `false` and a failure is
-     * indistinguishable from a success. The first version did exactly that: all five builds
-     * started, `prepare()` returned before any finished, and `up` then reported six missing
-     * artifacts it had just been told to create. Caught only by running the three steps end to
-     * end on a fresh clone — every smaller test passed, because the failure is in the waiting.
-     */
-    const r = await runOperation(op, dir, (line) => process.stdout.write(`    ${line}\n`));
-    if (!r?.ok) return { ok: false, why: `build failed: ${op.id} (${r?.verdict?.text ?? "no result"})` };
+  for (const key of todo) {
+    console.log(`\n  building ${key} — ${BUILD_HINTS[key]}`);
+    if (!run("sh", ["-c", BUILD_HINTS[key]], dir)) return { ok: false, why: `build failed: ${key}` };
+    // The remedy having exited 0 is not the same as the artifact existing — a build that succeeds
+    // and writes somewhere else is exactly the case `up` then reports as missing.
+    if (!existsSync(join(dir, ARTIFACTS[key]))) {
+      return { ok: false, why: `${key} built without error and ${ARTIFACTS[key]} is still absent` };
+    }
   }
   return { ok: true, did: `built ${todo.length}` };
 }
