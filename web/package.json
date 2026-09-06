@@ -14,6 +14,7 @@
     "test": "npm run build && node --test test/*.test.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
     "check:figures": "node scripts/figure-geometry.ts",
+    "check:text": "node scripts/text-style.ts",
     "build:public": "HYDRA_PUBLIC=1 npm run preflight && npm run capture:tui && HYDRA_PUBLIC=1 next build --webpack",
     "capture:tui": "node scripts/capture-tui.ts"
   },
