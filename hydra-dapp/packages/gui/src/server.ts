@@ -313,16 +313,23 @@ export function guiServer(deps: GuiDeps): Server {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     const path = url.pathname;
 
+    // **NOT DESTRUCTURED INTO A `state` BINDING, AND THAT IS DELIBERATE.** This snapshot is taken
+    // before the route runs, which is fine for a GET and was WRONG for a write — see the lock
+    // below. Leaving it as `got` means no variable called `state` is in scope further down, so
+    // the defect cannot be reintroduced by an edit that simply reads the nearest thing to hand.
     const got = stateOr(deps);
     if (isFail(got)) return refuse(res, got);
-    const { state, file } = got;
 
-    if (req.method === "GET" && path === "/v1/gui/status") return send(res, 200, status(state, file));
-    if (req.method === "GET" && path === "/v1/gui/channels") return send(res, 200, channels(state));
+    if (req.method === "GET" && path === "/v1/gui/status") {
+      return send(res, 200, status(got.state, got.file));
+    }
+    if (req.method === "GET" && path === "/v1/gui/channels") {
+      return send(res, 200, channels(got.state));
+    }
 
     const inChannel = /^\/v1\/gui\/channels\/([^/]+)\/messages$/.exec(path);
     if (req.method === "GET" && inChannel) {
-      const body = messages(state, decodeURIComponent(inChannel[1]!));
+      const body = messages(got.state, decodeURIComponent(inChannel[1]!));
       return isFail(body) ? refuse(res, body) : send(res, 200, body);
     }
 
@@ -338,13 +345,10 @@ export function guiServer(deps: GuiDeps): Server {
     if (req.method === "POST" && (sendTo || readFrom || path === "/v1/gui/flush")) {
       void (async () => {
         const channel = decodeURIComponent((sendTo ?? readFrom)?.[1] ?? "");
-        if ((sendTo || readFrom) && !state.channels[channel]) {
-          return refuse(res, { status: 404, code: "no_such_channel",
-            condition: `there is no channel called ${JSON.stringify(channel)}`,
-            remedy: "list them at /v1/gui/channels — the name is the one you gave when you "
-              + "opened it" });
-        }
 
+        // The body is read BEFORE the lock on purpose: it is a network wait on a client that may
+        // be slow or hostile, and holding the write lock across it would let any caller stall
+        // every other write by dribbling bytes. Nothing here touches state.
         let body: { text?: unknown; signed?: unknown } = {};
         if (sendTo) {
           const raw = await readBody(req);
@@ -367,6 +371,31 @@ export function guiServer(deps: GuiDeps): Server {
 
         const what = sendTo ? "send" : readFrom ? "read" : "flush";
         const done = await deps.exclusive(what, async () => {
+          // **THE SNAPSHOT IS TAKEN HERE, INSIDE THE LOCK. THIS LINE IS THE FIX (G1).** It used to
+          // use the one taken at dispatch, above — before `readBody` awaited the request body.
+          // That yield is long enough for another request to run a whole send and save it, and
+          // this handler would then mutate and save a state that never contained it: a message
+          // published to the chain, answered 200, and absent from history, with the cover objects
+          // queued for it gone too, leaving a recipient pointing at a blob nobody will upload.
+          //
+          // A lock over stale state serialises execution and not the thing execution is for.
+          // `main.ts`'s flush ticker already called `stateNow()` inside `exclusive`; the ticker
+          // was right and the handler was not, and that asymmetry is what the shape should have
+          // been read against.
+          const fresh = stateOr(deps);
+          if (isFail(fresh)) return fresh;
+          const state = fresh.state;
+
+          // CHECKED AGAINST THE FRESH STATE, not the dispatch snapshot: a channel removed while
+          // this request waited is a channel this request must not write to. It costs the lock to
+          // answer a 404, which is the correct price for an answer that is true.
+          if ((sendTo || readFrom) && !state.channels[channel]) {
+            return { status: 404, code: "no_such_channel",
+              condition: `there is no channel called ${JSON.stringify(channel)}`,
+              remedy: "list them at /v1/gui/channels — the name is the one you gave when you "
+                + "opened it" } satisfies Fail;
+          }
+
           if (sendTo) {
             // SIGNED IS EXPLICIT AND DEFAULTS TO DENIABLE, the way both other front ends have it:
             // `send` and `publish` are two verbs rather than a flag, because a user who cannot
@@ -390,6 +419,7 @@ export function guiServer(deps: GuiDeps): Server {
           return { op: "flush", ...r };
         });
 
+        if (isFail(done)) return refuse(res, done);
         if (done === BUSY) {
           // **REFUSES RATHER THAN QUEUES** — see `serialise.ts`. The page can say "still sending"
           // and ask again; a queue would turn a slow publish into the burst the timing defence

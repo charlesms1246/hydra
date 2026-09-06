@@ -19,7 +19,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { AddressInfo } from "node:net";
+import { connect, type AddressInfo } from "node:net";
 import { request } from "node:http";
 import { readFileSync } from "node:fs";
 import { codeOf } from "../src/prose.ts";
@@ -71,23 +71,29 @@ async function conversed(): Promise<{ alice: State; bob: State; close: () => voi
 
 async function running(source: StateSource, token = TOKEN, over: Partial<{
   chainFor: (s: State) => never; now: () => number; exclusive: Exclusive;
+  stateNow: () => StateSource; save: (s: State) => void;
 }> = {}) {
   const saved: State[] = [];
+  // Every `stateNow` the server takes, in order. A concurrency test needs to know WHEN a handler
+  // reached its snapshot, not just what was in it — see the G1 test, which is meaningless without
+  // evidence that the two requests actually overlapped.
+  const snapshots: StateSource[] = [];
+  const base_ = { stateNow: () => source, save: (s: State) => { saved.push(s); }, ...over };
   const server = guiServer({
     token,
-    stateNow: () => source,
-    save: (s) => { saved.push(s); },
     chainFor: (s) => memoryChain() as never,
     now: () => T0,
     exclusive: serialise(),
     ...over,
+    stateNow: () => { const got = base_.stateNow(); snapshots.push(got); return got; },
+    save: base_.save,
   });
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
   const { port } = server.address() as AddressInfo;
   const base = `http://127.0.0.1:${port}`;
   const get = (path: string, init: RequestInit = {}) =>
     fetch(`${base}${path}`, { headers: { "x-hydra-token": token }, ...init });
-  return { server, base, saved, get, close: () => server.close() };
+  return { server, base, saved, snapshots, get, close: () => server.close() };
 }
 
 const ROUTES = (channel: string) =>
@@ -591,6 +597,91 @@ test("TWO SENDS AT ONCE: one runs, the other is refused and says nothing was los
     assert.match(err.remedy, /nothing has been lost/,
       "the refusal does not say whether the message was kept, which is the only thing the sender "
       + "actually wants to know");
+  } finally { api.close(); closeVault(); }
+});
+
+test("A SEND HELD AT ITS BODY DOES NOT CLOBBER A SEND THAT FINISHED WHILE IT WAITED", async () => {
+  // **G1 — A MESSAGE PUBLISHED TO THE CHAIN, ANSWERED 200, AND ABSENT FROM HISTORY.** The lock was
+  // real and it was not the problem. `stateOr` ran at dispatch, before the route; `send` then
+  // `await`ed the request body — a yield — and only then took the lock. So the lock serialised
+  // EXECUTION over a snapshot taken before it, which is not serialisation of anything that
+  // matters. The second writer's `save` wrote a state that never contained the first writer's
+  // message, along with the cover objects for it, so a recipient is left holding a pointer to a
+  // blob that will never be uploaded.
+  //
+  // The asymmetry was in this repository already: `main.ts`'s flush ticker calls `stateNow()`
+  // INSIDE `exclusive`. The ticker had it right and the handler did not.
+  //
+  // **A DISK, NOT A SHARED OBJECT.** Every other test here hands both requests the same `State`
+  // instance, and with one object there is nothing to lose — the second writer mutates what the
+  // first is holding and both messages survive by accident. `stateNow` really calls `load()`,
+  // which parses JSON off disk, so the round trip is what makes the two snapshots distinct and
+  // the test able to observe the defect at all.
+  const { alice, close: closeVault } = await conversed();
+  let disk = JSON.stringify(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, {
+    stateNow: () => ({ t: "ready", state: JSON.parse(disk) as State, file: FILE }),
+    save: (s) => { disk = JSON.stringify(s); },
+  });
+  const { port } = api.server.address() as AddressInfo;
+
+  try {
+    // **A SECOND SOCKET, NOT A SECOND `fetch`.** One client is one connection with multiplexing
+    // nobody here controls; the interleaving under test needs two connections that genuinely
+    // overlap, and holding a body open is the only way to park a request at the exact yield.
+    const held = connect(port, "127.0.0.1");
+    await new Promise<void>((ok) => held.once("connect", () => ok()));
+    const body = JSON.stringify({ text: "the held one" });
+    held.write(`POST /v1/gui/channels/with-bob/send HTTP/1.1\r\n`
+      + `Host: 127.0.0.1\r\nx-hydra-token: ${TOKEN}\r\n`
+      + `Content-Type: application/json\r\n`
+      + `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n`);
+    const heldReply = new Promise<string>((ok) => {
+      let text = ""; held.on("data", (c: Buffer) => { text += c.toString(); ok(text); });
+    });
+
+    // **THE INTERLEAVING IS OBSERVED, NOT ASSUMED.** Without this the test asserts an outcome
+    // that two sequential sends produce just as well, and would pass against the defect. The
+    // handler has reached its snapshot when `stateNow` has been called; nothing else has called
+    // it, because nothing else has been requested yet.
+    const parked = async () => {
+      for (let i = 0; i < 200 && api.snapshots.length === 0; i++) {
+        await new Promise((ok) => setTimeout(ok, 5));
+      }
+      return api.snapshots.length;
+    };
+    assert.equal(await parked(), 1,
+      "the held request never reached the handler, so nothing was parked and this test would "
+      + "have proved a property of two sends in a row");
+
+    // The whole second send, start to finish, in the gap.
+    const second = await api.get("/v1/gui/channels/with-bob/send", {
+      method: "POST", body: JSON.stringify({ text: "the one that finished first" }),
+    });
+    assert.equal(second.status, 200);
+
+    held.write(body);
+    const reply = await heldReply;
+    assert.match(reply, /^HTTP\/1\.1 200/,
+      `the held send was answered ${reply.split("\r\n")[0]}, so it never got far enough to `
+      + "overwrite anything and the test is not exercising the defect");
+    held.destroy();
+
+    // **ASSERTED ON CONTENTS, NOT ON A COUNT.** `nextSeq` and `history.length` are identical
+    // whether the writes interleaved or not — the loser's message is replaced by the winner's,
+    // not added to. Only the texts say which messages actually survived.
+    const final = JSON.parse(disk) as State;
+    const texts = final.channels["with-bob"]!.history.map((m) => m.text);
+    for (const text of ["the one that finished first", "the held one"]) {
+      assert.ok(texts.includes(text),
+        `"${text}" was answered 200 and published to the chain, and is not in history: `
+        + `${JSON.stringify(texts)}. A user was told their message was sent and it is gone.`);
+    }
+    // And its cover: a queued upload lost with it leaves a recipient holding a pointer to a blob
+    // that is never uploaded, which is the silent half of this defect.
+    assert.ok(final.pending.length >= 2,
+      `${final.pending.length} pending uploads for two sends — cover objects went with the `
+      + "message that was dropped");
   } finally { api.close(); closeVault(); }
 });
 
