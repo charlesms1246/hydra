@@ -31,7 +31,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,6 +108,17 @@ if (!deployer) {
 }
 const classHash = await rpc("starknet_getClassHashAt", ["latest", deployer.address]) as string;
 
+/*
+ * 0600, because this file IS a key file — `private_key` is a field in the object below, and the
+ * name does not say so. `packages/cli/src/state.ts` writes the client's state the same way and
+ * for the same reason.
+ *
+ * NOTE: `live-env.sh` below is deliberately NOT given a mode, and the asymmetry is the point.
+ * It holds an RPC URL, a channel id, a control URL and a pool address that is on chain by
+ * construction — nothing secret. Locking both would teach the next reader that 0600 is what this
+ * script does rather than what these contents need, and they would carry that to a file that
+ * later holds something real.
+ */
 // The network key is sncast's name for the chain id the node reports. Devnet says SN_SEPOLIA.
 writeFileSync(ACCOUNTS, JSON.stringify({
   "alpha-sepolia": {
@@ -121,7 +132,12 @@ writeFileSync(ACCOUNTS, JSON.stringify({
       type: "open_zeppelin",
     },
   },
-}, null, 2) + "\n");
+}, null, 2) + "\n", { mode: 0o600 });
+// Set explicitly as well as at creation: `writeFileSync`'s mode applies ONLY when the file does
+// not already exist, so a rerun over a 644 file left by an earlier version would keep 644. That
+// is also why this defect is invisible on any machine somebody has already fixed by hand, and
+// live on a fresh checkout, a new machine and CI.
+chmodSync(ACCOUNTS, 0o600);
 
 const cast = (...args: string[]) =>
   sh("sncast", ["--json", "--accounts-file", ACCOUNTS, "--account", "deployer", ...args]);
