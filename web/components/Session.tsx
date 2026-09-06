@@ -58,6 +58,26 @@ type Channel = {
   removedUnderProcess: number;
 };
 
+/**
+ * Whether uploads are actually working — **the only field in `status` that knows.**
+ *
+ * `null` is a third value and not a quiet success: it means no attempt has been made yet. Until
+ * 2026-09-06 this did not exist, and the payload for a client whose vault had been dead for
+ * minutes was byte-identical to one whose vault was fine — every other field comes from the state
+ * file, and `nextUploadAt` sits in the past either way. A reader watched a queue that looked about
+ * to drain, indefinitely, and believed their messages were going out.
+ *
+ * `consecutiveFailures` counts ATTEMPTS, not ticks. The uploader runs every second and mostly
+ * finds nothing due; counting those would report a vault as failing when it was never asked.
+ */
+type Attempt = {
+  at: number;
+  ok: boolean;
+  uploaded: number;
+  consecutiveFailures: number;
+  problem: string | null;
+};
+
 type Status = {
   fingerprint: string;
   stateFile: string;
@@ -66,9 +86,25 @@ type Status = {
   chain?: { rpcUrl: string; contract: string; network: string; fromBlock: number };
   route: string;
   invitesLeft: number;
-  queue?: { pending: number; nextUploadAt: number | null };
+  queue?: { pending: number; nextUploadAt: number | null; lastAttempt?: Attempt | null };
   prekeys?: { epoch: number; oneTimeLeft: number };
 };
+
+/**
+ * How linkable this conversation is — **the figure and the sentences that qualify it, together.**
+ *
+ * `lines` is `describe(...)` from `channel/src/crowd.ts`, the same array the CLI prints and the
+ * TUI renders. It is not a paraphrase and this page does not write one: at the window this client
+ * reads, the rule that discounts automated accounts almost never fires, so batchers and bots
+ * publishing alongside you are counted as people — and `lines` is where that is said.
+ *
+ * **`known: false` is a third value and not a crowd of zero.** It means nothing has asked a node
+ * yet, which is not the same as a good answer.
+ */
+type HowLinkable = { known: boolean; crowd: number; identified: number; lines: string[] };
+
+/** What `POST …/send` answers with. `uploadAt` and `decoys` are the timing defence, made visible. */
+type Sent = { op: "send"; channel: string; signed: boolean; txHash: string; uploadAt: number; decoys: number };
 
 /** A refusal the API produced. `code` is branched on; the two sentences are shown verbatim. */
 type Refusal = { code: string; condition: string; remedy: string };
@@ -103,6 +139,21 @@ export function Session() {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [tried, setTried] = useState(false);
+  const [howLinkable, setHowLinkable] = useState<HowLinkable | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sent, setSent] = useState<Sent | null>(null);
+  /*
+   * ⛔ `busy` IS NOT A FAILURE AND IS HELD SEPARATELY FROM `refusal`.
+   *
+   * The client runs one write at a time by design and refuses a second rather than queueing it,
+   * because a queue turns a slow publish into the burst the timing defence exists to prevent. And
+   * the resident flush ticker takes that same lock every second — so a reader meets `busy` without
+   * ever double-clicking anything. Rendering it as an error would show failures during entirely
+   * normal operation, which teaches people to ignore this page's failures.
+   */
+  const [busy, setBusy] = useState<Refusal | null>(null);
+  /** Which write is in flight, so the buttons disable and the reader knows what is happening. */
+  const [working, setWorking] = useState<string | null>(null);
 
   /*
    * The token is held in a ref rather than in state: it is a credential, and state is the thing
@@ -122,11 +173,26 @@ export function Session() {
     }
   }, []);
 
+  /**
+   * ⛔ **WRITES ARE `POST`, NEVER `GET`, AND THAT IS THE API'S RULE RATHER THAN A STYLE.**
+   *
+   * A `GET` that publishes to a chain is reachable by prefetch, link preview and history replay —
+   * three ways a message gets published that nobody chose. The server refuses `GET` on these
+   * routes; this passes the method through so the page cannot drift from that.
+   */
   const call = useCallback(
-    async <T,>(path: string): Promise<{ ok: true; data: T } | { ok: false; err: Refusal }> => {
+    async <T,>(
+      path: string,
+      init?: { method: "POST"; body?: unknown },
+    ): Promise<{ ok: true; data: T } | { ok: false; err: Refusal }> => {
       try {
         const res = await fetch(`${base.replace(/\/$/, "")}/v1/gui${path}`, {
-          headers: token.current ? { "x-hydra-token": token.current } : {},
+          method: init?.method ?? "GET",
+          headers: {
+            ...(token.current ? { "x-hydra-token": token.current } : {}),
+            ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
+          },
+          body: init?.body === undefined ? undefined : JSON.stringify(init.body),
         });
         const body = await res.json().catch(() => null);
         if (!res.ok) {
@@ -171,14 +237,97 @@ export function Session() {
     async (name: string) => {
       setOpen(name);
       setMessages(null);
-      const m = await call<{ channel: string; messages: Message[] }>(
+      setSent(null);
+      const m = await call<{ channel: string; messages: Message[]; howLinkable: HowLinkable }>(
         `/channels/${encodeURIComponent(name)}/messages`,
       );
-      if (m.ok) setMessages(m.data.messages);
-      else setRefusal(m.err);
+      if (m.ok) {
+        setMessages(m.data.messages);
+        // Carried, not dropped. The figure and its caveat arrive together and are rendered together.
+        setHowLinkable(m.data.howLinkable ?? null);
+      } else setRefusal(m.err);
     },
     [call],
   );
+
+  /**
+   * One path for all three writes, because they fail in the same ways and a reader must be told
+   * about them in the same words.
+   *
+   * ⛔ **`status` IS RE-READ AFTER EVERY WRITE.** A write moves `pending`, `invitesLeft` and
+   * `queue.lastAttempt`, and a panel still showing the numbers from before the send is a panel
+   * that says the upload is fine because it has not looked.
+   */
+  const write = useCallback(
+    async <T,>(what: string, path: string, body?: unknown): Promise<T | null> => {
+      setWorking(what);
+      setBusy(null);
+      setRefusal(null);
+      const r = await call<T>(path, { method: "POST", body });
+      setWorking(null);
+      const s = await call<Status>("/status");
+      if (s.ok) setStatus(s.data);
+      if (r.ok) return r.data;
+      // Not a failure: one write at a time is the design, and nothing was lost.
+      if (r.err.code === "busy") setBusy(r.err);
+      else setRefusal(r.err);
+      return null;
+    },
+    [call],
+  );
+
+  /**
+   * ⛔ **`signed` IS PASSED EXPLICITLY AND THERE IS NO DEFAULT IN THIS FUNCTION.**
+   *
+   * The caller is a button that names the act. `send` and `publish` are two verbs in the CLI and a
+   * visible mode in the TUI for the same reason: a user who cannot tell which of the two they just
+   * did has neither deniability nor attribution — they have whatever the default was.
+   */
+  const sendNow = useCallback(
+    async (signed: boolean) => {
+      if (!open || draft.trim() === "") return;
+      const r = await write<Sent>("send", `/channels/${encodeURIComponent(open)}/send`, {
+        text: draft,
+        signed,
+      });
+      if (!r) return;
+      setDraft("");
+      setSent(r);
+      // The message is in history now, and its `basis` — the claim about what the signature
+      // settles — is generated upstream. Re-reading stored history is how the page shows it
+      // without writing a claim of its own.
+      const m = await call<{ messages: Message[]; howLinkable: HowLinkable }>(
+        `/channels/${encodeURIComponent(open)}/messages`,
+      );
+      if (m.ok) {
+        setMessages(m.data.messages);
+        setHowLinkable(m.data.howLinkable ?? null);
+      }
+    },
+    [open, draft, write, call],
+  );
+
+  /**
+   * Fetch new messages. **This is the one that costs a chain scan and a vault batch**, which is why
+   * it is a verb the reader presses rather than something the page does on a timer.
+   */
+  const readNow = useCallback(async () => {
+    if (!open) return;
+    const r = await write<{ messages: Message[]; howLinkable: HowLinkable }>(
+      "read",
+      `/channels/${encodeURIComponent(open)}/read`,
+    );
+    if (!r) return;
+    setMessages(r.messages);
+    // Recomputed AFTER the scan, not carried from before it: a read is the only thing that learns
+    // who else was publishing, so this is the one response where the crowd can have just changed.
+    setHowLinkable(r.howLinkable ?? null);
+  }, [open, write]);
+
+  /** Upload what is due. One object per flush — a set of one is not a set an operator can group. */
+  const flushNow = useCallback(async () => {
+    await write<{ uploaded: number; waiting: number }>("flush", "/flush");
+  }, [write]);
 
   // Every route is stored-state-only — no network, no chain scan — so connecting on arrival costs
   // the reader nothing and saves them a click they would always make.
@@ -271,6 +420,19 @@ export function Session() {
 
         <section className="session-block">
           <h2>{open ?? "Messages"}</h2>
+          {open && (
+            <div className="session-actions">
+              <button type="button" className="button" onClick={() => void readNow()}
+                      disabled={working !== null}>
+                {working === "read" ? "Reading…" : "Fetch new messages"}
+              </button>
+              <button type="button" className="button" onClick={() => void flushNow()}
+                      disabled={working !== null}>
+                {working === "flush" ? "Uploading…" : "Upload what is due"}
+              </button>
+            </div>
+          )}
+          {open && <LinkabilityNote how={howLinkable} />}
           {messages && messages.length > 0 ? (
             <ol className="session-messages">
               {messages.map((m) => (
@@ -298,9 +460,20 @@ export function Session() {
               ))}
             </ol>
           )}
+
+          {open && (
+            <Compose
+              draft={draft}
+              setDraft={setDraft}
+              working={working}
+              onSend={(signed) => void sendNow(signed)}
+            />
+          )}
+          {sent && <SentNote sent={sent} />}
         </section>
       </div>
 
+      {live && busy && <BusyNote busy={busy} />}
       {live && refusal && <RefusalNote refusal={refusal} />}
     </div>
   );
@@ -328,6 +501,130 @@ function RefusalNote({ refusal }: { refusal: Refusal }) {
   );
 }
 
+/**
+ * ⛔ **`busy` IS A NOTICE, NOT A FAILURE, AND THE DISTINCTION IS NOT COSMETIC.**
+ *
+ * The client runs one write at a time and REFUSES a second rather than queueing it — a queue would
+ * turn a slow publish into the burst the timing defence exists to prevent. And the resident flush
+ * ticker takes that same lock every second, so a reader meets this without ever double-clicking:
+ * it arrives during ordinary use, from an operation they did not start.
+ *
+ * Nothing was lost, so this does not clear the view and does not read as an error. The API's own
+ * two sentences are still shown, because they are the ones that say so.
+ */
+function BusyNote({ busy }: { busy: Refusal }) {
+  return (
+    <div className="session-busy" role="status">
+      <p className="msg-text">{busy.condition}</p>
+      <p className="prose-body">{busy.remedy}</p>
+    </div>
+  );
+}
+
+/**
+ * ⛔ **THE FIGURE AND ITS QUALIFICATION, OR NEITHER.**
+ *
+ * `lines` is `describe(...)` — the same array the CLI prints and the TUI renders, generated from
+ * the same measurement. This component renders it and writes nothing of its own, because a page
+ * that renders attribution or linkability is a front end, and `no-invented-claims.test.ts` holds
+ * that no front end makes a privacy claim in its own words. Four hand-written claims have already
+ * been false.
+ *
+ * **The count on its own is the reassuring half.** At the window this client reads, the rule that
+ * discounts automated accounts almost never fires, so batchers and bots publishing alongside you
+ * are counted as people — and `lines` is where that is said. Rendering `crowd` without `lines`
+ * would show the flattering number and drop the sentence that qualifies it.
+ *
+ * `known: false` is a THIRD state. It means nothing has asked a node who else was publishing,
+ * which is not a crowd of zero and is not a good answer either — so the number is not shown at
+ * all in that case, and the lines say why.
+ */
+function LinkabilityNote({ how }: { how: HowLinkable | null }) {
+  if (!how) return null;
+  return (
+    <div className="session-linkability">
+      {how.known && (
+        <p className="prose-label">
+          crowd {how.crowd} · identified {Math.round(how.identified * 100)}%
+        </p>
+      )}
+      {how.lines.map((line, i) => (
+        <p className="prose-body" key={i}>{line}</p>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What a successful send actually promised, which is less than "sent".
+ *
+ * **A 200 here means the chain event is published and the upload is SCHEDULED**, not that it has
+ * happened. `uploadAt` is when the object is due and `decoys` is how many cover objects go with
+ * it — the message and its cover are uploaded on a schedule precisely so an operator cannot pick
+ * the real one out by when it arrived. Showing the two is the honest answer to "why has it not
+ * gone out yet", and it is why the queue panel above it matters.
+ */
+function SentNote({ sent }: { sent: Sent }) {
+  return (
+    <div className="session-sent" role="status">
+      <p className="prose-body">
+        Published to the chain{sent.signed ? ", signed" : ", deniable"}. The upload is due at{" "}
+        {new Date(sent.uploadAt).toLocaleTimeString()} with {sent.decoys} decoys — it is scheduled
+        rather than immediate, because a message that goes up the moment you send it is one an
+        operator can match to the chain event beside it.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * ⛔ **TWO BUTTONS, NO DEFAULT, AND NO STATE BETWEEN CHOOSING AND SENDING.**
+ *
+ * `signed` and deniable are two acts, not one act with a setting. The CLI makes them two verbs;
+ * the TUI puts the mode on its model so it is visible before Enter. A checkbox here would have a
+ * default, and a default is exactly what a user does not notice they accepted — *"a user who
+ * cannot tell which of the two they just did has neither."*
+ *
+ * **The labels name the act and make no claim about it.** "Deniable" as a guarantee is a privacy
+ * claim, and this file may not write one — the claim arrives on the message itself, as the
+ * generated `basis` beside it, once the send returns. That is the same split the legend uses.
+ */
+function Compose({
+  draft, setDraft, working, onSend,
+}: {
+  draft: string;
+  setDraft: (v: string) => void;
+  working: string | null;
+  onSend: (signed: boolean) => void;
+}) {
+  const empty = draft.trim() === "";
+  return (
+    <form className="session-compose" onSubmit={(e) => e.preventDefault()}>
+      <label htmlFor="draft">
+        <span className="label">MESSAGE</span>
+        <textarea
+          id="draft"
+          name="draft"
+          rows={3}
+          value={draft}
+          spellCheck={false}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+      </label>
+      <div className="session-compose-acts">
+        <button type="button" className="button" disabled={empty || working !== null}
+                onClick={() => onSend(false)}>
+          {working === "send" ? "Sending…" : "Send deniable"}
+        </button>
+        <button type="button" className="button" disabled={empty || working !== null}
+                onClick={() => onSend(true)}>
+          {working === "send" ? "Sending…" : "Send signed"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function StatusPanel({ status }: { status: Status | null }) {
   const scanningWholeChain = !!status?.chain?.contract && status?.chain?.fromBlock === 0;
   /* The wireframe's rows: the same keys, with a bar where the value will be. */
@@ -336,7 +633,8 @@ function StatusPanel({ status }: { status: Status | null }) {
       <section className="session-block">
         <h2>This machine</h2>
         <dl className="session-status">
-          {["IDENTITY", "STATE FILE", "AT REST", "VAULT", "NETWORK", "ROUTE", "INVITES LEFT"].map((k) => (
+          {["IDENTITY", "STATE FILE", "AT REST", "VAULT", "NETWORK", "ROUTE", "INVITES LEFT",
+            "PENDING UPLOAD"].map((k) => (
             <div className="session-row" key={k}>
               <dt className="label">{k}</dt>
               <dd><span className="wire wire-value" /></dd>
@@ -362,6 +660,8 @@ function StatusPanel({ status }: { status: Status | null }) {
         {status.queue && <Row k="PENDING UPLOAD" v={String(status.queue.pending)} />}
       </dl>
 
+      <UploadHealth queue={status.queue} />
+
       {/*
         Degraded, not broken — and it has a remedy, so it is stated rather than left to be felt as
         slowness. The TUI surfaces the same condition on its status line.
@@ -373,6 +673,55 @@ function StatusPanel({ status }: { status: Status | null }) {
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * ⛔ **WHETHER UPLOADS ARE WORKING, WHICH `pending` ALONE CANNOT SAY.**
+ *
+ * A queue of 3 looks identical whether the vault is answering or has been dead for ten minutes —
+ * every other field in `status` comes from the state file, and `nextUploadAt` sits in the past
+ * either way. That is exactly what a reader watched before `lastAttempt` existed, while believing
+ * their messages were going out.
+ *
+ * **Three states, because `null` is not success.** "No attempt yet" and "the last attempt worked"
+ * are different facts, and a blank renders as the reassuring one. A queue that is not draining has
+ * to LOOK different from one that is, not merely carry a field that says so.
+ *
+ * `problem` is the API's sentence, shown verbatim — the same words the CLI's `die()` and the TUI
+ * print for the same dead vault. This page does not paraphrase it and does not write its own.
+ */
+function UploadHealth({ queue }: { queue: Status["queue"] }) {
+  if (!queue) return null;
+  const a = queue.lastAttempt;
+  if (a === undefined || a === null) {
+    return (
+      <p className="session-degraded">
+        No upload has been attempted yet. That is not the same as one that succeeded — nothing here
+        has been sent to the vault, so nothing has confirmed it is reachable.
+      </p>
+    );
+  }
+  if (a.ok) {
+    return (
+      <p className="prose-body">
+        Last upload attempt succeeded at {new Date(a.at).toLocaleTimeString()}
+        {a.uploaded > 0 ? `, ${a.uploaded} object${a.uploaded === 1 ? "" : "s"} uploaded` : ""}.
+      </p>
+    );
+  }
+  return (
+    <div className="session-degraded" role="status">
+      <p className="msg-text">
+        {queue.pending > 0
+          ? `${queue.pending} object${queue.pending === 1 ? " is" : "s are"} queued and the queue is not draining.`
+          : "The last upload attempt failed."}{" "}
+        {a.consecutiveFailures} attempt{a.consecutiveFailures === 1 ? "" : "s"} in a row have failed.
+      </p>
+      {/* The API's own sentence. Not paraphrased — three surfaces disagreeing about what went
+          wrong is a defect this project has found repeatedly. */}
+      {a.problem && <p className="prose-body">{a.problem}</p>}
+    </div>
   );
 }
 
