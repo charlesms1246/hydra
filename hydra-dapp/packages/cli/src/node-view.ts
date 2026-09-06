@@ -9,7 +9,8 @@
  *
  * That is the same defect this project has now found four times: a guard or a table scoped to
  * what it was written for, silently not covering the thing that arrived later. The node was
- * always there. `decisions/0029` needed one row from it and found the table missing.
+ * always there. Telling a user how linkable sending would be needed one row from it, and found
+ * the table missing.
  *
  * WHY IT IS A SEPARATE TABLE AND NOT MORE ROWS ON THE VAULT'S. They are different parties who
  * see different things, and a user choosing a vault is not choosing a node. Merging them would
@@ -51,7 +52,7 @@ export const NODE_OBSERVABLE: readonly NodeObservation[] = [
   {
     id: "node.readTiming",
     what: "when each read happens — and so that a read arrived immediately before a publish from the same address",
-    why: "THE ROW `decisions/0029` NEEDS BEFORE ANY OF IT SHIPS. Reading the chain to tell a user how linkable sending would be means a read, then a send, from one address, seconds apart. That join is not on any other table: the vault never sees it, and `linkage.ts` scopes the submitting endpoint out. Reading on a schedule rather than on demand removes it and a warm cache removes the read entirely; neither is free, and neither is done yet",
+    why: "THE ROW THE LINKABILITY FIGURE NEEDS BEFORE ANY OF IT SHIPS. Reading the chain to tell a user how linkable sending would be means a read, then a send, from one address, seconds apart. That join is not on any other table: the vault never sees it, and `linkage.ts` scopes the submitting endpoint out. Reading on a schedule rather than on demand removes it and a warm cache removes the read entirely; neither is free, and neither is done yet",
   },
   {
     id: "node.recordLookup",
@@ -61,7 +62,7 @@ export const NODE_OBSERVABLE: readonly NodeObservation[] = [
   {
     id: "node.blockScan",
     what: "which range of blocks a client read in full, and therefore that it is working out who published and when",
-    why: "neither a sender nor a timestamp is in an event record — the sender is on the transaction and the time is on the block — so telling a user how linkable sending is right now (`decisions/0029`) costs one `starknet_getBlockWithTxs` per block in the window. The node learns the range and learns that this client cares who else was publishing, which the event read alone did not say. IT IS A RANGE AND NOT A SELECTION, which is what keeps `node.wantedEvent` true: a client scanning only the blocks it found interesting would tell the node which ones those were, and a range cannot be a chosen subset. This replaced a per-transaction lookup that answered `who` and not `when`, which is why it is a range at all. Settled history does not change, so the answers are cached and a window is paid for once",
+    why: "neither a sender nor a timestamp is in an event record — the sender is on the transaction and the time is on the block — so telling a user how linkable sending is right now costs one `starknet_getBlockWithTxs` per block in the window. The node learns the range and learns that this client cares who else was publishing, which the event read alone did not say. IT IS A RANGE AND NOT A SELECTION, which is what keeps `node.wantedEvent` true: a client scanning only the blocks it found interesting would tell the node which ones those were, and a range cannot be a chosen subset. This replaced a per-transaction lookup that answered `who` and not `when`, which is why it is a range at all. Settled history does not change, so the answers are cached and a window is paid for once",
   },
   {
     id: "node.submission",

@@ -25,7 +25,7 @@ export type Chain = {
    * could not otherwise see: when an event happened, on a clock that is not the wall clock, and
    * — via one more call per transaction — which account published it. `channel.activeAccount` on
    * the disclosure table is about exactly that join, so a client that wants to tell a user how
-   * linkable sending is right now starts here. See `decisions/0029`.
+   * linkable sending is right now starts here — `channel/src/crowd.ts` is what consumes it.
    *
    * BOTH ARE OPTIONAL, AND THE REASON IS THE REVERSE OF THE ONE THAT USED TO BE WRITTEN HERE.
    *
@@ -233,7 +233,7 @@ export function starknet(config: ChainConfig, fetchImpl: typeof fetch = fetch): 
         for (const e of page.events) {
           // `block_number` and `transaction_hash` arrive in the SAME response as `data`. Keeping
           // them costs nothing and they are the only route to when an event happened and who
-          // published it — see the type above and `decisions/0029`.
+          // published it — see the type above.
           out.push({
             data: e.data.map((d) => BigInt(d)),
             blockNumber: e.block_number,
@@ -342,7 +342,7 @@ export function poolChain(
  * ever produced a number would stop testing it — which is how the last one went wrong.
  */
 /**
- * An in-memory chain, and **a harder one than it was** — `decisions/0041` (the fakes audit).
+ * An in-memory chain, and **a harder one than it was** after an audit of what the fakes let pass.
  *
  * A fake that is easier than reality hides every bug in the code that copes with reality, and this
  * one has already cost five bugs in one feature. Three things changed:

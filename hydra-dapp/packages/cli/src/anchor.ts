@@ -1,11 +1,11 @@
 /**
- * Putting a record on chain, and reading a stranger's back — the transport `decisions/0027` left
+ * Putting a record on chain, and reading a stranger's back — the transport that anchoring left
  * out on purpose.
  *
  * That decision shipped `record.ts` with the felts emitted to the terminal and a note saying the
  * chain write was deliberately not built: "the Starknet ID data ABI is not verified anywhere in
  * this repo, and a record written under a guessed entrypoint is a record nobody looks at."
- * `decisions/0031` verified it against the deployed classes on both networks. This is that
+ * Its data ABI is verified against the deployed classes on both networks. This is that
  * verification as code, and every constant here was read off a deployed ABI rather than a doc.
  *
  * WHY STARKNET ID AT ALL. A record has to live at an address a stranger can find from something
@@ -140,7 +140,7 @@ export function writeRecordCalldata(id: bigint, felts: readonly bigint[]): strin
  * DERIVED, NOT RECALLED, like every selector here. It is a 250-bit number, and a wrong one does not
  * fail loudly: it fails as "entrypoint not found" or, worse, as somebody else's function. This one
  * is also confirmed present in the deployed class's external entry points — see
- * `live-record-anchor.test.ts`, which has been reading it off mainnet since `decisions/0031`.
+ * `live-record-anchor.test.ts`, which has been reading it off mainnet ever since.
  */
 const GET_MAIN_ID = "0x108d63199bb92aa213225174d82be925dc326995019eb66c83b1cc38b90642e";
 
@@ -149,7 +149,7 @@ const GET_MAIN_ID = "0x108d63199bb92aa213225174d82be925dc326995019eb66c83b1cc38b
  *
  * The first half of looking somebody up by address, which is the thing that had no path: a bundle
  * could only reach a stranger out of band, so a source had to already have a relationship with the
- * organisation they were anonymously contacting. See `decisions/0038` step 3.
+ * organisation they were anonymously contacting.
  */
 export function mainIdCall(address: bigint, network: string): {
   contract_address: string; entry_point_selector: string; calldata: string[];

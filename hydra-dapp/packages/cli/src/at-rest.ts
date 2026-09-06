@@ -1,5 +1,5 @@
 /**
- * The state file, encrypted with a passphrase — `decisions/0040`.
+ * The state file, encrypted with a passphrase.
  *
  * `state.ts` used to say the seed was on disk in the clear, that `0600` was the only protection
  * there is, and that this was "a client for a devnet and a testnet, not for anyone whose safety

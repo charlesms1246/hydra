@@ -3,8 +3,8 @@
  * `hydra` — the messaging client, as a command.
  *
  * The scriptable front end. The one people use is the TUI (`packages/tui/`), which is a resident
- * process and therefore the only one that can keep the upload schedule — see
- * `decisions/0022-tui-and-the-resident-client.md`. This stays because the live suites drive it,
+ * process and therefore the only one that can keep the upload schedule, because a command that
+ * exits cannot flush on a timer. This stays because the live suites drive it,
  * because a shell script cannot drive a terminal interface, and because both call `commands.ts`,
  * so the two cannot disagree about anything that matters.
  *
@@ -294,8 +294,8 @@ switch (command) {
     console.error("stranger can check a signature you made without ever talking to you.");
     console.error("");
     // WAS FALSE UNTIL THIS LINE. It told users the identity contract's data ABI is "not verified
-    // anywhere in this repo" — `decisions/0031` verified it against the deployed class and landed
-    // a record on Sepolia, so the client was reporting less confidence than it had, in a message
+    // anywhere in this repo" — it has since been verified against the deployed class and a record
+    // landed on Sepolia, so the client was reporting less confidence than it had, in a message
     // whose whole job is to help somebody decide. A stale user-facing string is a claim, and this
     // one was wrong in the direction that talks a user out of a thing that works.
     for (const line of RECORD_NOT_WRITTEN.full) console.error(line);
@@ -336,7 +336,7 @@ switch (command) {
   }
 
   case "lookup": {
-    // The step `decisions/0038` found had no path. A bundle could only reach a stranger out of
+    // The step that had no path. A bundle could only reach a stranger out of
     // band, so a source needed a prior relationship with the organisation they were anonymously
     // contacting — a prerequisite sitting in front of the surface, undoing its premise.
     const state = load();
@@ -444,7 +444,7 @@ switch (command) {
     if (signed) {
       // STANDING RULE 7: publishing is an act, so what the act commits you to belongs in it.
       //
-      // The appeal path (`decisions/0035` §5) proves authorship by signing with the account that
+      // The appeal path proves authorship by signing with the account that
       // published. That instrument is the only identity in this system — and the anonymity design
       // pushes the other way: the value-free route works once per account, and the shape it
       // encourages is publish-once-and-never-return. So the more correctly someone follows it, the
@@ -457,7 +457,7 @@ switch (command) {
       console.log("");
     }
     // The crowd, on the page that performs the act — the same rule the disclosure text above
-    // follows. `decisions/0029`: it is a cost, in the past tense, and it only goes down.
+    // follows: it is a cost, in the past tense, and it only goes down.
     for (const line of describe(linkabilityOf(state, name))) console.log(line);
     console.log("");
     console.log("NOTE: that transaction was signed by your own account, so the chain shows that");
@@ -491,7 +491,7 @@ switch (command) {
 
   case "audit": {
     // THE CONSUMER OF THE COMMITMENT, and it belongs in a CLIENT rather than in the operator's
-    // tool: the whole claim of `decisions/0039` is that anybody can check a removal without the
+    // tool: the whole claim of a verifiable removal is that anybody can check one without the
     // operator's cooperation. A verifier only the operator runs is a verifier nobody has.
     const state = load();
     const [blobId, root] = positional;
@@ -629,7 +629,7 @@ switch (command) {
   }
 
   case "lock": {
-    // A NAMED OPERATION WITH A CONFIRMATION, which is `decisions/0040` §5: forgetting the
+    // A NAMED OPERATION WITH A CONFIRMATION: forgetting the
     // passphrase destroys every conversation irreversibly, and until now that was not an operation
     // at all — which is why the destructive-operations table had no row for it. A table of
     // operations cannot see an omission.
