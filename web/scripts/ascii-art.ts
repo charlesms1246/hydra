@@ -1,6 +1,11 @@
 /**
  * Dithered ASCII imagery, generated from the project's own drawing at build time.
  *
+ * ⚠ **THIS DESCRIBES THE PIPELINE, NOT EVERY INPUT IT IS GIVEN.** The full-bleed drawing below is
+ * generated from `art.txt`. The three per-card sources in `public/ascii/` are separate files with
+ * a separate origin, recorded in `components/viz/AsciiImage.tsx` — read that before concluding
+ * anything about where they came from.
+ *
  * **This is the site's picture, and it had to be generated rather than found.** The reference's
  * visual mass is dense dithered fields rendered from real images; the equivalent here cannot be a
  * rasterised logo, because the mark is a third party's trademark and absent from a public build.

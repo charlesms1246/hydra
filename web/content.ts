@@ -82,9 +82,13 @@ export const SITE = {
   /**
    * The three cards, on the reference's MECHANICS layout — see `app/page.tsx`.
    *
-   * Each names its own source in `public/ascii/` — the reference's three greyscale placeholders,
-   * used on its instruction. They were three crops of `art.txt`, which is one picture cut three
-   * ways and reads as one picture cut three ways.
+   * Each names its own source in `public/ascii/`. They were three crops of `art.txt`, which is one
+   * picture cut three ways and reads as one picture cut three ways; they are now three separate
+   * figures, one per card.
+   *
+   * **Where those files came from is recorded once, in `components/viz/AsciiImage.tsx`.** This
+   * comment used to give its own version — "the reference's three greyscale placeholders" — which
+   * is how a reader ended up believing the site shipped third-party art it does not ship.
    */
   why: [
     {
