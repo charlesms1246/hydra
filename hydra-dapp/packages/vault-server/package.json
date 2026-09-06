@@ -4,5 +4,8 @@
   "private": true,
   "type": "module",
   "description": "Phase 3 — the vault. The operator-view disclosure table lives here.",
-  "engines": { "node": ">=24" }
+  "engines": { "node": ">=24" },
+  "bin": {
+    "hydra-vault": "src/main.ts"
+  }
 }

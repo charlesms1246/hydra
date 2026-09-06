@@ -6,8 +6,19 @@
  * until now it was a class with an HTTP adapter and no way to start it — which meant the
  * disclosure table described something nobody could run.
  *
- *     node packages/vault-server/src/main.ts --generate-invites 50   # mint codes and stop
- *     node packages/vault-server/src/main.ts --port 8080 --dir ./vault --invites-file codes.txt
+ *     hydra-vault --generate-invites 50   # mint codes and stop
+ *     hydra-vault --port 8080 --dir ./vault --invites-file codes.txt
+ *
+ * Or by path, which is what it was before this package declared a `bin` and is still what the
+ * repository itself uses:
+ *
+ *     node packages/vault-server/src/main.ts --generate-invites 50
+ *
+ * `hydra-vault` IS ITS OWN BINARY AND MUST STAY ONE. Invariant I8 forbids operator powers
+ * arriving as subcommands on `hydra` — `i8-operator-separation.test.ts` is the guard — because a
+ * client and an operator tool have opposite trust assumptions. A separate binary on a separate
+ * package is the shape the invariant permits, and it is the reason the vault is its own package
+ * at all. Do not add a `vault` verb to the client to reach this.
  *
  * Add `--removal-token-file ./removal.token` to be able to take a public post down. Without it
  * every takedown is refused — see `ERRORS.md` E-UNREACHABLE for the time that was not on purpose.
