@@ -22,12 +22,13 @@ so cwd does not matter.
 
 ## Run
 
-All paths below are from the repo root.
+All paths below are from the repository root, which is the parent of `devtool/` since
+the split — they carried the pre-split framing and did not run as written.
 
 ```bash
-npm install --prefix experiments/07-client-discovery-cost
-node experiments/07-client-discovery-cost/sweep.mjs       # scaling      -> results.json
-node experiments/07-client-discovery-cost/ratelimit.mjs   # throttling   -> results-ratelimit.json
+npm install --prefix devtool/experiments/07-client-discovery-cost
+node devtool/experiments/07-client-discovery-cost/sweep.mjs       # scaling      -> results.json
+node devtool/experiments/07-client-discovery-cost/ratelimit.mjs   # throttling   -> results-ratelimit.json
 ```
 
 Both write their JSON next to the script, not into the cwd.

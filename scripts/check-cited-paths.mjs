@@ -77,7 +77,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -146,9 +146,17 @@ function citations(text, bare = false) {
  */
 const BASES = ["", "devtool/", "hydra-dapp/", "web/", "claude-docs/"];
 
-/** The one path this candidate names, or null if it names nothing that exists. */
-function resolve(path) {
-  for (const base of BASES) {
+/**
+ * The one path this candidate names, or null if it names nothing that exists.
+ *
+ * `from` is the directory of the document doing the citing, tried FIRST and for the same reason
+ * `BASES` exists at all: it is where that document's reader is standing. `devtool/packages/leak/
+ * README.md` writes `src/leak.mjs` and means its own `src/`, which no repo-root base can find —
+ * and a guard that reported those as broken would be wrong about every nested README at once,
+ * which is the fastest way to get a guard switched off.
+ */
+function resolve(path, from = "") {
+  for (const base of (from ? [from, ...BASES] : BASES)) {
     const full = base + path;
     if (existsSync(join(ROOT, full))) return full;
     // `findings/06` and `decisions/0012` are prefixes of a filename, which is how people cite
@@ -221,6 +229,34 @@ const OUTWARD = [
 ];
 
 /**
+ * Every tracked markdown file, DERIVED — and its absence was a guard describing a corpus larger
+ * than the one it walked.
+ *
+ * The comment at `--source` below has always said the ruling covers *"printed CLI output, the
+ * generated documents, README"*. `DOCS` is `claude-docs/` and `OUTWARD` names four files inside
+ * it, so the README was in the stated scope and never in the walked one. **The comment has been
+ * asserting the wider coverage the whole time.**
+ *
+ * What that cost: root `README.md` told a new user to run
+ * `hydra() { node packages/cli/src/cli.mjs "$@"; }` — a path that moved under `devtool/` in the
+ * repo split. The first command in the quick start was `MODULE_NOT_FOUND`.
+ *
+ * ⚠ AND WIDENING THE CORPUS ALONE WOULD NOT HAVE CAUGHT IT — measured, by putting the old path
+ * back and re-running. `BASES` tries `devtool/`, so `packages/cli/src/cli.mjs` resolves to a file
+ * a clone contains and this half of the guard passes it, correctly: **a reader CAN open it.** The
+ * defect was that a reader cannot RUN it, which is a different question, and the prefix tolerance
+ * that makes the first question answerable is exactly what blinds it to the second. See
+ * `runnable` below, which is the half that catches it.
+ *
+ * DERIVED FROM `git ls-files`, NOT LISTED, and that is the fix rather than adding `README.md` to
+ * the array above. A hand-kept list of documents is what produced this: it cannot notice a
+ * document that is added, and a new nested README would sit unchecked exactly as this one did.
+ * `claude-docs/` is gitignored, so these two sets do not overlap — `OUTWARD` names the untracked
+ * documents, and this is everything a clone actually contains.
+ */
+const TRACKED_DOCS = [...tracked].filter((f) => f.endsWith(".md"));
+
+/**
  * `--source`: THE SAME QUESTION ASKED OF THE OTHER CORPUS, AND THE ONE THAT HAS A STRANGER FOR A
  * READER.
  *
@@ -278,7 +314,7 @@ const files = (source
   ? [...tracked].filter((f) => SOURCE_EXT.test(f) && f !== SELF).map((f) => join(ROOT, f))
   : (all
     ? readdirSync(DOCS, { recursive: true }).filter((f) => String(f).endsWith(".md")).map(String)
-    : OUTWARD).map((f) => join(DOCS, f)))
+    : OUTWARD).map((f) => join(DOCS, f)).concat(TRACKED_DOCS.map((f) => join(ROOT, f))))
   .filter((f) => existsSync(f) && statSync(f).isFile())
   .sort();
 
@@ -292,8 +328,10 @@ const failures = [];
 for (const file of files) {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
+  const rel = file.slice(ROOT.length + 1);
+  const from = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "";
   for (const c of citations(text, source)) {
-    const full = resolve(c.path);
+    const full = resolve(c.path, from);
     // **A CITATION IN A FORMAT THIS REPOSITORY DEFINES IS NEVER "not a path".** `decisions/NNNN`
     // and `claude-docs/…` are ours; one that resolves to nothing is a defect, not an unrecognised
     // shape, and the discard below is exactly the branch that swallowed it.
@@ -343,6 +381,78 @@ for (const file of files) {
 
 // Vacuity. A matcher that silently found nothing would pass every check above, which is the
 // failure mode a guard of this shape actually has.
+/**
+ * Commands in a shell block are RUN, not opened — so no base tolerance.
+ *
+ * `resolve` asks whether a path names something a reader can open, and answers yes for
+ * `packages/cli/src/cli.mjs` because `devtool/packages/cli/src/cli.mjs` exists. That is the right
+ * answer to that question and the wrong one here: a reader who types the command is standing at
+ * the repository root, and there is no `packages/` there. The quick start was `MODULE_NOT_FOUND`
+ * for a year of commits while every citation in it resolved.
+ *
+ * So this checks the one thing the rest of the file deliberately does not: the literal string,
+ * from the root, exactly as typed. Only interpreter invocations, because those are the ones whose
+ * argument is unambiguously a path in this repository — a bare command name is on PATH or is not,
+ * which is a different problem with its own guard.
+ */
+const RUNNER = /(?:^|[|&;({]\s*|\$\s*)(?:node|bash|sh)\s+(\.{0,2}[\w./-]+\.(?:mjs|cjs|js|ts|sh))/;
+const REPO_DIR = ROOT.slice(ROOT.replace(/\/$/, "").lastIndexOf("/") + 1).replace(/\/$/, "");
+const unrunnable = [];
+for (const file of files) {
+  const rel = file.slice(ROOT.length + 1);
+  // Only documents a clone contains: `claude-docs/` is gitignored, so its shell blocks are
+  // instructions to us rather than to a reader standing in a checkout.
+  if (!tracked.has(rel)) continue;
+  const text = readFileSync(file, "utf8");
+  for (const block of text.matchAll(/```(?:bash|sh|console|shell)\n([\s\S]*?)```/g)) {
+    /*
+     * A block is read top to bottom and `cd` moves the reader, so the working directory has to be
+     * tracked rather than assumed. `devtool/archive/README.md` says `cd packages/gui && node
+     * src/server.mjs`, which is correct from there and was the one false positive the first
+     * version produced.
+     *
+     * ⚠ WHERE THE DIRECTORY BECOMES UNKNOWN, THIS STOPS CHECKING rather than guessing. A `cd`
+     * into somewhere that is not this repository — a clone of upstream, a temp dir — means the
+     * guard cannot know what a relative path resolves against, and a guard that keeps checking
+     * past the point it knows the answer is the shape this whole file argues against. It
+     * under-reports there, which is the direction that does not cry wolf.
+     *
+     * `cd <reponame>` is the exception and it is the case this guard exists for: the quick start
+     * is `git clone …/hydra.git && cd hydra`, after which the reader is standing at ROOT.
+     */
+    let cwd = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "";
+    let known = true;
+    for (const line of block[1].split("\n")) {
+      const cd = /(?:^|[|&;]\s*)cd\s+([\w./-]+)/.exec(line);
+      if (cd) {
+        if (cd[1] === REPO_DIR) { cwd = ""; known = true; }
+        else if (existsSync(join(ROOT, cwd + cd[1]))) cwd = cwd + cd[1].replace(/\/?$/, "/");
+        else known = false;
+      }
+      if (!known) continue;
+      const m = RUNNER.exec(line);
+      if (!m) continue;
+      const arg = m[1];
+      if (arg.startsWith("<") || arg.includes("$")) continue; // a placeholder, not a path
+      /*
+       * Accepted if it resolves from the tracked cwd OR from the repository root, and reported
+       * only when it resolves from NEITHER.
+       *
+       * Both conventions are in use and the document does not always say which:
+       * `devtool/packages/leak/README.md` writes `node src/cli.mjs` meaning its own package, and
+       * `devtool/experiments/07-client-discovery-cost/README.md` says outright "all paths below
+       * are from the repository root". A guard that picked one would be wrong about the other
+       * half of the repository's READMEs. Requiring failure under both readings means every
+       * report is unambiguously broken — which is the only kind worth waking someone for, and it
+       * still catches the case this exists for: `packages/cli/src/cli.mjs` resolves from neither.
+       */
+      if (!existsSync(join(ROOT, cwd + arg)) && !existsSync(join(ROOT, arg))) {
+        unrunnable.push({ file: rel, arg, cwd: cwd || "." });
+      }
+    }
+  }
+}
+
 const problems = [];
 // Not "at least N files" — that was calibrated to a scope which has since changed, and a
 // threshold that moves with the list is not a check. Every named document must have been found:
@@ -350,6 +460,22 @@ const problems = [];
 if (!all && !source) {
   const missing = OUTWARD.filter((f) => !files.some((x) => x.endsWith("/" + f)));
   if (missing.length) problems.push(`named but not scanned: ${missing.join(", ")}`);
+  // The derived half needs its own vacuity check, and it cannot be a count: `git ls-files` IS the
+  // list, so comparing it to itself proves nothing. What can go wrong is the corpus silently
+  // emptying — a bad filter, a `tracked` that failed to populate — so require the one document
+  // whose absence started this, by name.
+  const docs = TRACKED_DOCS.filter((f) => files.some((x) => x === join(ROOT, f)));
+  if (docs.length !== TRACKED_DOCS.length) {
+    problems.push(`${TRACKED_DOCS.length - docs.length} tracked document(s) derived but not scanned`);
+  }
+  if (!TRACKED_DOCS.includes("README.md")) {
+    problems.push("README.md is not in the derived corpus — the walk is not seeing tracked markdown");
+  }
+}
+if (unrunnable.length) {
+  problems.push(`${unrunnable.length} shell command(s) name a path that does not exist in `
+    + `the directory their block is run from: `
+    + unrunnable.map((u) => `${u.file} (in ${u.cwd}) -> ${u.arg}`).join(", "));
 }
 if (source && files.length < 50) {
   problems.push(`only ${files.length} tracked source files scanned — the corpus is wrong`);
@@ -394,7 +520,11 @@ if (tracked.size < 100) problems.push(`git ls-files returned only ${tracked.size
 
 console.log(source
   ? `scanned  ${files.length} tracked source files`
-  : `scanned  ${files.length} documents in claude-docs/`);
+  // Names both halves, because "documents in claude-docs/" was true of the corpus this walked
+  // before the tracked ones were added and would now understate it by seven — a summary line that
+  // describes a smaller scope than the walk is the same defect this extension was fixing.
+  : `scanned  ${files.length} documents (${OUTWARD.length} in claude-docs/, `
+    + `${TRACKED_DOCS.length} tracked)`);
 console.log(`tracked  ${ok} citations resolve to a file a clone contains`);
 console.log(`held     ${markedHeld} are untracked and say so`);
 console.log(`unmarked ${unmarked} are untracked and do not`);
@@ -471,4 +601,93 @@ if (overMarked.length) {
   for (const o of [...new Set(overMarked)].sort().slice(0, 10)) console.log(`  ${o}`);
 }
 
-process.exit(inCodeFailures.length ? 1 : 0);
+/*
+ * ---------------------------------------------------------------------------
+ * Citations from code to TESTS, added 2026-09-06
+ * ---------------------------------------------------------------------------
+ *
+ * **THE SAME PROMISE IN THE SAME SHAPE, AND IT WAS UNCHECKED.** Everything above is code citing a
+ * DOCUMENT. `moderation/src/reports.ts` carried "store.test.ts checks that no decided object has a
+ * body anywhere in the file, which is the property this comment claims" — and no such file has
+ * ever existed here, and nothing asserted the property. The code was correct; nothing held it
+ * there.
+ *
+ * That is the worst version of a stale pointer. An unguarded property is a gap. An unguarded
+ * property **carrying a sentence that says it is guarded** turns away the one reader best placed
+ * to close it, which is why this is worth a check rather than a fix and a shrug.
+ *
+ * ## THE RULE, AND WHY IT NEEDS NO ALLOWLIST
+ *
+ * **A backtick is the citation marker.** A backticked `*.test.ts` is a claim that the file exists;
+ * a file discussed BECAUSE it does not exist is written without them. That single convention is
+ * what keeps this from needing named exceptions — the three violations found when this was written
+ * were all prose describing the missing file, and un-backticking them was the correct fix rather
+ * than an escape hatch. Compare `reachability-sweep.test.ts`, which needs an exemption list and a
+ * second test to notice when an entry goes stale.
+ *
+ * ## THE WEAKNESS, WRITTEN DOWN RATHER THAN DISCOVERED
+ *
+ * **Matched by BASENAME, so this cannot catch a citation pointing at the wrong test that happens
+ * to exist.** Path-precise matching would be stronger and is not what this corpus looks like:
+ * nearly all 173 citations are bare filenames by long-standing convention, so a path check would
+ * fail almost all of them and be switched off within a day. A guard that is turned off catches
+ * nothing, and a weaker guard that runs is worth more than a stronger one that does not — but the
+ * limit is real and belongs here, not in whoever finds it later.
+ */
+const TEST_CITE = /`([A-Za-z0-9_\/.\-]+\.test\.[cm]?[jt]sx?)`/g;
+
+const testFiles = new Set();
+{
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) { if (entry.name !== "node_modules") walk(full); continue; }
+      if (/\.test\.[cm]?[jt]sx?$/.test(entry.name)) testFiles.add(entry.name);
+    }
+  };
+  for (const dir of ["hydra-dapp/packages", "web", "devtool/packages"]) {
+    try { walk(join(ROOT, dir)); } catch { /* a tree that is not checked out is not a failure here */ }
+  }
+}
+
+/*
+ * **SCOPED TO THIS PRODUCT'S SOURCE, AND THE FIRST VERSION WAS NOT.** Run across everything this
+ * script already reads, it flagged `devtool/experiments/.../README.md` citing
+ * `sdk/tests/internal/parallel-discovery.test.ts` — a DOCUMENT, in a different product, naming a
+ * test inside a vendored SDK. Correct as a string and useless as a finding: that tree is not this
+ * tree and the file it names is not ours to have.
+ *
+ * That is precisely the way widening a guard's corpus goes wrong — it starts reporting things that
+ * are outside the promise it was built to keep, and a guard whose output has to be filtered by a
+ * human is one whose output stops being read. The promise here is narrow: **code in this client
+ * claiming a test in this client exists.**
+ */
+const IN_SCOPE = /hydra-dapp[\\/]packages[\\/].*\.[cm]?[jt]sx?$/;
+
+const testCiteFailures = [];
+for (const file of files.filter((f) => IN_SCOPE.test(f))) {
+  const text = readFileSync(file, "utf8");
+  for (const m of text.matchAll(TEST_CITE)) {
+    if (!testFiles.has(basename(m[1]))) testCiteFailures.push({ file, cited: m[1] });
+  }
+}
+
+// VACUITY FLOOR, for the reason every other check here has one: a walker that found no files would
+// report zero failures and pass. The number only goes up as the suite grows.
+if (testFiles.size < 20) {
+  console.log(`\nonly ${testFiles.size} test files found — the test-citation walker is not `
+    + "walking, so its zero means nothing");
+  process.exit(1);
+}
+
+if (testCiteFailures.length) {
+  console.log(`\n${testCiteFailures.length} citation(s) name a test file that does not exist:`);
+  for (const f of testCiteFailures) console.log(`  ${f.file}\n      ${f.cited}`);
+  console.log("\nEither the file was renamed — fix the name — or the test was never written, in");
+  console.log("which case write it. A comment claiming a property is guarded, over a property");
+  console.log("nothing guards, sends away the reader who would otherwise have added the check.");
+  console.log("If you are naming a file precisely because it does NOT exist, drop the backticks:");
+  console.log("a backtick is the claim that it resolves.");
+}
+
+process.exit(inCodeFailures.length || testCiteFailures.length ? 1 : 0);
