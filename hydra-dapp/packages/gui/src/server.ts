@@ -105,19 +105,41 @@ export type FlushAttempt = {
  * are the client's own prose, written to be read. Withholding all of them to bound a few is the
  * safe-looking choice that makes the surface less useful without making it safer.
  *
- * So the bound is on the two shapes actually enumerated as reachable — a run of hex long enough to
- * be a credential, and a blob id — and **it claims nothing more than that.** It is not a general
- * secret filter and must not be read as one; what checks I6 by value is `gui-api.test.ts`, which
- * hunts the real secrets out of a real state through every route including these. This is the
- * cheap guard in front of that, not a replacement for it.
+ * **THE SHAPES WERE WALKED, AND THE WALK IS REPEATABLE.** The first version of this comment said
+ * "the two shapes actually enumerated as reachable", which was not true — they were the two that
+ * came to mind. The walk: every `${…}` inside a `throw new Error` across `cli`, `channel`,
+ * `vault-client`, `handshake`, `identity` and `claims` — 99 throw sites, 53 interpolating. Re-run
+ * it before trusting this list.
+ *
+ * It found two shapes the first version missed. A **URL with a userinfo component**, because
+ * `state.vaultUrl` is interpolated into failures and a vault URL is a place a credential can live.
+ * And **base64**: `pending[].bodyB64` is base64 and the by-value sweep already treats it as
+ * must-not-leak, so a hex-only test would have passed while that string went straight through.
+ *
+ * **AND ONE SHAPE THAT DEFEATS ANY DENYLIST, WHICH IS THE REASON THE TEST BELOW IS THE REAL
+ * GUARD.** Five sites interpolate text chosen by a remote party — `commands.ts:1052` and `:907`
+ * echo the vault's response body, `chain.ts:89` and `:324` and `commands.ts:806` echo the node's
+ * or the pool's. Whatever a vault puts in an error, a regex here is guessing about. That is not
+ * fixable by adding shapes, and pretending otherwise is how a denylist becomes an entry-point list
+ * that stopped covering seven pages.
+ *
+ * So: this is a cheap guard with a decaying scope, `gui-api.test.ts` drives the REAL secrets out
+ * of a REAL state through this function, and neither is a general secret filter. Adding a
+ * credential format without adding a shape here fails that test rather than shipping quietly.
  */
-const CREDENTIAL_SHAPED = /[0-9a-f]{32,}|\benc:/i;
+const CREDENTIAL_SHAPED =
+  /[0-9a-f]{32,}|[A-Za-z0-9+/]{32,}={0,2}|\benc:|\/\/[^/@\s]+:[^/@\s]+@/i;
 
 export function problemOf(e: unknown, vaultUrl?: string): string {
   const code = (e as { cause?: { code?: string } })?.cause?.code;
-  if (code) return describeFailure(e, vaultUrl);
-  const message = e instanceof Error ? e.message : String(e);
-  if (!CREDENTIAL_SHAPED.test(message)) return message;
+  // **CHECKED WHATEVER BRANCH PRODUCED IT.** The first version returned `describeFailure`'s
+  // sentence unchecked, and that sentence interpolates the vault URL — so a URL carrying a
+  // credential went to the page through the one path that skipped the check. A bound with a
+  // bypass in its shortest branch is not a bound.
+  const said = code
+    ? describeFailure(e, vaultUrl)
+    : e instanceof Error ? e.message : String(e);
+  if (!CREDENTIAL_SHAPED.test(said)) return said;
   return "the client could not complete that, and the reason it gave carries something that must "
     + "not go to a browser — `hydra gui` has printed the detail in its own terminal";
 }

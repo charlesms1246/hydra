@@ -418,6 +418,65 @@ test("A CLIENT WHOSE UPLOADS ARE FAILING DOES NOT LOOK LIKE A HEALTHY ONE", asyn
   } finally { closeVault(); }
 });
 
+test("EVERY REAL SECRET, INSIDE AN ERROR, IS KEPT OUT OF THE SENTENCE", async () => {
+  // **THE GUARD THAT DOES NOT DECAY, AND THE REASON IT IS NEEDED.** `problemOf` bounds by SHAPE,
+  // and a shape list is a scope that holds only while nobody invents a new kind of error — the
+  // same form as an entry-point list that had stopped covering seven pages. Worse here, because
+  // five sites in the client interpolate text a REMOTE party chose (the vault's response body, the
+  // node's error), and no regex can be right about bytes somebody else picks.
+  //
+  // So this drives the actual secrets out of an actual state, by value, the way the sweep at the
+  // top of this file does — not synthetic strings, which only ever test the regex against itself.
+  // Add a credential format without adding a shape and this fails rather than shipping quietly.
+  const { alice, close: closeVault } = await conversed();
+  try {
+    // **QUEUED AND NOT FLUSHED, ON PURPOSE.** `conversed()` flushes with no limit, so `pending` is
+    // empty and there is no base64 in the state at all — the assertion below caught that, which is
+    // the whole reason it is written as a precondition rather than assumed.
+    await sendMessage(alice, memoryChain(), "with-bob", "ephemeral", "not yet uploaded", T0);
+
+    const secrets: [string, string][] = [
+      ["the vault root seed", alice.seedHex] as [string, string],
+      ...Object.entries(alice.prekeys.signed).map(([e, k]) => [`signed prekey ${e}`, k] as [string, string]),
+      ...Object.entries(alice.prekeys.oneTime).map(([i, k]) => [`one-time prekey ${i}`, k] as [string, string]),
+      ...Object.entries(alice.channels).flatMap(([n, c]) =>
+        [["addressSend", (c as never as Record<string, string>).addressSendHex],
+         ["addressRecv", (c as never as Record<string, string>).addressRecvHex]]
+          .filter(([, v]) => typeof v === "string")
+          .map(([w, v]) => [`${n} ${w}`, v] as [string, string])),
+      ...alice.invites.slice(0, 5).map((c, i) => [`invite code ${i}`, c] as [string, string]),
+      // **BASE64, WHICH IS THE SHAPE A HEX-ONLY BOUND MISSES.** `pending[].bodyB64` is the queued
+      // ciphertext and the by-value sweep already treats it as must-not-leak, so leaving it out of
+      // this list would have been the test agreeing with the bug.
+      ...alice.pending.slice(0, 3).map((p, i) =>
+        [`queued body ${i}`, (p as never as Record<string, string>).bodyB64] as [string, string]),
+    ].filter(([, v]) => typeof v === "string" && v.length >= 16);
+
+    assert.ok(secrets.length > 20,
+      `only ${secrets.length} secrets found in the fixture — the sweep would prove little`);
+    // A queued upload has to exist or the base64 case is silently untested.
+    assert.ok(secrets.some(([what]) => what.startsWith("queued body")),
+      "the fixture queued no uploads, so no base64 value was driven through this at all");
+
+    for (const [what, secret] of secrets) {
+      // Interpolated the way the client really does it — inside a message, with no `cause.code`,
+      // which is the branch that forwards prose verbatim.
+      const said = problemOf(new Error(`the vault refused the read: ${secret} was rejected`));
+      assert.ok(!said.includes(secret),
+        `${what} passed through problemOf into a sentence bound for a browser: ${said.slice(0, 90)}`);
+    }
+
+    // AND THE URL BRANCH, which was the bypass: a coded error returns `describeFailure`'s sentence
+    // and that sentence interpolates the vault URL, so it skipped the check entirely.
+    const credentialled = problemOf(
+      Object.assign(new Error("fetch failed"), { cause: { code: "ECONNREFUSED" } }),
+      "https://operator:s3cret@vault.example");
+    assert.ok(!credentialled.includes("s3cret"),
+      "a vault URL carrying a credential reached the page through the coded branch, which is the "
+      + "one path that used to skip the bound");
+  } finally { closeVault(); }
+});
+
 test("A FAILURE SENTENCE NEVER CARRIES A CREDENTIAL, AND IS NOT GAGGED FOR IT", async () => {
   // Two ways to get this wrong and the first attempt took the second one.
   //
