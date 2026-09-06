@@ -136,5 +136,43 @@ export function wrap(text: string, n: number): string[] {
 export const frame = (lines: readonly string[], rows: number): string =>
   `\x1b[H${lines.slice(0, rows).map((l) => `${l}\x1b[K`).join("\n")}\x1b[J`;
 
-export const ALT_SCREEN_ON = "\x1b[?1049h\x1b[?25l";
-export const ALT_SCREEN_OFF = "\x1b[?25h\x1b[?1049l";
+/**
+ * Take the terminal: alternate screen, cursor hidden, **and autowrap off**.
+ *
+ * ## WHY `?7l` IS HERE AND NOT A COLUMN OF MARGIN
+ *
+ * `render` is exact — swept at every width from 40 to 300 across all seven pages, no line ever
+ * wider than `cols`, and `tui-frame-width.test.ts` keeps it that way. What that sweep also
+ * measured is the reason this line exists: **38,503 of those 42,021 lines are drawn to exactly
+ * the last column.** Ninety-two percent. There is no slack anywhere on any page at any width.
+ *
+ * So a terminal that reports one more column than it can actually draw — a scrollbar overlaying
+ * the last cell, an off-by-one in the reported width — has every bordered row soft-wrap, and the
+ * frame folds into continuation lines with no right border. That was reported and could not be
+ * reproduced at any width here, which fits: the mismatch is between what the terminal SAYS and
+ * what it can DRAW, and nothing on this side can see it.
+ *
+ * With DECAWM off a glyph written at the right margin overwrites that cell instead of wrapping.
+ * The failure becomes one missing column instead of a corrupted frame, it costs nothing on a
+ * terminal that reports honestly, and it removes the bottom-right-cell scroll hazard the
+ * alternate screen has for free. It is what full-screen interfaces do.
+ *
+ * ## THE TRADE, WHICH IS REAL
+ *
+ * **This converts a visible failure into an invisible one.** Today an over-wide line folds where
+ * you can see it; after this it is silently cut at the margin. That is only acceptable because
+ * the measurement moved into the suite in the same commit — `tui-frame-width.test.ts` fails on a
+ * line wider than `cols`, so the thing that would have been visible is caught before it can be
+ * invisible. **Do not keep this line without that test.**
+ */
+export const ALT_SCREEN_ON = "\x1b[?1049h\x1b[?25l\x1b[?7l";
+
+/**
+ * Give it back, including autowrap.
+ *
+ * `?7h` rather than nothing: DECAWM is on in every terminal by default and a shell left without
+ * it wraps nothing, so long command lines overwrite themselves in place. Restoring the terminal
+ * is not optional — `main.ts` says why, and this is one more thing that has to be put back on
+ * every path out including a crash.
+ */
+export const ALT_SCREEN_OFF = "\x1b[?25h\x1b[?7h\x1b[?1049l";
