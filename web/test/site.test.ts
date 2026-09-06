@@ -1070,3 +1070,55 @@ function walk(dir: string): string[] {
   }
   return out;
 }
+
+/**
+ * A disclosure may not live inside something that can be folded shut.
+ *
+ * **THIS IS A REGRESSION TEST FOR A DEFECT THAT SHIPPED, and the shape of it is worth more than
+ * the rule.** `OpenedNote` renders the three costs of a chain lookup — whose key the record proves
+ * it is, that there is no one-time prekey, which node learned you asked. It sat inside
+ * `<details className="tg-open" open={!channels || channels.length === 0}>`, an `open` prop
+ * DERIVED FROM THE CHANNEL LIST. A successful lookup takes that list from zero to one, so the prop
+ * flipped and React closed the panel **with the note inside it**, at the instant it was produced.
+ *
+ * It therefore failed for a reader with no conversations and for nobody else: every source,
+ * exactly once, on the one lookup that is their first contact. Every subsequent lookup rendered
+ * correctly because the prop was already false, which is why it looked fine to write and fine to
+ * review. Found by driving a real browser and reading `details.open` across the call — not by any
+ * test in this repository, which is the honest part of this comment.
+ *
+ * **WHY THIS IS ASSERTED AGAINST THE SOURCE.** The note is client state: it is null on the server,
+ * so it appears in no built HTML and the markup checks in this file cannot see it. A static
+ * structural claim about where it may live is the coverage available without a browser in the
+ * default flow. It is narrow on purpose — it catches the placement, not every way a disclosure
+ * could be hidden — and `text-style.ts` is where the browser-driven half belongs.
+ */
+test("no disclosure is rendered inside a collapsible panel", () => {
+  const src = readFileSync(join(WEB, "components/Session.tsx"), "utf8");
+
+  // Vacuity first: if the note stopped existing, everything below would pass by absence.
+  assert.match(src, /<OpenedNote opened=\{opened\} \/>/,
+    "components/Session.tsx no longer renders OpenedNote — either the lookup disclosure is gone "
+    + "or it is being drawn from something this guard cannot see");
+
+  // **COMMENTS STRIPPED FIRST, AND THIS GUARD FAILED WITHOUT IT** — on its own first run, against
+  // the fixed code. The comment explaining the defect names `<details>` and sits after the last
+  // real one, so the scan found an element it could never close and reported the component broken.
+  // A guard that reads prose as markup is the dapp's `codeOf` lesson arriving on this side of the
+  // repository: what is being asserted about is CODE, so the corpus has to be code.
+  const code = src.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+
+  for (const fold of code.matchAll(/<details\b/g)) {
+    // The element's own subtree, taken to its matching close. `<details>` does not nest on this
+    // page; if it ever does, this reads the outer one, which is the stricter answer.
+    const from = fold.index!;
+    const end = code.indexOf("</details>", from);
+    assert.ok(end > from, "a <details> in Session.tsx is never closed");
+    const inside = code.slice(from, end);
+    assert.ok(!/<OpenedNote\b/.test(inside),
+      "OpenedNote is inside a <details>. That panel closes itself when a lookup succeeds — the "
+      + "three costs are produced and folded away in the same instant, for the one reader who has "
+      + "never seen them. A disclosure must not live in anything that can be collapsed.");
+  }
+});

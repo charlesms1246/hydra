@@ -194,6 +194,21 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
    */
   const [collected, setCollected] = useState<Collected | null>(null);
   /*
+   * ⛔ **`null` MEANS "FOLLOW THE LIST"; A BOOLEAN MEANS SOMEBODY DECIDED.**
+   *
+   * This was `open={!channels || channels.length === 0}` — a prop derived from the list — and that
+   * is a defect rather than a shortcut. A successful lookup takes the list from 0 to 1, so the
+   * prop flipped and React closed the panel **with the three costs inside it**, at the instant
+   * they were produced, for a reader with no conversations: every source, exactly once, on the
+   * one lookup that is their first contact. Every later lookup looked fine because the prop was
+   * already false.
+   *
+   * The disclosure is out of the fold now, so this can no longer hide one whatever it does. This
+   * exists so the FORM does not snap shut mid-use either: the derived value is only a starting
+   * point, and a toggle — or a result worth staying open for — settles it.
+   */
+  const [foldOpen, setFoldOpen] = useState<boolean | null>(null);
+  /*
    * ⛔ `busy` IS NOT A FAILURE AND IS HELD SEPARATELY FROM `refusal`.
    *
    * The client runs one write at a time by design and refuses a second rather than queueing it,
@@ -412,6 +427,7 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
       { name: peerName.trim(), address: peerAddress.trim() });
     if (!r) return;
     setOpened(r);
+    setFoldOpen(true);
     setPeerName("");
     setPeerAddress("");
     // The list is stale the moment this returns, and the new conversation is the one the reader
@@ -437,6 +453,7 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
       { name: peerName.trim(), bundle: peerBundle });
     if (!r) return;
     setOpened(r);
+    setFoldOpen(true);
     setPeerName("");
     setPeerBundle("");
     const c = await call<{ channels: Channel[] }>("/channels");
@@ -540,7 +557,11 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
             the list is what the space is for. A `<details>` rather than a click-to-render panel
             for the reason the `?` gives: every word stays in the shipped document.
           */}
-          <details className="tg-open" open={!channels || channels.length === 0}>
+          <details
+            className="tg-open"
+            open={foldOpen ?? (!channels || channels.length === 0)}
+            onToggle={(e) => setFoldOpen((e.currentTarget as HTMLDetailsElement).open)}
+          >
             <summary>Open a conversation</summary>
             <form
               className="tg-open-form"
@@ -584,8 +605,20 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
                 {working === "invite" ? "opening…" : "Open from bundle"}
               </button>
             </form>
-            {opened && <OpenedNote opened={opened} />}
           </details>
+
+          {/*
+            ⛔ **OUTSIDE THE FOLD, AND THAT PLACEMENT IS THE FIX RATHER THAN A TIDY-UP.**
+
+            It was inside, and the `<details>` closed itself the moment a lookup succeeded — so the
+            three costs were rendered correctly, in order, word for word, and folded away in the
+            same commit that produced them. A disclosure a reader never sees is not a disclosure,
+            and "it was in the DOM" is the defence this product does not accept anywhere else.
+
+            Nothing that can be collapsed may hold one. Out here it cannot be, whatever the fold
+            above decides to do.
+          */}
+          {opened && <OpenedNote opened={opened} />}
 
           {/*
             ⛔ **THE RECEIVING SIDE, AND IT IS NOT INSIDE "OPEN A CONVERSATION".** Everything in
