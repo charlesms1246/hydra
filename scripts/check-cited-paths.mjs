@@ -97,9 +97,34 @@ const EXT = /\.(md|ts|tsx|mjs|cjs|js|jsx|json|cairo|rs|toml|ya?ml|sh|css|txt|loc
  * "CLI/TUI" — and a matcher over bare text produces noise a reader learns to skip, which is how a
  * guard stops being read.
  */
-function citations(text) {
+function citations(text, bare = false) {
   const out = [];
+  // **BARE TOKENS TOO, IN SOURCE MODE ONLY, AND THE REASON IS WHERE THE WORST ONES LIVE.**
+  // Backticks-only is right for prose: a document is full of slashes that are not paths. Source
+  // is not prose, and the citations that actually reach a stranger are the ones inside
+  // user-facing STRING LITERALS — `console.error("... see decisions/0035.")` — which nobody
+  // backticks, because backticks inside a printed sentence are noise to the person reading it.
+  //
+  // So the first version of this mode scanned 312 files, reported 299 failures, and could not
+  // see a single one of the eleven citations that a user of this client was being SHOWN. Those
+  // were found by hand. A guard that misses the instances with the most exposed reader is worse
+  // than the count suggests, and the count is what makes it look thorough.
+  //
+  // Narrow on purpose: only the two prefixes this repository actually cites by, so this does not
+  // become a matcher over every slash in every string.
+  const bareSpans = [];
+  if (bare) {
+    for (const m of text.matchAll(/\b(?:claude-docs\/[\w./-]+|decisions\/\d{4}[\w.-]*)/g)) {
+      out.push({ raw: m[0], path: m[0].replace(/[.,;:)]+$/, ""), index: m.index });
+      bareSpans.push([m.index, m.index + m[0].length]);
+    }
+  }
+  // A backticked `decisions/0035` matches both passes. Counted once, by position — a double count
+  // inflates the number a reader judges progress by, in the flattering direction.
+  const alreadySeen = (at, len) =>
+    bareSpans.some(([a, b]) => at < b && a < at + len);
   for (const m of text.matchAll(/`([^`\n]+)`/g)) {
+    if (alreadySeen(m.index + 1, m[1].length)) continue;
     let raw = m[1].trim();
     if (/^(https?:|ghcr\.io|0x|npm |node |git |cd |[A-Z_]+=)/.test(raw)) continue;
     // A trailing `:12` or `:12-30` or `:90,962-965` is a line reference, not part of the name.
@@ -239,7 +264,7 @@ const failures = [];
 
 for (const file of files) {
   const text = readFileSync(file, "utf8");
-  for (const c of citations(text)) {
+  for (const c of citations(text, source)) {
     const full = resolve(c.path);
     // Names nothing in this tree — a shape that looked like a path and is not, or a file that
     // has been deleted. The second is a real defect and a different one; the site's citation
