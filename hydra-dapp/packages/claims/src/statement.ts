@@ -29,7 +29,10 @@ import { NODE_OBSERVABLE, NODE_NOT_OBSERVABLE, nodeWhyOf } from "../../cli/src/n
 // FROM THE CONSTANTS AND THE SCHEDULE, never from `cover.ts` or `note.ts`. Both of those import
 // `identity/src/domains.ts`, so quoting a cover rate used to drag the derivation for both key
 // classes I6 names into the marketing site's import graph. See `channel/src/constants.ts`.
-import { MIN_JITTER_BLOCKS, coverLeadMs } from "../../channel/src/schedule.ts";
+// **`coverLeadMs` WAS IMPORTED HERE AND NEVER CALLED.** One unused binding was the whole reason
+// this file reached `schedule.ts` for anything but an integer; `MEASURED` quotes
+// `MIN_JITTER_BLOCKS` twice and the function not at all.
+import { MIN_JITTER_BLOCKS } from "../../channel/src/constants.ts";
 import { COVER_RATE, NOTE_FELTS, BUCKETS } from "../../channel/src/constants.ts";
 
 /** One thing the product tells the user, and the artifact that makes it true. */
