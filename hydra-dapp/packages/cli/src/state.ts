@@ -309,6 +309,36 @@ let supplied: string | undefined;
  */
 export const usePassphrase = (value: string): void => { supplied = value; };
 
+/**
+ * Drop the passphrase from EVERY place it can come from.
+ *
+ * **`hydra unlock --force` SAID IT HAD DECRYPTED THE FILE, EXITED 0, AND LEFT IT ENCRYPTED**, on
+ * every input path except the one the tool warns against. `cli.ts` cleared
+ * `process.env[PASSPHRASE_ENV]` and nothing else, so a passphrase that arrived from
+ * `--passphrase-file` or the prompt was still sitting in `supplied` — `save()` asks
+ * `passphrase()`, got it, saw `locked()` still true because the file on disk had not been
+ * rewritten yet, and re-sealed.
+ *
+ * **THE ASYMMETRY WAS BACKWARDS, WHICH IS WHY IT SURVIVED.** `--passphrase-file` and the prompt
+ * are what `resolvePassphrase` recommends, in that order and for stated reasons; `HYDRA_PASSPHRASE`
+ * prints a warning telling you not to use it. **The discouraged path was the only one that
+ * worked**, so a user following the advice got the silent failure — and a test reaching for the
+ * easiest input drives the environment variable, which is presumably how this shipped.
+ *
+ * So this exists rather than a second `delete` at the call site: **there are two sources and a
+ * caller should not have to know that.** A caller that clears one of two is the defect, and the
+ * next input added — an agent, which `KEY_LOCKED` already says is the intended next piece — would
+ * be a third place for the same call site to forget.
+ *
+ * The damage here is not a downgrade: the file stays MORE protected than asked. It is the false
+ * belief. Somebody who unlocks in order to migrate, back up, or stop carrying the passphrase is
+ * told they no longer need it, and **discarding it after that message destroys the identity.**
+ */
+export const forgetPassphrase = (): void => {
+  supplied = undefined;
+  delete process.env[PASSPHRASE_ENV];
+};
+
 const passphrase = (): string | undefined => supplied || process.env[PASSPHRASE_ENV] || undefined;
 
 /** True when the only passphrase available came from the environment. Callers warn on it. */

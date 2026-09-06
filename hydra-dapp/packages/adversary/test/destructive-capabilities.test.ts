@@ -80,6 +80,19 @@ const DESTRUCTIVE: readonly {
     announces: true,
   },
   {
+    op: "forgetPassphrase",
+    destroys: "the passphrase held in this process, from BOTH of the places it can live — the "
+      + "module variable `supplied` and `HYDRA_PASSPHRASE`. It touches no file and no user data",
+    capability: "the ability of THIS PROCESS to seal or open the state file, which is exactly the "
+      + "point: it exists because `unlock` cleared one of the two sources and `save` re-sealed "
+      + "the file it had been asked to decrypt, then printed success. The capability is not "
+      + "destroyed for the user — the passphrase is still in their head — so nothing here "
+      + "announces it. **What DOES announce is the caller**: `unlock` reads the file back and "
+      + "refuses rather than claiming a decryption that did not happen. That is the disclosure, "
+      + "and it belongs at the command rather than at a function with no surface",
+    announces: false,
+  },
+  {
     op: "forget",
     destroys: "a channel's history, which holds every object's id",
     capability: "the per-object delete token, derived from the channel secret AND the id",

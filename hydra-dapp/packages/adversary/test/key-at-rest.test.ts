@@ -195,6 +195,73 @@ test("unlocking announces what it removes rather than reporting success", async 
   });
 });
 
+/**
+ * **`unlock` SAID IT HAD DECRYPTED THE FILE, EXITED 0, AND LEFT IT ENCRYPTED — on every input path
+ * except the one the tool warns against.**
+ *
+ * `cli.ts` cleared `process.env[PASSPHRASE_ENV]` and nothing else, so a passphrase from
+ * `--passphrase-file` or the prompt survived in `state.ts`'s `supplied`; `save()` asked for a
+ * passphrase, got it, saw `locked()` still true because the file had not been rewritten yet, and
+ * re-sealed. Then success printed unconditionally.
+ *
+ * **THE TEST ABOVE PASSED THE WHOLE TIME, AND THAT IS THE FINDING RATHER THAN A FOOTNOTE.** It
+ * drives `HYDRA_PASSPHRASE`, because an environment variable is the easiest input to write a test
+ * around. `resolvePassphrase` ranks that input LAST and prints a warning telling you not to use it.
+ * **So the discouraged path was the only one that worked, and the test reached for exactly the
+ * input that hid the bug** — a user following the tool's own advice got the silent failure.
+ *
+ * The damage is not a downgrade: the file stays more protected than asked. It is the false belief.
+ * Somebody unlocking in order to migrate, back up, or stop carrying the passphrase is told they no
+ * longer need it, and discarding it after that message destroys every conversation in the file.
+ */
+test("UNLOCK ACTUALLY DECRYPTS WHEN THE PASSPHRASE CAME FROM A FILE, NOT ONLY FROM THE ENVIRONMENT",
+  async () => {
+    await withHome(async (home) => {
+      const phraseFile = join(home, "passphrase");
+      await writeFile(phraseFile, PHRASE);
+      await hydra(home, {}, "init");
+      await hydra(home, { HYDRA_PASSPHRASE: PHRASE }, "lock", "--i-have-written-the-phrase-down");
+      const locked = await readFile(join(home, "state.json"), "utf8");
+      assert.ok(isEnvelope(JSON.parse(locked)), "the fixture is not locked, so this proves nothing");
+
+      // NO `HYDRA_PASSPHRASE` IN THIS ENVIRONMENT. That is the whole point: the passphrase reaches
+      // the process through the recommended input and through nothing else.
+      const done = await hydra(home, {}, "unlock", "--force", "--passphrase-file", phraseFile);
+
+      const after = await readFile(join(home, "state.json"), "utf8");
+      assert.ok(!isEnvelope(JSON.parse(after)),
+        "`unlock --force --passphrase-file` left the file encrypted — and said it had not");
+      // Both halves, because either alone is survivable and the pair is what makes it dangerous.
+      assert.match(String(done.stdout), /plaintext again/,
+        "the file was decrypted but the command did not say so");
+      assert.ok(JSON.parse(after).seedHex, "the unlocked file has no seed, so it is not a state");
+    });
+  });
+
+/*
+ * **WHY THERE IS NO TEST HERE FOR THE READ-BACK REFUSAL, stated rather than left as a gap.**
+ *
+ * `unlock` now reads the file back and refuses — exit 2, naming the file as unchanged and telling
+ * the user not to discard the passphrase — instead of printing success unconditionally. That
+ * branch has no test because **with the fix in place it cannot be reached**: `forgetPassphrase`
+ * clears every source, so `save` always writes plaintext and `locked()` is always false by the
+ * time the check runs. Deleting the whole `if` leaves this suite green.
+ *
+ * That is `ERRORS.md` E-DOC04 again — a guard that cannot fail in the world it protects — and the
+ * honest response is to say so rather than to write an assertion that looks like proof. A test
+ * asserting `typeof locked === "function"` stood here briefly and was removed: it would have
+ * passed with the entire refusal deleted.
+ *
+ * **It was proven by mutation instead, against the regression it actually exists for.** A third
+ * passphrase source was added to `state.ts` that `forgetPassphrase` does not know about — which is
+ * precisely the future this guard is for, since `KEY_LOCKED` already names an agent as the next
+ * input the client should grow. With that in place `unlock --force --passphrase-file` exits 2 and
+ * refuses, where before the fix it exited 0 and lied. Restored afterwards.
+ *
+ * So the guard is a post-condition backstop for a source nobody has added yet, and the test below
+ * covers the two sources that exist today.
+ */
+
 test("THE EXPOSURE WINDOW IS STATED, and stated as what it actually is", async () => {
   // `decisions/0040` §1 chose an agent with an idle timeout so the window would be A NUMBER. That
   // is not built, and the interim is an environment variable — which is a LONGER and vaguer window

@@ -63,7 +63,7 @@ import {
 import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
-import { load, save, exists, locked, usePassphrase, currentPassphrase,
+import { load, save, exists, locked, usePassphrase, currentPassphrase, forgetPassphrase,
   passphraseFromEnvironment, resolvePassphrase, STATE_FILE, PASSPHRASE_ENV } from "./state.ts";
 import type { State } from "./state.ts";
 import { refusePassphrase, promptPassphrase } from "./at-rest.ts";
@@ -682,6 +682,22 @@ switch (command) {
     }
     state.lockedAtRest = true;
     save(state);
+    // **THE SAME READ-BACK AS `unlock`, ADDED WITH IT AND NOT BECAUSE THIS WAS BROKEN.** Checked
+    // by driving it: `lock` refuses with no passphrase, and `save` seals whenever `lockedAtRest`
+    // is set and a secret exists, so nothing found here announces encryption that did not happen.
+    //
+    // It is here because **the missing mirror is what let `unlock` lie for as long as it did**.
+    // These two commands make opposite claims about the same file, both claims are checkable
+    // against that file in one call, and the pair only stays honest if the check is on both — an
+    // asymmetric post-condition is how one of a pair drifts while the other is watched. Same
+    // reason the earlier fix to this command's warning text should have gone looking for its
+    // opposite number and did not.
+    if (!locked()) {
+      console.error("THE FILE IS NOT ENCRYPTED AND YOUR ROOT KEY IS STILL IN IT IN THE CLEAR.");
+      console.error("The lock did not take, so nothing about your state file has changed and the");
+      console.error("passphrase you just chose protects nothing yet.");
+      process.exit(2);
+    }
     console.log("locked. every save from now writes the state encrypted.");
     for (const line of KEY_LOCKED.full) console.log(line);
     break;
@@ -700,8 +716,27 @@ switch (command) {
       process.exit(2);
     }
     delete state.lockedAtRest;
-    delete process.env[PASSPHRASE_ENV];
+    // AT THE SOURCE, NOT THROUGH ONE OF ITS TWO INPUTS. This was
+    // `delete process.env[PASSPHRASE_ENV]`, which left a passphrase from `--passphrase-file` or
+    // the prompt in `state.ts`'s `supplied`, and `save` re-sealed the file it had just been asked
+    // to decrypt. See `forgetPassphrase`.
+    forgetPassphrase();
     save(state);
+    // **READ IT BACK BEFORE SAYING SO.** The old line printed success unconditionally and was
+    // wrong on two of the three input paths for as long as the command has existed. `locked()`
+    // re-reads the file every call, so this is a real check on the artifact rather than on the
+    // intention — and it is the same rule `lock` follows one case above, which states what it
+    // WOULD do until the state it describes actually exists.
+    //
+    // A claim about a file is checkable against the file. Nothing else here would have caught it:
+    // the state object was correct, the save was called, and the only thing that was wrong was
+    // what ended up on disk.
+    if (locked()) {
+      console.error("THE FILE IS STILL ENCRYPTED AND NOTHING HAS CHANGED. The unlock did not take,");
+      console.error("so your passphrase is still required and still the only way in — do not");
+      console.error(`discard it. ${STATE_FILE} is unchanged on disk.`);
+      process.exit(2);
+    }
     console.log("unlocked. the state file is plaintext again.");
     break;
   }
