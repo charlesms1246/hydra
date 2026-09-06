@@ -429,8 +429,21 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
                     <span className="tg-row-name">{c.name}</span>
                     {/*
                       A FINGERPRINT, NOT A KEY, and a count — which is what `/channels` actually
-                      carries. Telegram shows the last message and its time; this payload has
-                      neither, so the row shows what exists rather than a plausible blank.
+                      carries.
+
+                      ⛔ **NO LAST-MESSAGE PREVIEW, AND THAT IS A DECISION RATHER THAN A MISSING
+                      FIELD.** A messenger's list shows the last line of every conversation. The
+                      payload has no such field and the API was deliberately not extended for one:
+                      a preview puts the content of EVERY conversation on screen at once, so one
+                      glance, one screenshot or one person behind the reader gets all of them
+                      rather than the conversation that was opened on purpose. That is the case a
+                      source using this is actually in.
+
+                      Deriving one for the single open channel and leaving the other rows blank
+                      was also declined — blank rows read as empty conversations, which is a false
+                      statement about state made by a layout.
+
+                      If it is ever added it belongs behind an opt-in that says what it costs.
                     */}
                     <span className="tg-row-peer">{c.peer.slice(0, 12)}</span>
                     <span className="tg-row-count">{c.messages}</span>
