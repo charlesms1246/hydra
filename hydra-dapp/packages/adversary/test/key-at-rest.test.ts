@@ -78,7 +78,30 @@ test("A WRONG PASSPHRASE IS A REFUSAL, NEVER PLAUSIBLE-LOOKING BYTES", () => {
   assert.equal(openEnvelope(envelope, PHRASE), '{"seedHex":"abc"}');
 
   // Tampering with the ciphertext is refused too, so a vault-style substitution has no analogue.
-  const bent = { ...envelope, ciphertextHex: `00${envelope.ciphertextHex.slice(2)}` };
+  //
+  // **FLIPPED, NOT SET TO `00`, AND THAT IS A REAL BUG THIS TEST HAD.** It used to write `00` over
+  // the first byte, which is not a change at all when that byte is already `00` — and the
+  // ciphertext is fresh on every run, because the salt and nonce are. So on some runs nothing was
+  // tampered with and `openEnvelope` correctly returned the plaintext, and what the suite printed
+  // was **"a tampered ciphertext was accepted"**: the most alarming message this file can produce,
+  // from a test that had simply not tampered with anything.
+  //
+  // Seen twice while running the suite in a loop. Measured afterwards: the first ciphertext byte
+  // was `00` in **1 of 600** seals, consistent with the 1/256 the mechanism predicts — and NOT
+  // with two failures in about fifteen suite runs, which that rate makes unlikely. The discrepancy
+  // is unexplained and left written down rather than tidied away. It costs nothing here, because
+  // the `notEqual` below now fails loudly on any run where the tampering did not happen, whatever
+  // the reason turns out to be.
+  //
+  // The class is the one this repository keeps finding — a measurement that sometimes cannot
+  // observe what it is measuring — and its worst form is this one, where the false result points
+  // at the security property rather than at the test.
+  const firstByte = parseInt(envelope.ciphertextHex.slice(0, 2), 16);
+  const bent = { ...envelope,
+    ciphertextHex: (firstByte ^ 0xff).toString(16).padStart(2, "0")
+      + envelope.ciphertextHex.slice(2) };
+  assert.notEqual(bent.ciphertextHex, envelope.ciphertextHex,
+    "the tampering did not change the ciphertext, so what follows proves nothing");
   assert.throws(() => openEnvelope(bent, PHRASE), /does not open/);
 });
 
