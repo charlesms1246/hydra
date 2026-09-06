@@ -131,8 +131,6 @@ test("I8 IS WRITTEN DOWN, and says the thing the tests check", () => {
 });
 
 test("NO ROUTE FROM A USER'S VALUE TO REMOVAL AUTHORITY COMPILES", () => {
-  const local = join(HERE, "..", "node_modules", ".bin", "tsc");
-  const shared = join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc");
   /*
    * Walked, not listed. `tsc` moves with the workspace layout: `packages/identity/node_modules`
    * with per-package installs, `hydra-dapp/node_modules` with a workspace root, and the
@@ -161,8 +159,13 @@ test("NO ROUTE FROM A USER'S VALUE TO REMOVAL AUTHORITY COMPILES", () => {
   } catch (e) {
     out = String((e as { stdout?: string }).stdout ?? "");
   }
-  const { uncovered, orphans, routes } =
+  const { uncovered, orphans, routes, unusable } =
     uncoveredRoutes(out, "i8-must-not-compile", join(HERE, "i8-must-not-compile.ts"));
+  // The compiler has to have RESOLVED before "no error on this line" means anything —
+  // see `unusable` in `must-not-compile.ts`. A global failure emits one error and no
+  // per-route ones, which reads as every route compiling.
+  assert.deepEqual(unusable, [],
+    "tsc did not resolve, so this proves nothing about any route:\n" + unusable.join("\n"));
   assert.ok(routes.length >= 9, `only ${routes.length} numbered routes in the fixture`);
   // Every numbered attempt on its own. A total cannot say WHICH route was rejected, and the one
   // that quietly compiles here is the one that hands a user's client authority over anyone's post.

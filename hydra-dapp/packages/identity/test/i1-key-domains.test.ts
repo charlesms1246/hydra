@@ -159,8 +159,6 @@ test("the cross-domain derivation does not compile", () => {
   // The handoff's acceptance condition: the test "fails the build when deliberately
   // broken". This is that check. `i1-must-not-compile.ts` attempts every route from a
   // pool Secret into the vault domain; tsc must reject all of them.
-  const local = join(HERE, "..", "node_modules", ".bin", "tsc");
-  const shared = join(HERE, "..", "..", "..", "..", "packages", "linter", "node_modules", ".bin", "tsc");
   /*
    * Walked, not listed. `tsc` moves with the workspace layout: `packages/identity/node_modules`
    * with per-package installs, `hydra-dapp/node_modules` with a workspace root, and the

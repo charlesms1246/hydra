@@ -127,8 +127,6 @@ test("no export converts one blob class into the other", () => {
 });
 
 test("none of the eight publish routes compiles", () => {
-  const local = join(HERE, "..", "node_modules", ".bin", "tsc");
-  const shared = join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc");
   /*
    * Walked, not listed. `tsc` moves with the workspace layout: `packages/identity/node_modules`
    * with per-package installs, `hydra-dapp/node_modules` with a workspace root, and the
@@ -161,8 +159,13 @@ test("none of the eight publish routes compiles", () => {
   // Counted by DISTINCT LINE, not by error. Eight errors on seven routes passes a count check
   // while one route silently compiles — and the route that compiles is the one that publishes
   // a private message. Every numbered attempt has to be rejected on its own.
-  const { uncovered, orphans, routes } =
+  const { uncovered, orphans, routes, unusable } =
     uncoveredRoutes(out, "i5-must-not-compile", join(HERE, "i5-must-not-compile.ts"));
+  // The compiler has to have RESOLVED before "no error on this line" means anything —
+  // see `unusable` in `must-not-compile.ts`. A global failure emits one error and no
+  // per-route ones, which reads as every route compiling.
+  assert.deepEqual(unusable, [],
+    "tsc did not resolve, so this proves nothing about any route:\n" + unusable.join("\n"));
   assert.ok(routes.length >= 8, `only ${routes.length} numbered routes in the fixture`);
   // EVERY NUMBERED ATTEMPT ON ITS OWN, which is what the comment above has always said and what
   // the code did not do: it counted distinct erroring LINES against the route count, so two

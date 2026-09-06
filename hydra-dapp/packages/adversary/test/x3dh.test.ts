@@ -286,7 +286,13 @@ test("none of the eight cross-domain handshake routes compiles", () => {
   } catch (e) {
     out = String((e as { stdout?: string }).stdout ?? "");
   }
-  const { uncovered, orphans, routes } = uncoveredRoutes(out, "x3dh-must-not-compile", join(HERE, "x3dh-must-not-compile.ts"));
+  const { uncovered, orphans, routes, unusable } =
+    uncoveredRoutes(out, "x3dh-must-not-compile", join(HERE, "x3dh-must-not-compile.ts"));
+  // The compiler has to have RESOLVED before "no error on this line" means anything —
+  // see `unusable` in `must-not-compile.ts`. A global failure emits one error and no
+  // per-route ones, which reads as every route compiling.
+  assert.deepEqual(unusable, [],
+    "tsc did not resolve, so this proves nothing about any route:\n" + unusable.join("\n"));
   assert.ok(routes.length >= 8, `only ${routes.length} numbered routes in the fixture`);
   // EVERY ROUTE INDIVIDUALLY, through the shared reader — see `adversary/src/must-not-compile.ts`
   // for why a total cannot say which route was rejected, and for how this exact check was got

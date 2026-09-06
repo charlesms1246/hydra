@@ -112,8 +112,6 @@ test("no web package depends on identity or vault-client", () => {
 });
 
 test("no route from sandbox material to the chain compiles", () => {
-  const local = join(HERE, "..", "node_modules", ".bin", "tsc");
-  const shared = join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc");
   /*
    * Walked, not listed. `tsc` moves with the workspace layout: `packages/identity/node_modules`
    * with per-package installs, `hydra-dapp/node_modules` with a workspace root, and the

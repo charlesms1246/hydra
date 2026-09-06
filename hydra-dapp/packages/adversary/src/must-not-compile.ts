@@ -57,14 +57,32 @@ export function uncoveredRoutes(
   tscOutput: string,
   fixtureName: string,
   fixturePath: string,
-): { uncovered: Route[]; orphans: number[]; routes: Route[] } {
-  const errorLines = tscOutput.split("\n")
-    .filter((l) => /error TS/.test(l) && l.includes(fixtureName))
+): { uncovered: Route[]; orphans: number[]; routes: Route[]; unusable: string[] } {
+  const all = tscOutput.split("\n").filter((l) => /error TS/.test(l));
+  /*
+   * Errors with no `file(line,col):` prefix are the COMPILER failing, not code being judged.
+   *
+   * ⚠ THIS IS THE VACUITY FLOOR FOR A PER-LINE ASSERTION, and without it the whole family of
+   * must-not-compile guards inverts. `uncovered` is computed from the ABSENCE of an error on a
+   * route's lines, so a tsc that never resolved emits one global error, no per-route errors, and
+   * every route reports as compiling. Observed: `error TS2688: Cannot find type definition file
+   * for 'node'` under a workspace layout the tsconfig's `typeRoots` did not reach — all eight I8
+   * routes reported as compiling, on a tree where none of them does.
+   *
+   * It failed loudly, which is the right direction, but it failed *as an I8 violation*. A reader
+   * goes hunting for a route that hands a user removal authority, finds nothing, and the tempting
+   * fix is an exemption. **Negative evidence requires proof that the instrument was working**, so
+   * callers must assert `unusable` is empty before they may read anything into `uncovered`.
+   */
+  const unusable = all.filter((l) => !/^\S+\(\d+,\d+\):/.test(l.trim()));
+  const errorLines = all
+    .filter((l) => l.includes(fixtureName))
     .map((l) => Number(l.match(/\((\d+),/)?.[1]))
     .filter((n) => Number.isFinite(n));
   const routes = routesIn(fixturePath);
   return {
     routes,
+    unusable,
     uncovered: routes.filter((r) => !errorLines.some((n) => n >= r.from && n < r.to)),
     // An error outside every route means the fixture has drifted from its own numbering and some
     // errors are being credited to the wrong attempt.
