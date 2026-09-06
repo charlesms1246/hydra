@@ -2,8 +2,8 @@
  * What the client keeps between commands, and what keeping it costs.
  *
  * THE SEED IS ON DISK IN THE CLEAR. Said here rather than buried: this file holds the vault
- * root, and the vault root regenerates every prekey private (see
- * `claude-docs/decisions/0009-key-agreement.md`) and every channel key ever agreed. Anyone who
+ * root, and the vault root regenerates every prekey private and every channel key ever agreed —
+ * `identity/src/domains.ts` is where that derivation lives, and it is one-way from here. Anyone who
  * reads it reads every past and future conversation. It is written 0600 and that is the only
  * protection there is — no passphrase, no OS keychain, no hardware token, because a passphrase
  * prompt this client cannot yet ask for would be worse than an honest plaintext file that says
@@ -66,8 +66,7 @@ export type ChannelState = {
    * A channel is not one key. It was, and a reply broke it: both parties derived the same cover
    * from the same sequence numbers, so ten uploads became six objects, eight invites bought
    * four, and every message sat at a sequence number the other end was also using. Nothing in
-   * the suite noticed, because nothing in the suite ever replied. See
-   * `claude-docs/decisions/0023-two-way-channels.md`.
+   * the suite noticed, because nothing in the suite ever replied.
    *
    * Kept for the record now that both addressing keys are stored outright — it is how a reader
    * of this file knows which end wrote it.
@@ -79,7 +78,7 @@ export type ChannelState = {
    *
    * A channel's pointer pads, blob ids and cover bodies have to be derivable for as long as the
    * conversation exists, by both ends — a message that cannot be found is lost and a decoy that
-   * cannot be fetched is worthless (`decisions/0014`). So these are kept.
+   * cannot be fetched is worthless. So these are kept.
    *
    * What is deliberately absent is `materialHex`, the bytes X3DH agreed. It used to be here and
    * everything descended from it, which meant every message key this client had ever used could
@@ -120,7 +119,7 @@ export type ChannelState = {
    * direction and adds what re-keys them, so every property the old shape had is still a
    * property of `dh.sending` and `dh.receiving`.
    *
-   * See `handshake/src/dh-ratchet.ts` and `decisions/0032`.
+   * See `handshake/src/dh-ratchet.ts`.
    */
   dh: DhState;
 
@@ -159,7 +158,7 @@ export type ChannelState = {
   /**
    * The accounts that could still have produced every upload this channel has ever made.
    *
-   * `decisions/0029`'s crowd, as a SET rather than a count, and kept per channel because that is
+   * `channel/src/crowd.ts`'s crowd, as a SET rather than a count, kept per channel because that is
    * the level the number is true at. A crowd is set by its worst-covered message — one message of
    * six sent into a quiet chain took a measured 34.9 to zero — so a figure that recovered after a
    * bad send would be a lie about a message already on chain. Intersecting a set cannot recover;
@@ -222,7 +221,7 @@ export type ReceivedMessage = {
 
 export type State = {
   /**
-   * Whether this client should keep its state encrypted — `decisions/0040`.
+   * Whether this client should keep its state encrypted.
    *
    * Set by `hydra lock` and never cleared by an ordinary save: a write must not silently downgrade
    * a locked file to plaintext.
@@ -273,9 +272,10 @@ export type State = {
 /**
  * The shape this client writes.
  *
- * **BEFORE KEY-AT-REST, NOT AFTER** — `decisions/0040` records the KDF and its parameters in the
- * file so a future client can open an old one, and writing a KDF into a file with no version field
- * is how you get a client that can only read files it wrote itself. `moderation` has had a version
+ * **BEFORE KEY-AT-REST, NOT AFTER.** Encryption at rest records the KDF and its parameters in the
+ * file itself — see `at-rest.ts`, where the salt and cost travel with the envelope — so a future
+ * client can open an old one. Writing a KDF into a file with no version field is how you get a
+ * client that can only read files it wrote itself. `moderation` has had a version
  * and a migration since its first snapshot; the client, which holds the root key, had neither.
  *
  * 1 is the shape that already existed. A file with no `version` is version 1, because every file
@@ -287,8 +287,9 @@ export const STATE_VERSION = 1;
  * Where the passphrase comes from.
  *
  * An environment variable, and NOT A PROMPT, in this commit. `hydra flush` is meant to run on a
- * timer, unattended — `decisions/0011` says flush cadence *is* the timing defence — and **a prompt
- * cannot be answered by a timer.** An agent holding the key with a stated idle timeout is what
+ * timer, unattended — flush cadence *is* the timing defence, because a client that flushes once
+ * an hour uploads a message and all its cover in one burst and a burst is a message — and **a
+ * prompt cannot be answered by a timer.** An agent holding the key with a stated idle timeout is what
  * makes this usable and is the next piece; until it exists, an env var is the honest interim,
  * because it is what a user would otherwise build themselves out of a shell alias.
  *
@@ -326,7 +327,7 @@ export const passphraseFromEnvironment = (): boolean =>
  * top level and Node printed a stack trace at a user who had done exactly what the Identity page
  * told them to. That is the FOURTH thing found in one day living in a front-end file where the
  * other front end could not reach it — and it is the cause of the third rather than another
- * instance of it. See `claude-docs/ERRORS.md` E-DEV28.
+ * instance of it.
  *
  * Here rather than in `at-rest.ts` because the passphrase store lives here and `at-rest.ts` cannot
  * import this file without a cycle. `promptPassphrase` stays there: it is terminal handling, and
@@ -379,7 +380,6 @@ export function locked(): boolean {
  * object also gets the scope exactly right: `load()` returns a fresh object per call, so two
  * holders of one file are two entries, which is precisely the situation being guarded.
  *
- * `decisions/0048`.
  */
 const readAs = new WeakMap<State, { mtimeMs: number; size: number }>();
 
@@ -434,7 +434,7 @@ export function load(): State {
 }
 
 export function save(state: State): void {
-  // **COMPARE-AND-SWAP, FAILING CLOSED — `decisions/0048`.** Two processes on one `HYDRA_HOME` is a
+  // **COMPARE-AND-SWAP, FAILING CLOSED.** Two processes on one `HYDRA_HOME` is a
   // configuration this client expects: `gui/src/main.ts` re-reads the state on every request
   // precisely because *"a user may be running the TUI at the same time."* Both load, both change
   // something, both write the whole file back, and the second erases the first — a message and the
@@ -449,8 +449,13 @@ export function save(state: State): void {
   // **AND THIS IS NOT A LOCK.** `renameSync` cannot say "only if the file is still the version I
   // read", so two savers that both pass this check will both rename. The window goes from however
   // long a user spends composing to the microseconds between a `stat` and a `rename` — a large
-  // reduction and not a guarantee, and it must not be described as one. `0048` records why an
-  // `O_EXCL` lockfile, which would be the real fix, is not being improvised days out.
+  // reduction and not a guarantee, and it must not be described as one.
+  //
+  // **AN `O_EXCL` LOCKFILE WOULD BE THE REAL FIX AND IS NOT BUILT.** It drags in a staleness
+  // policy — how long before a lock left by a killed process is ignored, and what happens to a
+  // user whose client refuses to save because of a lock nobody holds. A stale lock is a client
+  // that will not save, which is the same lost message by a more confusing route, so it wants
+  // deciding rather than improvising.
   //
   // **TWO LIMITS THE MESSAGE HAS TO BE HONEST ABOUT.** A refused save does not re-apply itself —
   // the change is gone and the user has to make it again — so the sentence says that rather than
@@ -488,7 +493,7 @@ export function save(state: State): void {
   // taken port and had reproduced here uninstrumented.
   //
   // A unique name is not a lock and does not pretend to be one: two processes still overwrite each
-  // other's *state*, which is `decisions/0048` and a compare-and-swap. What it removes is the pair
+  // other's *state*, which is what the compare-and-swap in `save` is for. What it removes is the pair
   // of failures that need no lock to explain — a corrupt file, and a crash — because neither is
   // reachable once no two writers contend for one path.
   const tmp = `${STATE_FILE}.writing.${process.pid}.${randomBytes(4).toString("hex")}`;
