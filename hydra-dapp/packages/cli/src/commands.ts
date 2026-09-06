@@ -1051,7 +1051,13 @@ async function fetchIds(
     const res = await fetchImpl(`${state.vaultUrl}${ENCRYPTED_ENDPOINT}`, {
       method: "POST", body: JSON.stringify(ids.slice(i, i + chunk)),
     });
-    if (!res.ok) throw new Error(`the vault refused the read: ${await res.text()}`);
+    // **THROUGH `vaultSaid`, LIKE THE OTHER FOUR.** This one interpolated the body raw: no status
+    // meaning, no bound, and no control-character stripping, so a vault's response reached a
+    // terminal exactly as sent. Five sites echo a vault body and this was the only one that
+    // skipped the shared sanitiser — which is what a shared sanitiser is for.
+    if (!res.ok) {
+      throw new Error(vaultSaid(state.vaultUrl, res.status, await res.text(), "read"));
+    }
     const body = await res.json() as { found: Record<string, string>; removed?: string[] };
     Object.assign(out, body.found);
     removed.push(...(body.removed ?? []));

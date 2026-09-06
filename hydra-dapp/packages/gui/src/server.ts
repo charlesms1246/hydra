@@ -105,11 +105,13 @@ export type FlushAttempt = {
  * are the client's own prose, written to be read. Withholding all of them to bound a few is the
  * safe-looking choice that makes the surface less useful without making it safer.
  *
- * **THE SHAPES WERE WALKED, AND THE WALK IS REPEATABLE.** The first version of this comment said
- * "the two shapes actually enumerated as reachable", which was not true — they were the two that
- * came to mind. The walk: every `${…}` inside a `throw new Error` across `cli`, `channel`,
- * `vault-client`, `handshake`, `identity` and `claims` — 99 throw sites, 53 interpolating. Re-run
- * it before trusting this list.
+ * **THE SHAPES WERE WALKED, AND "WALKED" HAS NOW BEEN WRONG TWICE, SO READ THE LIMIT BELOW.** The
+ * first version of this comment said "the two shapes actually enumerated as reachable", which was
+ * not true — they were the two that came to mind. The walk that replaced it: every `${…}` inside a
+ * `throw new Error` across `cli`, `channel`, `vault-client`, `handshake`, `identity` and `claims`
+ * — 99 throw sites, 53 interpolating. **That walk covers what is in the state today and nothing
+ * more.** A shorter secret, or one in an alphabet nobody has used yet, passes. Re-run it before
+ * trusting this list, and do not upgrade "walked" into "complete".
  *
  * It found two shapes the first version missed. A **URL with a userinfo component**, because
  * `state.vaultUrl` is interpolated into failures and a vault URL is a place a credential can live.
@@ -130,6 +132,17 @@ export type FlushAttempt = {
  * or the pool's. Whatever a vault puts in an error, a regex here is guessing about. That is not
  * fixable by adding shapes, and pretending otherwise is how a denylist becomes an entry-point list
  * that stopped covering seven pages.
+ *
+ * **AND THE LENGTH BOUND IS A GAP NO ALPHABET FIX CLOSES, MEASURED.** 20,000 samples a row: a
+ * 32-byte secret in base64url went from 51% forwarded to 0%, a 64-byte one from 14% to 0% — and a
+ * **16-byte secret is 22 characters, can never reach 32, and passes 100% before and after.**
+ * Nothing in the state today is that short (all 73 secret-bearing values are hex-64 or base64
+ * over a kilobyte), so it is a hole in the guard rather than a live leak. Nobody should have to
+ * rediscover it.
+ *
+ * Read that row twice, because it runs backwards from the intuition: **a LONGER key is caught more
+ * often, not less.** A guard that improves as the secret grows is one a reader will reason about
+ * wrongly unless it says so out loud.
  *
  * So: this is a cheap guard with a decaying scope, and the test in `gui-api.test.ts` is the thing
  * that does not decay — **it WALKS the state for long strings rather than naming the fields it

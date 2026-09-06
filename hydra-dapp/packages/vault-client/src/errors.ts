@@ -25,9 +25,34 @@
  * recognise, because for the ones it does, saying what the code means beats quoting a stack.
  */
 
-/** One short line out of whatever a server sent: no markup, no newlines, bounded. */
+/**
+ * One short line out of whatever a server sent: **no control characters**, no markup, no newlines,
+ * bounded.
+ *
+ * **THIS SAID "no markup, no newlines" AND WAS READ AS "safe to print", AND THE GAP BETWEEN THOSE
+ * TWO WAS A TERMINAL INJECTION.** It stripped `<…>` and collapsed whitespace and nothing else, and
+ * `\s` does not match `\x1b` — so every escape sequence a vault put in a response body arrived
+ * intact at a terminal. `\x1b[1A\x1b[2K` moves the cursor up a line and erases it, which means a
+ * vault could **overwrite the client's own preceding output with text of its choosing**, in the two
+ * front ends where a user has most reason to trust what is on screen. A convincing `paste your
+ * seed:` is one sequence away. The carriage-return case was caught, by accident, because `\s`
+ * happens to match `\r`.
+ *
+ * **STRIPPED BY RANGE, NOT BY PARSING THE ESCAPE GRAMMAR.** Every C0 control, DEL, and the C1
+ * range that some terminals still act on — because the dangerous thing is the control byte, and a
+ * matcher for the SHAPE of a CSI sequence is a denylist that a novel shape walks past. Removing
+ * `\x1b` itself leaves `[31m` as inert letters: ugly in a message nobody wants to read anyway, and
+ * it cannot move a cursor.
+ *
+ * Every caller must go through this. One did not — `commands.ts` interpolated a vault body raw —
+ * and finding it is what surfaced that the other four were incompletely protected as well.
+ */
 function gist(body: string, cap = 60): string {
-  const text = body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const text = body
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!text) return "";
   return text.length > cap ? `${text.slice(0, cap - 1)}…` : text;
 }
