@@ -200,6 +200,40 @@ for (const [what, value] of identityNeedles(homedir(), process.env.USER ?? "")) 
 const VIEW_KEYS = [
   "page", "client", "statePath", "typing", "field", "fields", "channel", "scroll",
   "transcript", "foreign", "linked", "log", "busy", "confirm", "cite", "signing", "now",
+  /*
+   * `help` — admitted deliberately, and this is the decision the assertion above asked for.
+   *
+   * It is `readonly help: boolean` in `model.ts`: whether the help overlay is up. `viewOf` copies
+   * it from the reducer, `start` initialises it to `false`, and a keystroke toggles it. It carries
+   * no path, no address, and no count derived from anything — in this fixture it always serialises
+   * as `false`, and the live render needs it because `render()` branches on it.
+   *
+   * Worth recording HOW it got here: it arrived from a lane that never touched `web/`, and this
+   * list is what noticed. That is the case this assertion exists for — the person adding a field
+   * to the TUI has no reason to think about what the website serves.
+   */
+  "help",
+  /*
+   * `helpScroll` — the same decision, and it is a separate entry because it was a separate miss.
+   *
+   * `readonly helpScroll: number` in `model.ts`: how far the help overlay is scrolled. It exists
+   * because help does not fit on a short terminal and is drawn over a page that may be scrolled
+   * itself, so reusing `scroll` would have moved the page underneath. It is reset to 0 when help
+   * opens, it is 0 in this fixture, and `helpBody` slices by it — so the live render needs it for
+   * the same reason it needs `scroll`.
+   *
+   * **BOTH FIELDS ARRIVED IN ONE CHANGE AND ONLY ONE WAS ADMITTED.** The note above was written
+   * against the field the error message named rather than against the change that caused it, so
+   * the build failed twice for one edit. That is not a criticism of the reasoning — it is the
+   * reason this assertion reports what it found rather than trusting anyone to enumerate: the
+   * second field was invisible until the first was answered.
+   *
+   * Neither carries a path, an address, a name or anything derived from key material. What is in
+   * this list that DOES carry a value is `statePath`, and the comment above it already says it is
+   * safe by convention rather than by construction. That remains the field in this object worth
+   * looking at, and it is not one of these two.
+   */
+  "helpScroll",
 ];
 /*
  * ⛔ ELEVEN, NOT THE EIGHT IN THE FILE, AND THE GAP IS THE POINT.
