@@ -188,17 +188,24 @@ export function Slide({
   n,
   label,
   aside,
+  centre,
   children,
 }: {
-  n: string;
+  n?: string;
   label: string;
   /** A figure or generated block. Sits beside the copy on a wide screen, under it otherwise. */
   aside?: React.ReactNode;
+  /** The opener and the closer: one statement, centred, no section tick. */
+  centre?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <section className="slide" data-slide aria-label={label}>
-      <div className={aside ? "slide-inner is-split" : "slide-inner"}>
+      <div
+        className={
+          centre ? "slide-inner is-centre" : aside ? "slide-inner is-split" : "slide-inner"
+        }
+      >
         {/*
           ⛔ A FADE, not a write-on, and the deck is why.
 
@@ -209,9 +216,11 @@ export function Slide({
           slide's copy fades in when the slide reaches the reader and not before.
         */}
         <Reveal className="slide-copy">
-          <span className="slide-tick" aria-hidden>
-            {n} — {label}
-          </span>
+          {n && (
+            <span className="slide-tick" aria-hidden>
+              {n} — {label}
+            </span>
+          )}
           {children}
         </Reveal>
         {aside && <div className="slide-aside">{aside}</div>}

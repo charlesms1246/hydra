@@ -218,6 +218,15 @@ export const SITE = {
       + "the measurements, including the ones that are not flattering.",
 
     /**
+     * The deck's last screen. One line, then two buttons to the product.
+     *
+     * ⛔ Not `lede`, which used to close it. That sentence is about how the claims are made
+     * checkable — a thesis, and a room that has just been pitched to needs something to do rather
+     * than something to consider.
+     */
+    close: "It runs in a terminal, on your machine, from a checkout.",
+
+    /**
      * Slide 01. The missing slide, and its absence is why the deck opened on a method.
      *
      * ⛔ The three verbs are exact and are not interchangeable — see `whatYouDo` below.

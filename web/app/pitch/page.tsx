@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { SITE } from "../../content.ts";
 import { Nav } from "../../components/Nav.tsx";
 import { Deck, Slide } from "../../components/Deck.tsx";
+import { Button } from "../../components/Section.tsx";
 import { Reveal } from "../../components/Reveal.tsx";
 import { Verbs } from "../../components/viz/Verbs.tsx";
 import { Halves } from "../../components/viz/Halves.tsx";
@@ -48,12 +49,13 @@ export const metadata: Metadata = {
 
 /** One per slide, in order. The rail reads these, and so does each slide's accessible name. */
 const LABELS = [
-  "WHAT IT IS",
+  "THE PITCH",
   "THE PROBLEM",
+  "WHAT IT IS",
   "IN PRACTICE",
   "THE DEFENCE",
   "THE METHOD",
-  "THE ARGUMENT",
+  "WHAT NEXT",
 ] as const;
 
 export default function Pitch() {
@@ -63,62 +65,60 @@ export default function Pitch() {
       <Nav current="pitch" />
 
       <Deck labels={LABELS}>
-        <Slide n="01" label={LABELS[0]} aside={<Reveal><MessagePath /></Reveal>}>
-          <h2>{p.whatItIs.title}</h2>
-          <p>{p.whatItIs.body[0]}</p>
+        {/*
+          ⛔ A TITLE SLIDE, and a corporate deck opens on one.
+
+          The reference's first slide is an eyebrow and a single sentence, centred, with nothing
+          else on it — no figure, no section number, no argument. It is the line a presenter says
+          while the room settles. Ours used to open on section 01 with a diagram beside it, which
+          is a document's first page rather than a deck's.
+        */}
+        <Slide label={LABELS[0]} centre>
+          <span className="label">The pitch</span>
+          <h2 className="slide-title">{p.whatItIs.title}</h2>
         </Slide>
 
-        <Slide n="02" label={LABELS[1]} aside={<Reveal><Halves /></Reveal>}>
+        <Slide n="01" label={LABELS[1]} aside={<Reveal><Halves /></Reveal>}>
           <h2>{p.problem.title}</h2>
-          {/* One paragraph. The second is the chain-permanence argument and it is carried by the
-              figure beside this — a drawing of proportion says it without four more sentences. */}
           <p>{p.problem.body[0]}</p>
         </Slide>
 
+        <Slide n="02" label={LABELS[2]} aside={<Reveal><MessagePath /></Reveal>}>
+          <h2>What it actually is</h2>
+          <p>{p.whatItIs.body[0]}</p>
+        </Slide>
+
         {/* The verb table, and the only place on the site it is explained. See `content.ts`. */}
-        <Slide n="03" label={LABELS[2]} aside={<Reveal><Verbs /></Reveal>}>
+        <Slide n="03" label={LABELS[3]} aside={<Reveal><Verbs /></Reveal>}>
           <h2>{p.whatYouDo.title}</h2>
           <p>{p.whatYouDo.body[0]}</p>
           <p>{p.whatYouDo.body[1]}</p>
         </Slide>
 
-        {/*
-          ⛔ The generated auditor block moved OFF this slide to `/about/disclosure/`.
-
-          Every disclosure now lives on one page and is named nowhere else, by instruction. The
-          rule it has to respect is standing rule 5 — the auditor line appears in every disclosure
-          statement, always, and never as a footnote — and it still does, on the page that IS the
-          disclosure. What this slide keeps is the mechanism, which is a description of what the
-          system does rather than a claim about what a reader gets.
-        */}
-        <Slide n="04" label={LABELS[3]} aside={<Reveal><AnonymitySet /></Reveal>}>
+        <Slide n="04" label={LABELS[4]} aside={<Reveal><AnonymitySet /></Reveal>}>
           <h2>What the system does about it</h2>
           <p>{p.mechanism.body[0]}</p>
         </Slide>
 
-        {/*
-          ⛔ This slide replaced the Signal comparison, which was the deck's one negative.
-
-          That comparison is not deleted — it is a disclosure, and every disclosure is on
-          `/about/disclosure/` now and named nowhere else. What stands here instead is the thing
-          the deck is actually for: **the method is the differentiator, and the deck's job is to
-          make a reader want to go and check it.** The figure is the shape of the disclosure — how
-          many things each party can and cannot see — which is an invitation rather than a claim.
-        */}
-        <Slide n="05" label={LABELS[4]} aside={<Reveal><DisclosureMap /></Reveal>}>
+        <Slide n="05" label={LABELS[5]} aside={<Reveal><DisclosureMap /></Reveal>}>
           <h2>Every line of it is generated</h2>
           <p>{SITE.why[1].body}</p>
         </Slide>
 
-        {/* The close, and deliberately the thinnest slide in the deck: the argument, the line
-            that ends it, and the way out. Nothing competes with the last thing a judge reads. */}
-        <Slide n="06" label={LABELS[5]}>
-          <h2>{p.why.title}</h2>
-          <p>{p.why.body[0]}</p>
-          {/* The closing line, and the link out. Both were below the fold at 1440x800 before the
-              figure moved beside the copy — see `Slide`. They are the last thing a judge reads
-              and they were the two things the layout was eating. */}
-          <p className="accent">{p.lede}</p>
+        {/*
+          ⛔ THE DECK CLOSES ON AN ASK, NOT ON AN ARGUMENT.
+
+          It used to end on `pitch.lede` — a sentence about epistemology — which is a thesis and
+          leaves a room with nothing to do. The reference closes on one line and two buttons, and
+          both buttons go to the product. That is the shape of a pitch: the argument is slides 01
+          to 05, and the last screen is what happens next.
+        */}
+        <Slide label={LABELS[6]} centre>
+          <h2 className="slide-title">{p.close}</h2>
+          <div className="close-actions">
+            <Button href="/install/">Run it</Button>
+            <Button href="/demo/">See it run</Button>
+          </div>
         </Slide>
       </Deck>
     </>

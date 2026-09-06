@@ -2872,3 +2872,31 @@ html[data-build="public"] .wordmark {
   font-size: 17px;
   letter-spacing: -0.02em;
 }
+
+/*
+ * The opener and the closer: one statement, centred, nothing else. See `Slide`'s `centre`.
+ */
+.slide-inner.is-centre {
+  align-items: center;
+  text-align: center;
+}
+
+.slide-inner.is-centre .slide-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  max-width: 40ch;
+}
+
+/* `.slide h2` is (0,1,1) and a bare class is (0,1,0), so this has to name both to win. It was
+   rendering in the sans face — the deck's opener and closer are the two serif moments in it. */
+.slide h2.slide-title {
+  font-family: var(--serif);
+  font-size: clamp(1.75rem, min(4.6vw, 7vh), 3.75rem);
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+  color: var(--white);
+  margin: 0;
+  max-width: none;
+}
