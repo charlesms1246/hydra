@@ -87,6 +87,18 @@ if (cmd === undefined || cmd === "tui") {
 } else if (cmd === "help" || cmd === "--help" || cmd === "-h") {
   usage();
 } else if (cmd === "up") {
+  /*
+   * `up` OFFERS to close the gaps rather than printing them and exiting.
+   *
+   * It used to run the doctor, print what was missing, and stop — which made `up` the last of
+   * seventeen setup steps rather than the third. The remedies were already written down: the
+   * upstream clone command has lived in `doctor.mjs` as a hint STRING since it was written, and
+   * `toolchain.mjs` derives every build op that the TUI runs behind one keypress. `setup.mjs`
+   * drives the same functions, one question per third-party install, and refuses rather than
+   * assumes when there is no terminal to ask on.
+   */
+  const { prepare } = await import("./setup.mjs");
+  if (!await prepare({ yes: argv.includes("--yes") })) process.exit(1);
   if (!report(check())) {
     console.error("  environment incomplete — fix the above, then rerun `hydra-dev up`\n");
     process.exit(1);
