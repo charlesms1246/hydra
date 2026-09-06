@@ -1,1 +1,0 @@
-{"version":1,"contracts":[{"id":"le9b3idfnvvnc","package_name":"test_token","contract_name":"TestToken","module_path":"test_token::test_token::TestToken","artifacts":{"sierra":"test_token_TestToken.contract_class.json","casm":"test_token_TestToken.compiled_contract_class.json"}}]}

@@ -36,7 +36,6 @@ import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
 
 import { check, upstreamPath } from "./doctor.mjs";
-import { installArtifacts } from "./artifacts.mjs";
 import { UPSTREAM_REPO, UPSTREAM_SHA, INSTALL_HINTS, ARTIFACTS, BUILD_HINTS } from "./pins.mjs";
 
 /**
@@ -160,23 +159,6 @@ export async function ensureBuilds() {
    *
    * Reading the rows makes the claim above true rather than aspirational.
    */
-  /*
-   * **COPY BEFORE COMPILING, WHEN THERE IS SOMETHING TO COPY.** Five `scarb build` invocations are
-   * ten to fifteen minutes a first-time user waits before anything runs. `@hydra/artifacts` holds
-   * those outputs for the pinned revision; `installArtifacts` refuses on a revision mismatch and
-   * never overwrites a file already in the checkout, so a local build always wins over a package.
-   *
-   * The result is deliberately not fatal. Absent, wrong-revision or unreadable, this falls through
-   * to the loop below and builds exactly as it did before — the prebuilt path is a shortcut around
-   * compiling from source, never a replacement for being able to.
-   */
-  const installed = installArtifacts(dir);
-  if (installed.ok && installed.copied) {
-    console.log(`\n  installed ${installed.copied} prebuilt artifact(s) — skipping those builds`);
-  } else if (!installed.ok && installed.why?.includes("different revision")) {
-    console.log(`\n  ${installed.why}`);
-  }
-
   const missing = missingArtifacts();
   const todo = Object.keys(ARTIFACTS).filter((key) => missing.has(key) && BUILD_HINTS[key]);
   if (!todo.length) return { ok: true, did: "already built" };

@@ -1,1 +1,0 @@
-{"version":1,"contracts":[{"id":"rrsifoqh64i7s","package_name":"ekubo_swap_anonymizer","contract_name":"EkuboSwapAnonymizer","module_path":"ekubo_swap_anonymizer::ekubo_swap_anonymizer::EkuboSwapAnonymizer","artifacts":{"sierra":"ekubo_swap_anonymizer_EkuboSwapAnonymizer.contract_class.json","casm":"ekubo_swap_anonymizer_EkuboSwapAnonymizer.compiled_contract_class.json"}}]}
