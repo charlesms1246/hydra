@@ -109,6 +109,20 @@ type Sent = { op: "send"; channel: string; signed: boolean; txHash: string; uplo
 /** A refusal the API produced. `code` is branched on; the two sentences are shown verbatim. */
 type Refusal = { code: string; condition: string; remedy: string };
 
+/**
+ * What `POST /lookup` answers with — and `warnings` is the reason the shape is worth naming.
+ *
+ * ⛔ **THE THREE COSTS ARE DATA FROM THE API, NOT COPY IN THIS FILE.** They are generated from
+ * `claims/src/warnings.ts`, the same array the CLI prints and the TUI's Connect page renders, and
+ * `claims-not-duplicated.test.ts` fails if any of the three surfaces drops one or says it in its
+ * own words. A page that wrote its own version of "the record names the address, not the person"
+ * would be the fourth copy of a sentence this product has already had drift three times.
+ */
+type Opened = {
+  op: "lookup"; channel: string; address: string; fingerprint: string; slot: number;
+  warnings: { id: string; short: string; full: string[] }[];
+};
+
 const DEFAULT_BASE = "http://127.0.0.1:8787";
 
 /**
@@ -147,6 +161,15 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
   const [howLinkable, setHowLinkable] = useState<HowLinkable | null>(null);
   const [draft, setDraft] = useState("");
   const [sent, setSent] = useState<Sent | null>(null);
+  /*
+   * ⛔ **THE ONE THING A READER WITH NO CONVERSATIONS CAN DO.** Every other write on this API names
+   * a conversation that already exists, so a source arriving here with nothing but an address
+   * could previously do nothing at all and had to reach a terminal first — which is the opposite
+   * of the ordering this product wants, on the surface a person is likeliest to arrive at.
+   */
+  const [peerName, setPeerName] = useState("");
+  const [peerAddress, setPeerAddress] = useState("");
+  const [opened, setOpened] = useState<Opened | null>(null);
   /*
    * ⛔ `busy` IS NOT A FAILURE AND IS HELD SEPARATELY FROM `refusal`.
    *
@@ -350,6 +373,31 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
     await write<{ uploaded: number; waiting: number }>("flush", "/flush");
   }, [write]);
 
+  /**
+   * Open a conversation from an address, with no file changing hands in either direction.
+   *
+   * ⛔ **THE COSTS ARE SHOWN AFTER, NOT BEFORE, AND THAT IS THE PRODUCT'S ORDER RATHER THAN A
+   * CHOICE MADE HERE.** The CLI prints them after the bundle, the TUI's Connect page carries them
+   * beside the result: they describe what the lookup just did — which node saw it, what the
+   * signature settled, what a chain record cannot carry — so they are reporting rather than a
+   * consent gate. `setOpened(null)` first, so a second attempt never shows the previous one's.
+   */
+  const lookupNow = useCallback(async () => {
+    if (peerName.trim() === "" || peerAddress.trim() === "") return;
+    setOpened(null);
+    const r = await write<Opened>("lookup", "/lookup",
+      { name: peerName.trim(), address: peerAddress.trim() });
+    if (!r) return;
+    setOpened(r);
+    setPeerName("");
+    setPeerAddress("");
+    // The list is stale the moment this returns, and the new conversation is the one the reader
+    // just asked for — so it is refetched and opened rather than left for them to find.
+    const c = await call<{ channels: Channel[] }>("/channels");
+    if (c.ok) setChannels(c.data.channels);
+    await openChannel(r.channel);
+  }, [peerName, peerAddress, write, call, openChannel]);
+
   // Every route is stored-state-only — no network, no chain scan — so connecting on arrival costs
   // the reader nothing and saves them a click they would always make.
   useEffect(() => {
@@ -420,6 +468,36 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
 
       <div className="tg-body">
         <aside className="tg-list">
+          {/*
+            ⛔ **OPEN BY DEFAULT WHEN THERE IS NOTHING IN THE LIST.** A reader with no
+            conversations is exactly the person who needs this and the person with no row to click,
+            so the way in is already unfolded for them; once there are conversations it folds, and
+            the list is what the space is for. A `<details>` rather than a click-to-render panel
+            for the reason the `?` gives: every word stays in the shipped document.
+          */}
+          <details className="tg-open" open={!channels || channels.length === 0}>
+            <summary>Open a conversation</summary>
+            <form
+              className="tg-open-form"
+              onSubmit={(e) => { e.preventDefault(); void lookupNow(); }}
+            >
+              <label htmlFor="peer-name" className="prose-label">CALL IT</label>
+              <input id="peer-name" name="peer-name" type="text" value={peerName}
+                     spellCheck={false} autoComplete="off" placeholder="a name you choose"
+                     onChange={(e) => setPeerName(e.target.value)} />
+              <label htmlFor="peer-address" className="prose-label">THEIR ADDRESS</label>
+              <input id="peer-address" name="peer-address" type="text" value={peerAddress}
+                     spellCheck={false} autoComplete="off" placeholder="0x…"
+                     onChange={(e) => setPeerAddress(e.target.value)} />
+              <button className="button" type="submit"
+                      disabled={working !== null || !live
+                        || peerName.trim() === "" || peerAddress.trim() === ""}>
+                {working === "lookup" ? "looking up…" : "Open"}
+              </button>
+            </form>
+            {opened && <OpenedNote opened={opened} />}
+          </details>
+
           {channels && channels.length > 0 ? (
             <ul className="tg-rows">
               {channels.map((c) => (
@@ -703,6 +781,41 @@ function SentNote({ sent }: { sent: Sent }) {
  * claim, and this file may not write one — the claim arrives on the message itself, as the
  * generated `basis` beside it, once the send returns. That is the same split the legend uses.
  */
+/**
+ * What a lookup just did, and the three things it cost.
+ *
+ * ⛔ **EVERY SENTENCE HERE COMES OFF THE WIRE.** The only words this component contributes are the
+ * two labels; `w.full` is the generated claim text, rendered whole rather than summarised, because
+ * the summary is where the hedge gets dropped. All three are shown — not the first, not the two
+ * that flatter the product — and they are shown in the order the API sent them, which is the order
+ * the other two front ends print.
+ *
+ * The fingerprint sits above them for the reason both other surfaces put it there: it is the only
+ * thing that makes the channel mean anything, and it has to be checked by a route that is not this
+ * one. Nothing on this page can do that, and it does not pretend otherwise.
+ */
+function OpenedNote({ opened }: { opened: Opened }) {
+  return (
+    <div className="tg-opened" role="status">
+      <p className="tg-opened-head">
+        <span className="tg-opened-name">{opened.channel}</span>
+        <span className="tg-opened-fp">{opened.fingerprint}</span>
+      </p>
+      <ul className="tg-opened-costs">
+        {opened.warnings.map((w) => (
+          <li key={w.id}>
+            {w.full.map((line, i) => (
+              // Keyed by index because these are the lines of one paragraph, in order — there is
+              // no identity to key on and reordering them would be the defect, not a re-render.
+              <span key={i}>{line} </span>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function Compose({
   draft, setDraft, working, disabled, onSend,
 }: {
