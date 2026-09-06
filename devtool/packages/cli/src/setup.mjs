@@ -36,6 +36,7 @@ import { createInterface } from "node:readline/promises";
 import { join } from "node:path";
 
 import { check, upstreamPath } from "./doctor.mjs";
+import { installArtifacts } from "./artifacts.mjs";
 import { UPSTREAM_REPO, UPSTREAM_SHA, INSTALL_HINTS, ARTIFACTS, BUILD_HINTS } from "./pins.mjs";
 
 /**
@@ -142,18 +143,52 @@ export async function ensureToolchain({ yes = false } = {}) {
  * public registry, which is the one thing here that reaches the network — named in the log line
  * before it runs, for the same reason the toolchain prompts name their downloads.
  */
+/** The artifact keys `doctor` currently reports as missing. */
+const missingArtifacts = () => new Set(check()
+  .filter((r) => r.status === "MISS" && r.name.startsWith("artifact: "))
+  .map((r) => r.name.slice("artifact: ".length)));
+
 export async function ensureBuilds() {
   const dir = upstreamPath();
-  const todo = Object.keys(ARTIFACTS)
-    .filter((key) => !existsSync(join(dir, ARTIFACTS[key])) && BUILD_HINTS[key]);
+  /*
+   * **THIS ASKED `existsSync` ITSELF, WHICH IS THE THING THE DOCSTRING ABOVE SAYS IT DOES NOT DO.**
+   * It read the same `ARTIFACTS`/`BUILD_HINTS` pair as `doctor` and then re-implemented the
+   * presence test — so the two agreed only while they were wrong in the same way. The moment
+   * `doctor` learned that `ARTIFACTS` names indexes and samples rather than sets, `up` would have
+   * gone on reporting "already built" for a `testToken` whose ekubo and vesu projects were absent,
+   * while `doctor` called it MISS. Two answers to one question, from one pair of pins.
+   *
+   * Reading the rows makes the claim above true rather than aspirational.
+   */
+  /*
+   * **COPY BEFORE COMPILING, WHEN THERE IS SOMETHING TO COPY.** Five `scarb build` invocations are
+   * ten to fifteen minutes a first-time user waits before anything runs. `@hydra/artifacts` holds
+   * those outputs for the pinned revision; `installArtifacts` refuses on a revision mismatch and
+   * never overwrites a file already in the checkout, so a local build always wins over a package.
+   *
+   * The result is deliberately not fatal. Absent, wrong-revision or unreadable, this falls through
+   * to the loop below and builds exactly as it did before — the prebuilt path is a shortcut around
+   * compiling from source, never a replacement for being able to.
+   */
+  const installed = installArtifacts(dir);
+  if (installed.ok && installed.copied) {
+    console.log(`\n  installed ${installed.copied} prebuilt artifact(s) — skipping those builds`);
+  } else if (!installed.ok && installed.why?.includes("different revision")) {
+    console.log(`\n  ${installed.why}`);
+  }
+
+  const missing = missingArtifacts();
+  const todo = Object.keys(ARTIFACTS).filter((key) => missing.has(key) && BUILD_HINTS[key]);
   if (!todo.length) return { ok: true, did: "already built" };
   for (const key of todo) {
     console.log(`\n  building ${key} — ${BUILD_HINTS[key]}`);
     if (!run("sh", ["-c", BUILD_HINTS[key]], dir)) return { ok: false, why: `build failed: ${key}` };
-    // The remedy having exited 0 is not the same as the artifact existing — a build that succeeds
-    // and writes somewhere else is exactly the case `up` then reports as missing.
-    if (!existsSync(join(dir, ARTIFACTS[key]))) {
-      return { ok: false, why: `${key} built without error and ${ARTIFACTS[key]} is still absent` };
+    // The remedy having exited 0 is not the same as the artifacts existing — a build that succeeds
+    // and writes somewhere else is exactly the case `up` then reports as missing. Re-asked through
+    // the doctor for the reason above: a check here that was weaker than the one `up` finishes on
+    // would pass a build the next step rejects.
+    if (missingArtifacts().has(key)) {
+      return { ok: false, why: `${key} built without error and its artifacts are still absent` };
     }
   }
   return { ok: true, did: `built ${todo.length}` };

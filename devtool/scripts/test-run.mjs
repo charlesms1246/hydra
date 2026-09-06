@@ -40,6 +40,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
  * silently, and that is the thing this file exists to stop.
  */
 const FILES = [
+  "packages/artifacts/test/run.mjs",
   "packages/cli/test/guards.mjs",
   "packages/cli/test/up.mjs",
   "packages/core/test/blocks.mjs",

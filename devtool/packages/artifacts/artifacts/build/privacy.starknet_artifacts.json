@@ -1,0 +1,1 @@
+{"version":1,"contracts":[{"id":"dckgup08bm1o2","package_name":"privacy","contract_name":"Privacy","module_path":"privacy::privacy::Privacy","artifacts":{"sierra":"privacy_Privacy.contract_class.json","casm":"privacy_Privacy.compiled_contract_class.json"}}]}

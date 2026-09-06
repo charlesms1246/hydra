@@ -33,14 +33,15 @@ npm install
 npx hydra-dev up
 ```
 
-Then `npx hydra-dev` for the TUI, and `npx hydra-dev doctor` for the fourteen-row table if you
+Then `npx hydra-dev` for the TUI, and `npx hydra-dev doctor` for the fifteen-row table if you
 want to see what it found. `doctor` is still the honest starting point when something is wrong —
 it prints the exact fix for every row — but you no longer have to run it first to be told what
 `up` was about to do anyway.
 
 `hydra-dev doctor` is the honest starting point, and how many rows it prints tells you where you
-are: **eight** before the checkout exists — six pinned tools, one property of the machine,
-and the checkout itself — and **fourteen** once it does, adding the six build artifacts. It
+are: **nine** before the checkout exists — six pinned tools, one property of the machine, the
+checkout itself, and whether the prebuilt-artifacts package is installed —
+and **fifteen** once it does, adding the six build artifacts. It
 prints the exact command for anything missing, and needs no dependencies itself, so it works
 before `bootstrap` does.
 

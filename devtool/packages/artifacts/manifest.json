@@ -1,0 +1,582 @@
+{
+  "upstreamSha": "980da8affafb9f8350975ca93c03b2299a31ac9b",
+  "files": [
+    {
+      "path": "build/ekubo_swap_anonymizer.starknet_artifacts.json",
+      "dest": "target/dev/ekubo_swap_anonymizer.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "091c1f7841f194703bdfacc0641a217153a0cde905584742d22eccd951982fed"
+    },
+    {
+      "path": "build/ekubo_swap_anonymizer_EkuboSwapAnonymizer.compiled_contract_class.json",
+      "dest": "target/dev/ekubo_swap_anonymizer_EkuboSwapAnonymizer.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "08ad63450ec2e0699e3aea5a8e0618fbd69be357f89fccee02c53b4cc640aeca",
+      "hash": "0x7e917023963e011043e51422d808b44f95819319882925a370853c0d6ba4f49"
+    },
+    {
+      "path": "build/ekubo_swap_anonymizer_EkuboSwapAnonymizer.contract_class.json",
+      "dest": "target/dev/ekubo_swap_anonymizer_EkuboSwapAnonymizer.contract_class.json",
+      "kind": "sierra",
+      "sha256": "253ee539419b73bbe3f96c567d41d6eae4dca198feeec2f1aaa79c3178640cea",
+      "hash": "0x2b293fbc496757f84123a1bc789b3bf92067920b2e37a78f8268c4bdb731e2e"
+    },
+    {
+      "path": "build/ekubo_swap_anonymizer_unittest.test.starknet_artifacts.json",
+      "dest": "target/dev/ekubo_swap_anonymizer_unittest.test.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "ca0c89d2e01984c3667d09b086fed95ef897ca30b8f09731487ed4a64c6b91fd"
+    },
+    {
+      "path": "build/ekubo_swap_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
+      "dest": "target/dev/ekubo_swap_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "1abcdd30dea3a9e46d6b4b3bd45307c93b00335d9d2c97b625ffe9c1d8994b16",
+      "hash": "0x646380e495296bfbbb665eb60ce204ffc530c1b6d7372e355996bfffffe74da"
+    },
+    {
+      "path": "build/ekubo_swap_anonymizer_unittest_EkuboSwapAnonymizer.test.contract_class.json",
+      "dest": "target/dev/ekubo_swap_anonymizer_unittest_EkuboSwapAnonymizer.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "253ee539419b73bbe3f96c567d41d6eae4dca198feeec2f1aaa79c3178640cea",
+      "hash": "0x2b293fbc496757f84123a1bc789b3bf92067920b2e37a78f8268c4bdb731e2e"
+    },
+    {
+      "path": "build/ekubo_swap_anonymizer_unittest_MockEkuboAMM.test.contract_class.json",
+      "dest": "target/dev/ekubo_swap_anonymizer_unittest_MockEkuboAMM.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "f89b8bf19eded90b921652383753eb2f8668eea801c4335a118f7e6fdde67f95",
+      "hash": "0x4b66809809479d12910414fe62536802404d50aca9dae41028b72cc7da809ca"
+    },
+    {
+      "path": "build/privacy.starknet_artifacts.json",
+      "dest": "target/dev/privacy.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "93d6e786d93df69c812f6086dd2cde6b2fec6d256f31c143bd0d6b7caac8eb2f"
+    },
+    {
+      "path": "build/privacy_Privacy.compiled_contract_class.json",
+      "dest": "target/dev/privacy_Privacy.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "876c16fb38569aeafd9847d2432ad317776a72525ff22882f8aad04cfd079651",
+      "hash": "0xd35194b928277f95660f530efe4e9f6b08f9f2e5b58bfe20f4893ff19881e4"
+    },
+    {
+      "path": "build/privacy_Privacy.contract_class.json",
+      "dest": "target/dev/privacy_Privacy.contract_class.json",
+      "kind": "sierra",
+      "sha256": "e1aa07c04a24d1f126e61c336136ca73dd0a76a0bb1f85c6ad53002e34de657a",
+      "hash": "0xe1d03e14088b8781041921aff44d13205ed7c06ea665a33ac7fe38d863983d"
+    },
+    {
+      "path": "build/privacy_unittest.test.starknet_artifacts.json",
+      "dest": "target/dev/privacy_unittest.test.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "4e741cd09b0319d8cba0d404e17eb5fd12fe3f6c608be8b8e4d8213026ea3c47"
+    },
+    {
+      "path": "build/privacy_unittest_DualCaseERC20Mock.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_DualCaseERC20Mock.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "1abcdd30dea3a9e46d6b4b3bd45307c93b00335d9d2c97b625ffe9c1d8994b16",
+      "hash": "0x646380e495296bfbbb665eb60ce204ffc530c1b6d7372e355996bfffffe74da"
+    },
+    {
+      "path": "build/privacy_unittest_EkuboSwapAnonymizer.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_EkuboSwapAnonymizer.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "253ee539419b73bbe3f96c567d41d6eae4dca198feeec2f1aaa79c3178640cea",
+      "hash": "0x2b293fbc496757f84123a1bc789b3bf92067920b2e37a78f8268c4bdb731e2e"
+    },
+    {
+      "path": "build/privacy_unittest_MockAMM.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockAMM.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "3144c692be66eb327abe71fc7bdea98013d7531ec7f7619fef521610ada1f37d",
+      "hash": "0x513134304778caefa21492064ec1f1dc935fdbeb879841885d4481013d1d518"
+    },
+    {
+      "path": "build/privacy_unittest_MockAccount.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockAccount.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "b63901a96aa03efb8b466e9bc4ba9d771d5b402ad33a3ac0acfd3403b0c2c403",
+      "hash": "0x65be2d675ae5bc46d031f43347c23e8cfcfdeda6e1f85c3ad161265a2e2beca"
+    },
+    {
+      "path": "build/privacy_unittest_MockCompute.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockCompute.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "baf1ca81ebc986c22c07a52225b3df07268895f079e6bd2d854598b8c8ef6b78",
+      "hash": "0x718a58b794b5612c7a11f2545a31d7c9da333f1c4004328bc033b5cd04300bf"
+    },
+    {
+      "path": "build/privacy_unittest_MockComputeArray.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockComputeArray.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "4c2d558a7a633af33bf8048ef5b76e566d7cd795e41752f3499ee1a10eef9dfd",
+      "hash": "0x69d6f42e89070c30344aee34140ff99c5aaafb997b4d1e72a883e4d4708b9c7"
+    },
+    {
+      "path": "build/privacy_unittest_MockComputeEmpty.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockComputeEmpty.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "290f40c9b8e6a2aecc759ab2e785d681e1450f7a24eec1ab35819647255ca4f0",
+      "hash": "0x39b3e244e62cc8df96038181cd9023ae6d949343984507dec8c7d0dc2987ce7"
+    },
+    {
+      "path": "build/privacy_unittest_MockComputeMultiFelt.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockComputeMultiFelt.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "056fcad96ceea69869fa77681ba7e819afd64c948f9c31087cc1a966a7d2d4bb",
+      "hash": "0x1fad678d47438eeb5300947db72f59bd6aa1d42933dba5841780bdb554da069"
+    },
+    {
+      "path": "build/privacy_unittest_MockContract.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockContract.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "331ed0c7c72d4e2288487ff9cdfee5b240464ab775d2423133fc71c608c71e3b",
+      "hash": "0x175599e4140b421d5bdb52662b4cb9a7788c95327f282c1c86c2447100f771a"
+    },
+    {
+      "path": "build/privacy_unittest_MockCustomAccount.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockCustomAccount.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "89a13f391462b0b42fd202205a8bd33dd931890a5825de9e708c9ac3ab25b6ca",
+      "hash": "0x506ae6b9b5ea54a1fb644c0667660ea4af8032d834541b96e61a43805e0a82d"
+    },
+    {
+      "path": "build/privacy_unittest_MockDapp.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockDapp.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "2fe31beb8a640dfd20a78ceac77ec1e5b2f409081e6ffb8b411daf43f4ec1f20",
+      "hash": "0x542612be4967501a711775d156045a28a01ad1e57a8fa0af12eb6897bb9a511"
+    },
+    {
+      "path": "build/privacy_unittest_MockDelegatedMalformedAddresses.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockDelegatedMalformedAddresses.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "eb2852af8b1d8ed080c6fb22c493da246fad4d013290e95a99be52ff378d4090",
+      "hash": "0x1b7a85adf0d769615b76aed571a01b401e48d2b2f43a964496aa7bf76fe07f0"
+    },
+    {
+      "path": "build/privacy_unittest_MockDelegatedTarget.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockDelegatedTarget.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "cf728dde5681ac5fefd937fac6ee29fcbb0c681e88d84bc1f2326325a90c3115",
+      "hash": "0x30ce9001495e12f485526743dbd8abb1dc3c7c259edc277ed61b68414345ff6"
+    },
+    {
+      "path": "build/privacy_unittest_MockDelegatedWithoutAddresses.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockDelegatedWithoutAddresses.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "de9a36a1d1ae71e3885712c5f3daa5f761c5bb1b8442aa303bb55cb9368b3285",
+      "hash": "0x5f21023b69a621fcbf3266110ba0116c1d8cf4f3fa77fa6b255029330fc46d7"
+    },
+    {
+      "path": "build/privacy_unittest_MockEcho.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockEcho.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "2c0c773312a3ebd4699f51cb7c53b1acd191b0e11962ab7b6c5c848bee1ad120",
+      "hash": "0x50e09af65088d570901d057dfc5b5969e8cd9098c0cb1a3f385597dfec10b1e"
+    },
+    {
+      "path": "build/privacy_unittest_MockEkuboAMM.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockEkuboAMM.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "f89b8bf19eded90b921652383753eb2f8668eea801c4335a118f7e6fdde67f95",
+      "hash": "0x4b66809809479d12910414fe62536802404d50aca9dae41028b72cc7da809ca"
+    },
+    {
+      "path": "build/privacy_unittest_MockReentrancy.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockReentrancy.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "994e98d4bf1bfe18cd14b36ed6b52b3fdd55be79c2a8f4a1656dbe773a8db7c8",
+      "hash": "0x716423a78d2d805709e1b66fd825249957ed2c77df6355c597c604023b6a673"
+    },
+    {
+      "path": "build/privacy_unittest_MockReturnGarbage.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockReturnGarbage.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "0d72d1a1b5250b8621a8d32a24091202b065866a4407d1b61d2715b7e9c5904a",
+      "hash": "0x7693dfc8f5e7599a4f2a057cc0c6c766a7bcd584eaa784b0412b1d06839060d"
+    },
+    {
+      "path": "build/privacy_unittest_MockReturnTrailingGarbage.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockReturnTrailingGarbage.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "4e7e57e158704a753934f97252b30ca0616015af0dd48047cd6dfb3ceba183a2",
+      "hash": "0x7c973aedca1f2f26fc86fe37f5a8532abd3436104c3057f6c1aa2aa94af1170"
+    },
+    {
+      "path": "build/privacy_unittest_MockStarkAccount.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockStarkAccount.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "400977c0ad02727bfe9bd2eb3c8624764ec6d25dbde7090d73bf9e06cf166143",
+      "hash": "0x5b441f00e22d5b4b3baec5cad9452648e6f7e889c74f8e13992a06d29a435e"
+    },
+    {
+      "path": "build/privacy_unittest_MockSwapExecutor.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockSwapExecutor.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "1e1a0c29105d72ccffa15dd1b30b9eb5af40ab2a1da5ff5048f65e2b4f27d745",
+      "hash": "0x37cef0b8a0ff0a64dfcbf6ee3acc175834f80af40d11a98ab67d0926e80c140"
+    },
+    {
+      "path": "build/privacy_unittest_MockVesuVault.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockVesuVault.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "6b4d29619a6ea67d2d33f601bd5b6ca663070e61534228dd35bda0ec779ff25e",
+      "hash": "0x19dcd9707667f847f68ecb11b60129ae7d056c62645d5fe8a04a19e864b8ced"
+    },
+    {
+      "path": "build/privacy_unittest_MockVesuVaultNoop.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockVesuVaultNoop.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "493065746669a3ebc1d2999cb371e534506ee68a901787af6f8fa37b345ae09c",
+      "hash": "0x39829d9913ae075f0f99176a634de45c0a1cdd19facca7d42786c38521536f3"
+    },
+    {
+      "path": "build/privacy_unittest_MockVesuVaultOverflow.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_MockVesuVaultOverflow.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "ea18b55b4a864fae5a0a64ee4f47c60c0c8db1511e8af288aab7d05ac5d93df1",
+      "hash": "0x50afdfeac19e9efe46ac107a8ba8ae976d567589d0db48cbcac21eda5bd2574"
+    },
+    {
+      "path": "build/privacy_unittest_Privacy.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_Privacy.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "e1aa07c04a24d1f126e61c336136ca73dd0a76a0bb1f85c6ad53002e34de657a",
+      "hash": "0xe1d03e14088b8781041921aff44d13205ed7c06ea665a33ac7fe38d863983d"
+    },
+    {
+      "path": "build/privacy_unittest_ShadowAccount.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_ShadowAccount.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "a22926611e8934e54d94d6371c699fd36b99bcb186a9a297b3b71cd73fc3c2cf",
+      "hash": "0x38489bd44c93ee2eb8604d3a15db60781145951ebdebe356fc824b4a0385a5c"
+    },
+    {
+      "path": "build/privacy_unittest_ShadowAccountAnonymizer.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_ShadowAccountAnonymizer.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "131b6440cfe71c7f1a81e4cdaed6161e3c1e439e9d8138a4b3d92bc98e82b69a",
+      "hash": "0x27c5ebf76138119cbc2361b5271d86825217070475d6d5e8488865370d33506"
+    },
+    {
+      "path": "build/privacy_unittest_StarknetEth712Account.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_StarknetEth712Account.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "fecec45edc00f8e8846fdf2642fd37eeb73b4e9886a9bdd234a8edb8fb510caf",
+      "hash": "0x324d4ca786a783860a59fc5e8f928b759f15ad7edeee28a85b7cde3747c38c8"
+    },
+    {
+      "path": "build/privacy_unittest_VesuLendingAnonymizer.test.contract_class.json",
+      "dest": "target/dev/privacy_unittest_VesuLendingAnonymizer.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "5839f050e742762db9076d1d732e10a4ad8d5603dd978a06a7439a0cfd01bb0f",
+      "hash": "0x77aa8896e549529f779e8e2c8552bfcf38d008b190c9112094a8d9ba489d7b0"
+    },
+    {
+      "path": "build/shadow_account_anonymizer.starknet_artifacts.json",
+      "dest": "target/dev/shadow_account_anonymizer.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "d40b654a60ca75271e860d6da711f26993e4e8887e53f4d91b9d072a16929bb4"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_ShadowAccountAnonymizer.compiled_contract_class.json",
+      "dest": "target/dev/shadow_account_anonymizer_ShadowAccountAnonymizer.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "79c8da8108b0c5050d6fe3d46f6bf9dae323a036bef149ab5d670cd10e652fa4",
+      "hash": "0x2332b0923c9e4dbd1636cce0b791d3f2ddc5d0d05110b4e35c0128b6320e6e2"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_ShadowAccountAnonymizer.contract_class.json",
+      "dest": "target/dev/shadow_account_anonymizer_ShadowAccountAnonymizer.contract_class.json",
+      "kind": "sierra",
+      "sha256": "131b6440cfe71c7f1a81e4cdaed6161e3c1e439e9d8138a4b3d92bc98e82b69a",
+      "hash": "0x27c5ebf76138119cbc2361b5271d86825217070475d6d5e8488865370d33506"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_unittest.test.starknet_artifacts.json",
+      "dest": "target/dev/shadow_account_anonymizer_unittest.test.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "7127bbba9c0582674383666641cd580a125eee4e112f71684b0e6faa158ea613"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
+      "dest": "target/dev/shadow_account_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "1abcdd30dea3a9e46d6b4b3bd45307c93b00335d9d2c97b625ffe9c1d8994b16",
+      "hash": "0x646380e495296bfbbb665eb60ce204ffc530c1b6d7372e355996bfffffe74da"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_unittest_MockDapp.test.contract_class.json",
+      "dest": "target/dev/shadow_account_anonymizer_unittest_MockDapp.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "2fe31beb8a640dfd20a78ceac77ec1e5b2f409081e6ffb8b411daf43f4ec1f20",
+      "hash": "0x542612be4967501a711775d156045a28a01ad1e57a8fa0af12eb6897bb9a511"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_unittest_MockShadowAccount.test.contract_class.json",
+      "dest": "target/dev/shadow_account_anonymizer_unittest_MockShadowAccount.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "ad42d807e2ea163223a5d605a6a577c695ecd9a33aa9a84de18d8d26b47dd963",
+      "hash": "0x15bbd4cc7ffd7a46ec216966bcf8ea0abf073c2c1bb0e6c240dab190ad4daab"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_unittest_ShadowAccount.test.contract_class.json",
+      "dest": "target/dev/shadow_account_anonymizer_unittest_ShadowAccount.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "a22926611e8934e54d94d6371c699fd36b99bcb186a9a297b3b71cd73fc3c2cf",
+      "hash": "0x38489bd44c93ee2eb8604d3a15db60781145951ebdebe356fc824b4a0385a5c"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_unittest_ShadowAccountAnonymizer.test.contract_class.json",
+      "dest": "target/dev/shadow_account_anonymizer_unittest_ShadowAccountAnonymizer.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "131b6440cfe71c7f1a81e4cdaed6161e3c1e439e9d8138a4b3d92bc98e82b69a",
+      "hash": "0x27c5ebf76138119cbc2361b5271d86825217070475d6d5e8488865370d33506"
+    },
+    {
+      "path": "build/shadow_account_anonymizer_unittest_ShadowAccountRegistryMock.test.contract_class.json",
+      "dest": "target/dev/shadow_account_anonymizer_unittest_ShadowAccountRegistryMock.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "a3860d40f6e05ef7e74b4e7af506c8c7b6c379a2cce7eca1109ad5439f286fb9",
+      "hash": "0x43bd1a5c0f4a1164bdb4097cf9f8f8a70650d611a30d7910afebc512de914bb"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer.starknet_artifacts.json",
+      "dest": "target/dev/vesu_lending_anonymizer.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "e1946796150d9a60d387ce644189525d50689bd57e629858c6839d11b5e6dbee"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer_VesuLendingAnonymizer.compiled_contract_class.json",
+      "dest": "target/dev/vesu_lending_anonymizer_VesuLendingAnonymizer.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "4bcdb39d41bfd95777dee3f637a648aa953b7f62cee99c343b92dc6e04579359",
+      "hash": "0x5e89086538e5e2c878b4d627cae64fb5344b25ad99e7893e26f614ae0b2d400"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer_VesuLendingAnonymizer.contract_class.json",
+      "dest": "target/dev/vesu_lending_anonymizer_VesuLendingAnonymizer.contract_class.json",
+      "kind": "sierra",
+      "sha256": "5839f050e742762db9076d1d732e10a4ad8d5603dd978a06a7439a0cfd01bb0f",
+      "hash": "0x77aa8896e549529f779e8e2c8552bfcf38d008b190c9112094a8d9ba489d7b0"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer_unittest.test.starknet_artifacts.json",
+      "dest": "target/dev/vesu_lending_anonymizer_unittest.test.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "dd982bdfdec02c365225fd8964ad60d0cbe9867839b09607c0792e4ea4aad583"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
+      "dest": "target/dev/vesu_lending_anonymizer_unittest_DualCaseERC20Mock.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "1abcdd30dea3a9e46d6b4b3bd45307c93b00335d9d2c97b625ffe9c1d8994b16",
+      "hash": "0x646380e495296bfbbb665eb60ce204ffc530c1b6d7372e355996bfffffe74da"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer_unittest_MockVesuVault.test.contract_class.json",
+      "dest": "target/dev/vesu_lending_anonymizer_unittest_MockVesuVault.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "6b4d29619a6ea67d2d33f601bd5b6ca663070e61534228dd35bda0ec779ff25e",
+      "hash": "0x19dcd9707667f847f68ecb11b60129ae7d056c62645d5fe8a04a19e864b8ced"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer_unittest_MockVesuVaultNoop.test.contract_class.json",
+      "dest": "target/dev/vesu_lending_anonymizer_unittest_MockVesuVaultNoop.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "493065746669a3ebc1d2999cb371e534506ee68a901787af6f8fa37b345ae09c",
+      "hash": "0x39829d9913ae075f0f99176a634de45c0a1cdd19facca7d42786c38521536f3"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer_unittest_MockVesuVaultOverflow.test.contract_class.json",
+      "dest": "target/dev/vesu_lending_anonymizer_unittest_MockVesuVaultOverflow.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "ea18b55b4a864fae5a0a64ee4f47c60c0c8db1511e8af288aab7d05ac5d93df1",
+      "hash": "0x50afdfeac19e9efe46ac107a8ba8ae976d567589d0db48cbcac21eda5bd2574"
+    },
+    {
+      "path": "build/vesu_lending_anonymizer_unittest_VesuLendingAnonymizer.test.contract_class.json",
+      "dest": "target/dev/vesu_lending_anonymizer_unittest_VesuLendingAnonymizer.test.contract_class.json",
+      "kind": "sierra",
+      "sha256": "5839f050e742762db9076d1d732e10a4ad8d5603dd978a06a7439a0cfd01bb0f",
+      "hash": "0x77aa8896e549529f779e8e2c8552bfcf38d008b190c9112094a8d9ba489d7b0"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts.starknet_artifacts.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "edb25d4024724d5842ec538f6f28cf63792fcbf30cebbc1933c5f6ec1e4a9a9c"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts_Core.compiled_contract_class.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts_Core.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "26330013efa0172a7202a00b9c29ff1e555e17c0844e65c7894c59332f2261b2",
+      "hash": "0x49cac4e8f9e2fd99be06cfd99ee5f3698dbb4d85dada8f16c4c72fa35f9ba9e"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts_Core.contract_class.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts_Core.contract_class.json",
+      "kind": "sierra",
+      "sha256": "9899e151c75c39f66f05eff6b70f621eb8db645ef98291287d5d9ca80112d84b",
+      "hash": "0x5deb33bd53a8b007b59d906a6af207e6e9463664c3d32b187c17d4402c0979c"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts_OwnedNFT.compiled_contract_class.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts_OwnedNFT.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "1216a8ea4e376d577269a6099beba2583104a1e61820488a5dab56ff89c54a57",
+      "hash": "0x6f0e7a1422afbdf3d8bbdd93cc8999dc62047087c59d0ac685dede2536a2c79"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts_OwnedNFT.contract_class.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts_OwnedNFT.contract_class.json",
+      "kind": "sierra",
+      "sha256": "00958e8f21cbadd8babc8e022b3a1f97bd48c193436bdda2bfd9d4c5e6ee3d2f",
+      "hash": "0x3d54b46b044ca9ac094082aca8b722601e4da2086e31d1a3fd0ff47f98836ce"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts_Positions.compiled_contract_class.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts_Positions.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "eca1c5e1d1d41d7b2137eae110287518bd60bb053e69c2f3c90590e3672b7ac5",
+      "hash": "0x1ff2b579141471bf3835d9cbcd5930ee89ad40595cb456143b7bedba1ee798"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts_Positions.contract_class.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts_Positions.contract_class.json",
+      "kind": "sierra",
+      "sha256": "057c74477fbbf8ece4103b007fcde8fc5a4a56362e965c5ca86015ad670ae419",
+      "hash": "0x285b980733735481907b4257c5b48175ad0b3f3a408edda95dff57c73ef0e91"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts_Router.compiled_contract_class.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts_Router.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "d9d59f311e8b5dc07074258e465a89692a5edc7e5c1f5451732cfaad777e735e",
+      "hash": "0x3b315dce4b5accc3d9d66187ef5c797bfba5967bc9af1c2e407ff5c3a6bfa0b"
+    },
+    {
+      "path": "e2e/contracts/ekubo/build/ekubo_contracts_Router.contract_class.json",
+      "dest": "e2e/contracts/ekubo/target/dev/ekubo_contracts_Router.contract_class.json",
+      "kind": "sierra",
+      "sha256": "834254de7e6f294523adbfea9f3d9371278532ef14aaf4478d6619e081486811",
+      "hash": "0x1edb0b7cd1d4dbc63fe9cc6bb3627b7e6ca554db8cc546c48d32a106f100b89"
+    },
+    {
+      "path": "e2e/contracts/test-token/build/test_token.starknet_artifacts.json",
+      "dest": "e2e/contracts/test-token/target/dev/test_token.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "6c5fb81288b44539eeaf4783674373ce447303eca960124236eaa8938b2564a4"
+    },
+    {
+      "path": "e2e/contracts/test-token/build/test_token_TestToken.compiled_contract_class.json",
+      "dest": "e2e/contracts/test-token/target/dev/test_token_TestToken.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "ceff856f226a4e420c691b0746624533cdca7dd30d3279f228ae76316f17ef08",
+      "hash": "0x6f6ad0604c2b8679dbb50949284761f3c91dcdf576d3167a7a51d57016207bc"
+    },
+    {
+      "path": "e2e/contracts/test-token/build/test_token_TestToken.contract_class.json",
+      "dest": "e2e/contracts/test-token/target/dev/test_token_TestToken.contract_class.json",
+      "kind": "sierra",
+      "sha256": "4f00903a21ef162652aae81938b858fe026ef404640fc5eedbb39275ddf599f5",
+      "hash": "0x34a176177f0273ffc7e42e41aeb0dfafedca8f12ad15457cd761cce7160025b"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts.starknet_artifacts.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts.starknet_artifacts.json",
+      "kind": "index",
+      "sha256": "6c60ca4abafd195eb9ab33f58f5a02ec58cbda29ac02d0fd829e8055847802be"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_MockPragmaOracle.compiled_contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_MockPragmaOracle.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "682ee4164e33412f23ab4769d158995541075a5c9d4ff353187bcb9ed7c2e5fa",
+      "hash": "0x289dbfe0697d22106a1c239383562b581bad6fff62462d5773263a07da0f6e"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_MockPragmaOracle.contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_MockPragmaOracle.contract_class.json",
+      "kind": "sierra",
+      "sha256": "4273ea2a4a2f06139bef9fbe16219d9c3219cbf3d2add63549cd042b5269dd4f",
+      "hash": "0x5a23244eb7ad2782198b4e7c0a9a094e6c8b378dab1f1cf4a18d51e8e433287"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_MockPragmaSummary.compiled_contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_MockPragmaSummary.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "71c8c045127254c25343651e07418f499ee01416e3fcbdf28bc45bb79bf79a9d",
+      "hash": "0x51399d9d6e78e11fb81a279f08fdaca17d2a6c87f52c35157ca67081eb55c74"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_MockPragmaSummary.contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_MockPragmaSummary.contract_class.json",
+      "kind": "sierra",
+      "sha256": "84981e72a46044cbae8b436f96acc3f586ad01f4fe7c69d62746449460cd3c44",
+      "hash": "0x74533d478374688b77297b15d6a454538fb0a6341059914cdd968d96c1bf901"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_Oracle.compiled_contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_Oracle.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "43254daec3578fb8584b011df8dadc470045178cb63f560b3d577c8851111257",
+      "hash": "0x324122c63560d9c726b0043ae216f57e2dfa0c21cc0bb4cc333b278ff70f92c"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_Oracle.contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_Oracle.contract_class.json",
+      "kind": "sierra",
+      "sha256": "0f01010ebf2eeec935cd2bab087c2bdfb283a15fdd5f5a38628913efc38c89e6",
+      "hash": "0x29f75d0d3e0dee76a28ae40ab38ae259cf73d3eaac857ef919cb62ccc27f1fa"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_Pool.compiled_contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_Pool.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "124dc66ad02cad7c30a4fbc3346551b6e73f2e193b6952ad90156030b0d069a3",
+      "hash": "0x2bff3d1e0024ec33dffe7a38704fd400017db502e9dc687e105a2e41305e029"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_Pool.contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_Pool.contract_class.json",
+      "kind": "sierra",
+      "sha256": "3c7a52a967010a6a5a6f282c26c337f87f3b4dfb13d8e057283de961fce5d103",
+      "hash": "0x4cf3bdfa52b50e534b85f78aa604ab6360663679fbcb723af38ac6bc51e2edb"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_PoolFactory.compiled_contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_PoolFactory.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "defd2b2ea07952773af4d39451a08980d5d3c9e80c243908d90235fdabf58582",
+      "hash": "0x2aeb132d4136af45a8ed54bedb694262429f7069e2924beeafa030f66d0d090"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_PoolFactory.contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_PoolFactory.contract_class.json",
+      "kind": "sierra",
+      "sha256": "2630c08ea5fac068617f82043f81a7e617dd897c49a02cb546672acc4f6b35c9",
+      "hash": "0x68db20352bcaefe29696ced5bfecb8e90f53c93fc3ccb4245b4881fdc246d8"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_VToken.compiled_contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_VToken.compiled_contract_class.json",
+      "kind": "casm",
+      "sha256": "09fb321c7ef1359f38336a5f4585ca75276c1650db23414f6e6a062905560765",
+      "hash": "0x7fc4bd7fb5fdfbbe61372f2683ac6268174d9cf9d6454fec362e5c067a96da2"
+    },
+    {
+      "path": "e2e/contracts/vesu/build/vesu_contracts_VToken.contract_class.json",
+      "dest": "e2e/contracts/vesu/target/dev/vesu_contracts_VToken.contract_class.json",
+      "kind": "sierra",
+      "sha256": "2e9ea836c4a12dcf2fb47632158a18d0b09c1cd4b829cf414729a46bf2436c94",
+      "hash": "0x7dc30bd4eefdfc8d81ad8557250d05280b8ffe97f597249008db7d5da367d71"
+    }
+  ]
+}

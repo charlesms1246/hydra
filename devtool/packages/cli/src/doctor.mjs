@@ -5,10 +5,11 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PINS, NODE_MIN_MAJOR, INSTALL_HINTS, ARTIFACTS, BUILD_HINTS, UPSTREAM_SHA, UPSTREAM_REPO, GOTCHAS } from "./pins.mjs";
+import { artifactsPackage } from "./artifacts.mjs";
+import { PINS, NODE_MIN_MAJOR, INSTALL_HINTS, ARTIFACTS, BUILD_HINTS, CAIRO_TARGETS, UPSTREAM_SHA, UPSTREAM_REPO, GOTCHAS } from "./pins.mjs";
 
 const OK = "ok  ";
 const BAD = "MISS";
@@ -146,13 +147,64 @@ export function check() {
     cmd: null,
   });
 
+  /*
+   * The optional prebuilt package, and a MISMATCH IS A FAILURE rather than a note.
+   *
+   * Absent is fine and is not a row worth alarming about — `up` builds from source, which is the
+   * supported path and always was. **Present at a different revision is not fine.** Those files
+   * declare classes the checkout's own source does not produce, and nothing downstream would
+   * notice: the build hints would see artifacts present and skip, and the first symptom would be a
+   * `DECLARE` failing several steps later or an address derived from the wrong class hash.
+   *
+   * `BAD`, not the `WARN` the checkout row uses. There, a human chose a revision and this tool
+   * declines to overwrite their choice. Here nobody chose: a package simply does not match the
+   * source beside it.
+   */
+  const pkg = artifactsPackage();
+  rows.push({
+    // Absent is `OK` because the package is genuinely optional and `up` builds without it. Present
+    // at the wrong revision is `BAD` — see the header of `artifacts.mjs` for why that is a failure
+    // and not a note.
+    status: !pkg || pkg.matches ? OK : BAD,
+    name: "artifacts package",
+    want: pkg ? UPSTREAM_SHA.slice(0, 12) : "optional",
+    got: !pkg
+      ? "not installed — up builds the Cairo from source"
+      : pkg.matches
+        ? `${pkg.files.length} files at ${pkg.upstreamSha.slice(0, 12)}`
+        : `built from ${pkg.upstreamSha?.slice(0, 12) ?? "an unreadable manifest"}`,
+    /*
+     * **UNCONDITIONAL, AND THE ROW COUNT IS THE SMALLER REASON.** A row emitted only when the
+     * package happens to be installed makes the table a different length for different users, and
+     * `README.md` states its length as a number that `guards.mjs` enforces — so a conditional row
+     * would be correct for whoever ran it last and wrong for everyone else.
+     *
+     * The better reason is what the absent case says. A first-time user watching `up` compile
+     * Cairo for ten to fifteen minutes has no way to learn that a package exists which skips it.
+     * A row that says so is the only place they would find out.
+     */
+    hint: pkg && !pkg.matches
+      ? "the prebuilt artifacts are from a different upstream revision than the pin.\n"
+        + "       Update or remove @hydra/artifacts; `up` builds from source without it."
+      : "optional. `@hydra/artifacts` holds the Cairo build outputs for the pinned revision,\n"
+        + "       so `up` copies them instead of spending 10-15 minutes in `scarb build`.",
+    cmd: null,
+  });
+
   if (hasUpstream) {
     for (const [key, rel] of Object.entries(ARTIFACTS)) {
+      const cairo = CAIRO_TARGETS[key];
+      const found = cairo ? cairoArtifacts(up, cairo) : null;
+      const missing = cairo ? found.missing : existsSync(join(up, rel)) ? [] : [rel];
       rows.push({
-        status: existsSync(join(up, rel)) ? OK : BAD,
+        status: missing.length === 0 ? OK : BAD,
         name: `artifact: ${key}`,
-        want: "built",
-        got: existsSync(join(up, rel)) ? "present" : "missing",
+        want: cairo ? `${found.expected} files` : "built",
+        // The COUNT and the first missing name. A bare "missing" sent a reader to a build hint
+        // without telling them whether one class or a whole Scarb project was absent.
+        got: missing.length === 0
+          ? cairo ? `${found.expected} present` : "present"
+          : `${missing.length} missing, e.g. ${missing[0]}`,
         hint: `(in ${up}) ${BUILD_HINTS[key]}`,
         cmd: BUILD_HINTS[key],
         cwd: up,
@@ -161,6 +213,59 @@ export function check() {
   }
 
   return rows;
+}
+
+/**
+ * Every file a Cairo key's builds should have produced, and which of them are absent.
+ *
+ * **READ FROM THE INDEXES RATHER THAN FROM A LIST.** `*.starknet_artifacts.json` is Scarb's own
+ * manifest of what it wrote: each entry names a `sierra` and usually a `casm` file beside it. So
+ * this asks the build what it produced and then checks the tree for it, which covers a class that
+ * did not exist when this was written. See `CAIRO_TARGETS` in `pins.mjs` for what is declared and
+ * what is derived, and why that split is the fix rather than a longer list.
+ *
+ * **A MISSING `target/dev` IS A MISS, NOT AN EMPTY ANSWER.** This is the case that made the old
+ * check wrong: with all of `e2e/contracts/ekubo/target/dev` gone there are no indexes to read, and
+ * "no indexes found" must not resolve to "nothing missing". Each declared root that yields no
+ * index is reported as the missing thing itself, which is why the return carries a root's own path
+ * rather than a file inside it.
+ */
+function cairoArtifacts(up, { roots, test }) {
+  const missing = [];
+  let expected = 0;
+  for (const root of roots) {
+    const dir = join(up, root, "target", "dev");
+    let indexes = [];
+    try {
+      indexes = readdirSync(dir).filter((f) =>
+        f.endsWith(".starknet_artifacts.json") && f.includes(".test.") === test);
+    } catch {
+      // The directory itself is absent. Nothing to enumerate and nothing to conclude from that.
+    }
+    if (indexes.length === 0) {
+      missing.push(join(root, "target", "dev"));
+      continue;
+    }
+    for (const index of indexes) {
+      expected++;
+      let contracts = [];
+      try {
+        contracts = JSON.parse(readFileSync(join(dir, index), "utf8")).contracts ?? [];
+      } catch {
+        // An index that cannot be parsed is an index that proves nothing about the files it names.
+        missing.push(join(root, "target", "dev", index));
+        continue;
+      }
+      for (const c of contracts) {
+        for (const file of Object.values(c.artifacts ?? {})) {
+          if (!file) continue;   // `casm` is null when the target did not emit one.
+          expected++;
+          if (!existsSync(join(dir, file))) missing.push(join(root, "target", "dev", file));
+        }
+      }
+    }
+  }
+  return { expected, missing };
 }
 
 function sha(dir) {

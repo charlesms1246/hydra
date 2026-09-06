@@ -87,6 +87,41 @@ export const ARTIFACTS = {
   testToken: "e2e/contracts/test-token/target/dev/test_token_TestToken.contract_class.json",
 };
 
+/**
+ * Where each Cairo artifact key's Scarb projects live, so `doctor` can ask the tree what was
+ * built instead of testing one path that happens to exist.
+ *
+ * **`ARTIFACTS` NAMES ONE FILE PER KEY AND THOSE FILES ARE INDEXES AND SAMPLES, NOT THE SET.**
+ * `poolTestContracts` points at `privacy_unittest.test.starknet_artifacts.json`, which is a
+ * manifest **referencing 29 contract classes**; `testToken` points at one file in `test-token/`
+ * while its build hint builds **three separate Scarb projects**. Measured against this checkout:
+ * the real set is 84 files across 11 indexes.
+ *
+ * So `doctor` reported `[ok] artifact: testToken … present` with **all ten files of
+ * `e2e/contracts/ekubo/target/dev` removed** — verified by moving them aside — because two of
+ * that key's three projects were never checked at all. A stack in that state passes `doctor` and
+ * fails at runtime, which is the proxy-for-a-property defect this repository hunts everywhere.
+ *
+ * **WHAT IS DECLARED HERE AND WHAT IS DERIVED, because the split is the point.** The project roots
+ * are declared: they are a fact about upstream's layout, there are five of them, and they change
+ * when upstream restructures. Everything volatile — which classes, how many, what they are called
+ * — is read from the indexes at check time, so a build that starts producing a thirtieth class is
+ * covered without anyone editing a list. Naming the stable thing and deriving the volatile one is
+ * the opposite of what `ARTIFACTS` did.
+ *
+ * `test` separates the two targets that share `target/dev`: `scarb build` writes
+ * `privacy.starknet_artifacts.json` and `scarb build -t` writes
+ * `privacy_unittest.test.starknet_artifacts.json` beside it.
+ */
+export const CAIRO_TARGETS = {
+  pool: { roots: ["."], test: false },
+  poolTestContracts: { roots: ["."], test: true },
+  testToken: {
+    roots: ["e2e/contracts/test-token", "e2e/contracts/ekubo", "e2e/contracts/vesu"],
+    test: false,
+  },
+};
+
 export const BUILD_HINTS = {
   pool: "scarb build -p privacy -p vesu_lending_anonymizer -p ekubo_swap_anonymizer -p shadow_account_anonymizer",
   discoveryService: "cargo build --release -p discovery-service",
