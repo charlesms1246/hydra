@@ -61,7 +61,10 @@ devtool/LICENSE
 #
 # The other three faces (Geist, Geist Mono, Instrument Serif) are OFL and were always committed.
 
-web/.next/
+# Unanchored: a Next command run from the repository root leaves a `.next/` there, and a rule
+# anchored at `web/` does not cover it. Found as 12K of trace files at the root, untracked and one
+# directory-add from a commit — the same shape as the scratch files that reached one earlier.
+.next/
 web/out/
 web/next-env.d.ts
 web/tsconfig.tsbuildinfo
