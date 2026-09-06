@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "description": "Hydra platform. Run `npm test` here; the Cairo is `cd contracts && snforge test`.",
   "engines": {
     "node": ">=24"

@@ -129,7 +129,12 @@ test("no export converts one blob class into the other", () => {
 test("none of the eight publish routes compiles", () => {
   const local = join(HERE, "..", "node_modules", ".bin", "tsc");
   const shared = join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc");
-  const tsc = existsSync(local) ? local : existsSync(shared) ? shared : null;
+  // `root` is the workspace root, and it is where npm puts `tsc` once `package.json`
+  // declares `workspaces` — the two paths above are inside `packages/*`, which is exactly
+  // where it stops landing. Without this a fresh clone fails the assertion below on a tree
+  // where typescript is installed and working.
+  const root = join(HERE, "..", "..", "..", "node_modules", ".bin", "tsc");
+  const tsc = [local, shared, root].find(existsSync) ?? null;
   // A missing type-checker is a FAILURE, not a skip: an unrun build check reported as green
   // is how a build-time guarantee stops being one.
   assert.ok(tsc, "no tsc — run `npm i -D typescript` in hydra-dapp/packages/identity");

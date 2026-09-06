@@ -161,7 +161,12 @@ test("the cross-domain derivation does not compile", () => {
   // pool Secret into the vault domain; tsc must reject all of them.
   const local = join(HERE, "..", "node_modules", ".bin", "tsc");
   const shared = join(HERE, "..", "..", "..", "..", "packages", "linter", "node_modules", ".bin", "tsc");
-  const tsc = existsSync(local) ? local : existsSync(shared) ? shared : null;
+  // `root` is the workspace root, and it is where npm puts `tsc` once `package.json`
+  // declares `workspaces` — the two paths above are inside `packages/*`, which is exactly
+  // where it stops landing. Without this a fresh clone fails the assertion below on a tree
+  // where typescript is installed and working.
+  const root = join(HERE, "..", "..", "..", "node_modules", ".bin", "tsc");
+  const tsc = [local, shared, root].find(existsSync) ?? null;
   // A missing type-checker is a FAILURE, not a skip. Treating an unrun build check as
   // green is exactly how a build-time guarantee stops being one.
   assert.ok(tsc, "no tsc — run `npm i -D typescript` in platform/packages/identity");

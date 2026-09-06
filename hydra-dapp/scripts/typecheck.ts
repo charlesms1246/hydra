@@ -16,19 +16,37 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 const HERE = import.meta.dirname;
 const PROJECT = join(HERE, "..", "packages", "adversary", "tsconfig.json");
-const candidates = [
-  join(HERE, "..", "packages", "adversary", "node_modules", ".bin", "tsc"),
-  join(HERE, "..", "packages", "identity", "node_modules", ".bin", "tsc"),
-];
-const tsc = candidates.find(existsSync);
+/**
+ * Every `node_modules/.bin` from `packages/identity` upward, which is Node's own lookup.
+ *
+ * It was two hard-coded paths, and `packages/*` is exactly where npm STOPS putting things once
+ * a workspace root exists: `npm install` hoists `tsc` to `hydra-dapp/node_modules/.bin`, both
+ * candidates miss, and this exits 1 saying "run `npm i -D typescript` in packages/identity" on a
+ * tree where typescript is installed and working. Measured on a fresh clone with `workspaces`
+ * declared, before this was derived.
+ *
+ * Deriving it also retires a candidate that was already dead: `packages/adversary/node_modules`
+ * has held no `tsc` for some time and the list still named it first.
+ */
+function findTsc(): string | null {
+  let at = join(HERE, "..", "packages", "identity");
+  for (;;) {
+    const bin = join(at, "node_modules", ".bin", "tsc");
+    if (existsSync(bin)) return bin;
+    const up = dirname(at);
+    if (up === at) return null;
+    at = up;
+  }
+}
+const tsc = findTsc();
 // A missing type-checker is a FAILURE, not a skip: an unrun check reported as green is how a
 // build-time guarantee stops being one.
 if (!tsc) {
-  console.error("no tsc — run `npm i -D typescript` in hydra-dapp/packages/identity");
+  console.error("no tsc — run `npm install` in hydra-dapp/");
   process.exit(1);
 }
 

@@ -263,8 +263,11 @@ test("no pool material can reach the handshake, transitively or by hand", () => 
 });
 
 test("none of the eight cross-domain handshake routes compiles", () => {
+  // The third is the workspace root, and it is where npm puts `tsc` once `package.json` declares
+  // `workspaces` — the two above are inside `packages/*`, which is exactly where it stops landing.
   const tsc = [join(HERE, "..", "node_modules", ".bin", "tsc"),
-    join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc")].find(existsSync);
+    join(HERE, "..", "..", "identity", "node_modules", ".bin", "tsc"),
+    join(HERE, "..", "..", "..", "node_modules", ".bin", "tsc")].find(existsSync);
   // A missing type-checker is a FAILURE, not a skip.
   assert.ok(tsc, "no tsc — run `npm i -D typescript` in hydra-dapp/packages/identity");
 

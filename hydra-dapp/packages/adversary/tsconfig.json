@@ -16,7 +16,8 @@
       "node"
     ],
     "typeRoots": [
-      "../identity/node_modules/@types"
+      "../identity/node_modules/@types",
+      "../../node_modules/@types"
     ]
   },
   "include": [
