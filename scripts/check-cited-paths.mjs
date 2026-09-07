@@ -318,6 +318,16 @@ const OUTWARD = [
  */
 const TRACKED_DOCS = [...tracked].filter((f) => f.endsWith(".md"));
 
+/** Every directory that contains a tracked file, at every depth. Derived, never listed. */
+const trackedDirs = new Set();
+for (const f of tracked) {
+  for (let d = f.slice(0, f.lastIndexOf("/")); d.includes("/") || d; d = d.slice(0, d.lastIndexOf("/"))) {
+    if (!d) break;
+    trackedDirs.add(d);
+    if (!d.includes("/")) break;
+  }
+}
+
 /**
  * `--source`: THE SAME QUESTION ASKED OF THE OTHER CORPUS, AND THE ONE THAT HAS A STRANGER FOR A
  * READER.
@@ -349,6 +359,34 @@ const SELF = "scripts/check-cited-paths.mjs";
  * at all, which is why the two are handled differently below.
  */
 const DEFINED_FORMAT = /^(?:claude-docs\/|decisions\/\d{4})/;
+
+/**
+ * A path whose PARENT DIRECTORY is in this tree is a path this repository defines, even when the
+ * prefix is not one of the two above.
+ *
+ * ⛔ **FOUND BY WALKING INTO IT, 2026-09-07.** `SUBMISSION.md` — an OUTWARD document, quoted into
+ * the submission a judge reads — cites `.github/workflows/pages.yml` and says it *"publishes
+ * `web/out/`"*. **That file has never existed on this branch**; `.github/workflows/` contains one
+ * file and it is `web.yml`, which does not deploy anything. The guard did not report it: the
+ * prefix is not `claude-docs/` or `decisions/NNNN`, so it fell to the `skipped — names nothing in
+ * this tree` bucket, which is the branch for a backticked string that was never a path at all.
+ *
+ * That bucket is right for `foo/bar` in a sentence about somebody else's repo, and wrong here:
+ * **`.github/workflows/` is ours, so a missing file inside it is a dead citation and not an
+ * unrecognised shape.** Same hole `decisions/0041` came through, one directory over.
+ *
+ * NARROW ON PURPOSE — the DIRECTORY must exist and the FILE must not. A path into a directory
+ * this tree does not have stays "not a path", so a citation about another project is still
+ * ignored, and no new class of report appears from widening this.
+ */
+function inADirectoryWeHave(path) {
+  const slash = path.lastIndexOf("/");
+  if (slash <= 0) return false;
+  const dir = path.slice(0, slash);
+  // Only tracked directories count: `web/out/` exists on this machine and is a build artefact,
+  // which would make a citation into it look defined when a clone has no such directory.
+  return trackedDirs.has(dir);
+}
 
 /**
  * Whether a citation sits in code rather than in a comment — which is the difference between a
@@ -407,7 +445,7 @@ for (const file of files) {
     // was discarded**, and the run reported problems that were not citations. Measured on a fresh
     // clone: 193 extracted, 193 discarded, 0 reported. A guard that cannot fail in the world it
     // protects is the one shape this repository has spent a week on.
-    if (DEFINED_FORMAT.test(c.path)) {
+    if (DEFINED_FORMAT.test(c.path) || inADirectoryWeHave(c.path)) {
       /*
        * **THREE STATES, BECAUSE TWO OF THEM WERE THE SAME FAILURE AND ARE NOT THE SAME DEFECT.**
        * This branch failed every untracked citation in a format we define, marker or not. That is
