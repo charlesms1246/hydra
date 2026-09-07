@@ -42,7 +42,14 @@ export async function readState() {
   }
   if (!override) return st;
   // Usable with no stack at all: reading a public node needs a URL and nothing else.
-  return { ...(st ?? {}), devnetUrl: override, rpcOverride: override };
+  //
+  // `synthesised` says which of the two this is, because the caller cannot tell and one of
+  // them is not a recorded stack. `stopStack()` used to read this object, find it truthy and
+  // report `{ ok: true, killed: [] }` for a no-op — its `if (!st)` guard cannot fire once an
+  // override is set, because there is always an object. A caller inferring it from the shape
+  // (no pids, therefore synthetic) would be reading a premise that moves the day a field is
+  // added; this states the fact at the only place that knows it.
+  return { ...(st ?? {}), devnetUrl: override, rpcOverride: override, synthesised: st === null };
 }
 
 export async function clearState() {

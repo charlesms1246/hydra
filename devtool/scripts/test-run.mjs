@@ -44,6 +44,7 @@ const FILES = [
   "packages/cli/test/up.mjs",
   "packages/core/test/blocks.mjs",
   "packages/core/test/flows.mjs",
+  "packages/core/test/stack-stop.mjs",
   "packages/leak/test/run.mjs",
   "packages/linter/test/run.mjs",
   "packages/mcp/test/run.mjs",
