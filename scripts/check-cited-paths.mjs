@@ -202,6 +202,46 @@ function paragraphAt(text, index) {
   return text.slice(start, end === -1 ? text.length : end);
 }
 
+/**
+ * Test a marker against prose, not against its line breaks.
+ *
+ * **A HARD-WRAPPED MARKER DID NOT MATCH, AND IT FAILED SILENTLY IN THE PASSING DIRECTION.**
+ * `not in the public repository` written across a wrap is `public\nrepository`, which the pattern
+ * below does not match — so a marker a human had written, and could read, marked nothing. Every
+ * document here is hard-wrapped at 100 columns, so the phrase alternatives in {@link HELD} were
+ * effectively single-word-only by accident. Second time today a guard has required a phrase to be
+ * contiguous on one line; the first cost two attempts on a README count.
+ */
+const marks = (para) => HELD.test(para.replace(/\s+/g, " "));
+
+/**
+ * Is this path marked held ANYWHERE in this document, by a sentence that names it?
+ *
+ * **THE PARAGRAPH WAS THE WRONG UNIT FOR THE DOCUMENTS THAT MOST NEED THE MARKER, AND IT WAS THE
+ * WRONG UNIT IN TWO DIFFERENT SHAPES.** `linter/README.md` cites four withheld findings from eight
+ * cells of one table, and a markdown table has no blank line in it — so the whole table is one
+ * paragraph and a caption beneath it is a different one, unreachable. `leak/README.md` cites the
+ * same four findings from a table and five separate prose paragraphs. Under a paragraph rule the
+ * only ways to satisfy this check were to repeat the same clause in eight table cells and five
+ * paragraphs, or to hide it in an HTML comment — which would satisfy the check by saying it to
+ * nobody, and this rule exists to make a reader told.
+ *
+ * So the unit is the **document and the path together**: a paragraph that says "held" AND names
+ * `findings/02` marks every `findings/02` in that file. **The marker still has to name the path**,
+ * which is what keeps this from becoming "the word held appears somewhere in this document" — an
+ * unrelated sentence about a held position cannot mark anything, and that case is real: the note
+ * at the bottom of this report exists because `web/README.md` says "a held position pending
+ * commissioned art" about three files that are committed.
+ *
+ * A reader who is told once that a set of documents is withheld does not need telling seven times;
+ * a reader who is never told is the failure this file is about.
+ */
+function heldInDocument(text, citePath) {
+  const needle = citePath.toLowerCase();
+  return text.split("\n\n").some((para) =>
+    marks(para) && para.toLowerCase().includes(needle));
+}
+
 const HELD = /\bheld\b|\bwithheld\b|not in the public repository|pending (private )?disclosure/i;
 
 /**
@@ -374,10 +414,21 @@ for (const file of files) {
     // Build outputs and installed dependencies are ARTEFACTS being described, not sources being
     // cited: `node_modules/.bin contains one entry`, `pages.yml publishes web/out/`. A reader is
     // not being sent to open them, and flagging them is the noise that gets a guard skipped.
-    if (/(^|\/)(node_modules|out|dist|target|build)(\/|$)/.test(full)) { unresolvable++; continue; }
+    // `.upstream` joins them for the same reason and not as a special case: it is the upstream
+    // clone the tooling creates and then LOCATES — "then the in-repo `.upstream/`, then a sibling
+    // `../.upstream/`" is a description of a search order, not a document a reader is being sent
+    // to open. Marking it "held" would have been the alternative and it would have been false:
+    // nothing is withholding it, it is a clone you make.
+    if (/(^|\/)(node_modules|out|dist|target|build|\.upstream)(\/|$)/.test(full)) { unresolvable++; continue; }
     // In source mode "held" is not an answer — see the flag's note above.
-    const marked = !source && HELD.test(paragraphAt(text, c.index));
-    if (isTracked(full)) {
+    // The document-wide rule answers "is this held", so it is asked only of paths that are not
+    // here. Asking it of a TRACKED path would widen the over-marking note below to every mention
+    // of, say, `test/run.mjs` in a file whose marker paragraph names it as the route to take
+    // instead — turning a report about false held markers into a report about correct ones.
+    const tracked = isTracked(full);
+    const marked = !source
+      && (marks(paragraphAt(text, c.index)) || (!tracked && heldInDocument(text, c.path)));
+    if (tracked) {
       ok++;
       if (marked) overMarked.push(`${file.slice(ROOT.length + 1)}  ${c.path}`);
     } else if (marked) {

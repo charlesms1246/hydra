@@ -38,3 +38,7 @@ label pairing is the documented mitigation.
 This is the leak-report surface that `HANDOFF.md` Phase H asks for. It does **not** inspect live
 pool state, channels, notes or nullifiers — `IDEA.md` §4 wants that, and it needs a running
 stack plus viewing keys to be meaningful. Not built rather than half-built.
+
+`HANDOFF.md` and `IDEA.md` are internal planning documents and are **not in the public
+repository** — they are cited for provenance, not as something to open. What they asked for is
+visible in what shipped: `packages/leak/README.md` documents the disclosure surface this archives.

@@ -3,6 +3,11 @@
 Produces `findings/07-client-discovery-cost.md`. Runs entirely in memory: no chain, no Cairo
 toolchain, no proving service, no network.
 
+`findings/07-client-discovery-cost.md` and the `findings/07` sections cited below are **withheld
+pending coordinated disclosure with StarkWare** and are not in this clone. The measurement is not:
+run the scripts below and you produce the numbers yourself, which is the point of an experiment
+living here rather than a write-up quoting one.
+
 ## Prerequisites
 
 Node >= 24, and the upstream SDK built from the clone at `.upstream/`:

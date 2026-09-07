@@ -6,6 +6,13 @@ addresses in the clear — and how large the anonymity set actually is.
 
 Phase F of HYDRA. Node >= 24, plain `.mjs`, no build step, no dependencies.
 
+**Where the citations go.** This README derives its parties, its auditor row and its stated limits
+from `findings/01`, `findings/02`, `findings/03` and `findings/06`, which are **withheld pending
+coordinated disclosure with StarkWare** and are not in this clone. Everything they support is
+checkable without them: the pool source is cited inline as `upstream:…` with file and line, and
+`test/run.mjs` asserts the invariants — including the auditor row — against those citations rather
+than against the findings.
+
 ```bash
 export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 24
 

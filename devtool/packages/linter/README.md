@@ -25,6 +25,11 @@ Exit 0 clean or info-only, 1 at warn or above, 2 bad invocation.
 | `HYD007` | info | The auditor can decrypt this user's history. **Always emitted** when pool usage is detected | `findings/01` |
 | `HYD000` | unknown | Config not statically determinable. **Not** a pass | — |
 
+`findings/01`, `findings/02`, `findings/06` and `findings/07` in the Source column are **withheld
+pending coordinated disclosure with StarkWare** and are not in this clone. Each rule is checkable
+without them: `node test/run.mjs` exercises every rule against fixtures, and `src/rules.mjs` carries
+the pool source citation each finding was derived from.
+
 ## Two design decisions
 
 **Absence of findings is never a safety claim.** `HYD000` exists so indirection is reported
