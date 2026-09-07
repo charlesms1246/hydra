@@ -88,27 +88,44 @@ test("a real pointer still reaches the chain", () => {
 });
 
 test("no web package depends on identity or vault-client", () => {
-  // I6's build-time check. `web/` does not exist yet — `claude-docs/FRONTEND-SCAFFOLD.md`
-  // parks it until Phase 4 — so this cannot pass or fail on evidence today. It reports that
-  // plainly instead of going green, because a dependency check that silently passes on an
-  // absent directory is how the check comes to exist without ever having run.
-  const webDirs = ["web", "app"].map((d) => join(DAPP, d)).filter(existsSync);
-  if (webDirs.length === 0) {
-    assert.ok(existsSync(join(DAPP, "..", "claude-docs", "docs", "FRONTEND-SCAFFOLD.md")),
-      "no web/ to check and no scaffold note explaining why — one of those must be true");
-    return;
-  }
-  for (const dir of webDirs) {
-    const offenders = readdirSync(dir, { recursive: true, encoding: "utf8" })
-      .filter((f) => /\.(ts|tsx|js|jsx)$/.test(f))
-      .filter((f) => {
-        try {
-          return /from ["'].*(packages\/identity|packages\/vault-client|@hydra-platform\/(identity|vault-client))/
-            .test(execFileSync("/usr/bin/cat", [join(dir, f)], { encoding: "utf8" }));
-        } catch { return false; }
-      });
-    assert.deepEqual(offenders, [], `${dir} imports key-handling code:\n${offenders.join("\n")}`);
-  }
+  /*
+   * I6's build-time check, and **it spent its life looking in a directory that was never going
+   * to exist**.
+   *
+   * It searched `hydra-dapp/web` and `hydra-dapp/app`. The site was built at the REPOSITORY
+   * root — `web/`, a sibling of `hydra-dapp/` — so both candidates were always absent, the
+   * fallback branch always ran, and the only thing this test asserted was that a planning note
+   * called `claude-docs/docs/FRONTEND-SCAFFOLD.md` still existed. It went green for every one
+   * of the 27 site tests' worth of pages, having read none of them.
+   *
+   * Found on 2026-09-07 by archiving that note: the assertion failed, which is the only reason
+   * anybody looked. **A guard anchored to a document rather than to the thing it guards fails
+   * when the document moves and passes when the subject does** — exactly backwards.
+   *
+   * The fallback is gone with it. `web/` exists; there is nothing left to park.
+   */
+  const webRoot = join(DAPP, "..", "web");
+  assert.ok(existsSync(webRoot), "web/ is missing — this check has no subject");
+
+  const files = readdirSync(webRoot, { recursive: true, encoding: "utf8" })
+    .filter((f) => /\.(ts|tsx|js|jsx)$/.test(f))
+    // Build output and installed dependencies are not this repository's imports. `.next/`
+    // inlines third-party source that trips the pattern on text nobody here wrote.
+    .filter((f) => !/(^|[\\/])(node_modules|\.next|out)([\\/]|$)/.test(f));
+
+  // **The floor.** An exclude list one directory too greedy leaves zero files, and zero files
+  // pass this check exactly like a clean site does. The site has app routes, components, tests
+  // and scripts; if this is ever a handful, the filter above ate the subject.
+  assert.ok(files.length >= 20, `only ${files.length} web source files seen — the filter is wrong`);
+
+  const offenders = files.filter((f) => {
+    try {
+      return /from ["'].*(packages\/identity|packages\/vault-client|@hydra-platform\/(identity|vault-client))/
+        .test(execFileSync("/usr/bin/cat", [join(webRoot, f)], { encoding: "utf8" }));
+    } catch { return false; }
+  });
+  assert.deepEqual(offenders, [],
+    `web/ imports key-handling code:\n${offenders.join("\n")}`);
 });
 
 test("no route from sandbox material to the chain compiles", () => {

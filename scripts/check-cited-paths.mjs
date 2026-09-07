@@ -265,7 +265,8 @@ const HELD = /\bheld\b|\bwithheld\b|not in the public repository|pending (privat
  *
  * THE TEST IS NOT "DOES THIS DOCUMENT LOOK OFFICIAL". IT IS "DOES ITS CONTENT LEAVE THE
  * REPOSITORY". The first version of this list had seven files, picked by the first test, and
- * three were wrong: `PUBLISHING-RUNBOOK.md` is an operator checklist the user runs,
+ * three were wrong: `PUBLISHING-RUNBOOK.md` is an operator checklist the user runs (it is
+ * `release/NPM-PUBLISH.md` since 2026-09-07; the reasoning is unchanged),
  * `RECORDING-RUNBOOK.md` is production discipline for whoever holds the camera, and
  * `SITE-COPY-SPEC.md` is written for another session. Every one of those readers has
  * `claude-docs/` open. Their six sibling-document citations were judged individually before this
