@@ -314,6 +314,23 @@ switch (command) {
     console.log(`identity written to ${STATE_FILE}`);
     console.log(`fingerprint ${fingerprint(publishBundle(state))}`);
     console.log("\nthat file holds your root key in the clear. it is mode 0600 and that is all.");
+    /*
+     * **THE ONE MOMENT WE CAN SPEAK TO SOMEBODY WHO HAS JUST DELETED A STATE, and we cannot know
+     * that they have.** The refusal above warns whoever still has a state file. It cannot reach
+     * the person who read it, deleted the file, and ran this — and that person is precisely the
+     * one who now holds a new identity while an old record goes on naming the previous one.
+     *
+     * Nothing here can detect it: the state that would have remembered publishing is what was
+     * deleted, which is the same reason `check` reads the chain rather than a field. So this is
+     * conditional and short, and it names the verb that can answer it. Printed on every `init`,
+     * including genuinely first ones, because the cost of a sentence a first-timer does not need
+     * is much lower than the cost of silence to the one who does — sources being lost with both
+     * sides told a true sentence and neither told this one.
+     */
+    console.log("");
+    console.log("IF YOU HAVE PUBLISHED A RECORD BEFORE, this is a new identity and that record");
+    console.log("still names the old one. `hydra check <address>` compares them; re-publish with");
+    console.log("`hydra record <address>` if they differ.");
     // **A FRESH `hydra init` WITH NO FLAGS SUCCEEDS AND CANNOT SEND ANYTHING.** It printed a
     // fingerprint and stopped, so the only signal that the install was unusable was `(unset)` on a
     // page the user had no reason to visit. Said here, at the one moment every user passes through.
