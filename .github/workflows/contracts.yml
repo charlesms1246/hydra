@@ -1,0 +1,109 @@
+# The contract and client gates. This runs nothing that deploys and nothing that writes a chain.
+#
+# ⛔ **THESE HAD NEVER RUN IN CI.** `web.yml` is the only other workflow and it is path-filtered to
+# `web/**`, so no push touching `hydra-dapp/` or `contracts/` triggered anything at all: `snforge
+# test`, the client's suite and the Cairo/TypeScript parity check had never been run by anything
+# but a person on a laptop. The parity test is deliberately built to FAIL rather than skip when
+# snforge is absent — a design that does no work if nothing invokes it.
+#
+# ⛔ **PIN THE TOOLCHAIN, DO NOT TAKE LATEST.** `scarb` and `snforge` versions decide the class
+# hash. A runner that silently moved to a newer scarb would produce a different hash from the one
+# a deployment record names, and the failure would look like a bad record rather than a bad pin.
+# These two versions are the ones `hydra-dev doctor` checks for locally, so a contributor whose
+# machine passes `doctor` and whose PR passes here has been checked against the same toolchain.
+
+name: contracts
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["hydra-dapp/**", ".github/workflows/contracts.yml"]
+  push:
+    paths: ["hydra-dapp/**", ".github/workflows/contracts.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cairo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.18.0"
+
+      - uses: foundry-rs/setup-snfoundry@v3
+        with:
+          starknet-foundry-version: "0.63.0"
+
+      # ⛔ ASSERT THE PINS RATHER THAN TRUSTING THE ACTIONS. A setup action that silently resolved
+      # something else would change the class hash and nothing here would say so.
+      - name: The toolchain is the one the class hash was built with
+        run: |
+          scarb --version
+          snforge --version
+          scarb --version | grep -q "scarb 2.18.0" || { echo "::error::scarb is not 2.18.0"; exit 1; }
+          snforge --version | grep -q "0.63.0" || { echo "::error::snforge is not 0.63.0"; exit 1; }
+
+      - name: Build the contract
+        working-directory: hydra-dapp/contracts
+        run: scarb build
+
+      - name: Cairo tests
+        working-directory: hydra-dapp/contracts
+        run: snforge test
+
+  client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # A fresh checkout has no node_modules, and the parity test imports `@scure/starknet`. It
+      # died on `Cannot find package` before it could compare anything — which reads as a broken
+      # test rather than a missing install.
+      - name: Install
+        working-directory: hydra-dapp
+        run: npm install
+
+      # ⛔ THIS EXITS 1 IN A CLONE AND THAT IS CORRECT — one test, `I8 IS WRITTEN DOWN`, asserts a
+      # decision record in `claude-docs/`, which is gitignored by a standing decision and cannot be
+      # in a checkout. `ERRORS.md` records the reasoning: a dependency check that goes green on an
+      # absent directory is how a check comes to exist without ever having run.
+      #
+      # So the gate is "715 of 716 pass and the ONLY failure is that one". A second failure is
+      # real. Asserted rather than described, because a `|| true` here would pass on anything.
+      - name: Client suite — one known failure, and only that one
+        working-directory: hydra-dapp
+        run: |
+          set +e
+          npm test 2>&1 | tee /tmp/client.log
+          set -e
+          if ! grep -q '✖ I8 IS WRITTEN DOWN' /tmp/client.log; then
+            echo "::error::the expected clone-only failure did not occur. Either claude-docs/ is"
+            echo "::error::present here (it must not be) or that guard stopped running."
+            exit 1
+          fi
+          # ⛔ COUNT node:test's OWN SUMMARY, NOT THE ✖ LINES. The first version of this asserted
+          # two ✖ lines, reasoning that a failure prints inline and again in the summary. Measured
+          # against a real clone it is THREE — the summary's `✖ failing tests:` header is a ✖ line
+          # too. A guessed output format, in the gate deciding whether a push is good.
+          fails=$(grep -oE '^ℹ fail [0-9]+' /tmp/client.log | awk '{print $3}')
+          if [ "$fails" != "1" ]; then
+            echo "::error::expected exactly 1 failure (the documented clone-only guard), got $fails"
+            grep -E '^✖ ' /tmp/client.log | sort -u
+            exit 1
+          fi
+          echo "one failure, and it is the documented clone-only guard."
+
+      - name: Citations
+        run: node scripts/check-cited-paths.mjs --source
