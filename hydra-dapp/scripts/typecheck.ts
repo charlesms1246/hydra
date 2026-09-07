@@ -59,7 +59,30 @@ try {
 
 const errors = out.split("\n").filter((l) => /error TS/.test(l));
 const fixtures = errors.filter((l) => /must-not-compile/.test(l));
-const real = errors.filter((l) => !/must-not-compile/.test(l));
+
+/**
+ * `.upstream/` IS A VENDORED THIRD-PARTY CHECKOUT AND A CLONE DOES NOT HAVE ONE.
+ *
+ * `live-lifecycle.test.ts` imports StarkWare's SDK by path — `.upstream/client/node_modules/...`.
+ * That tree is gitignored, so on a fresh clone tsc raises TS2307 and **`npm test` dies at its
+ * FIRST step, before a single test runs.** Measured 2026-09-07 with `git archive HEAD`: one error,
+ * exit 1, no tests executed. That is the step immediately before `npm publish`.
+ *
+ * ⚠ NARROW ON PURPOSE, and both halves of the condition matter. It suppresses **only** TS2307,
+ * **only** for a specifier under `.upstream/`, and **only when `.upstream/` is genuinely not
+ * checked out**. On a machine that has the tree, the same error means the SDK moved or the path
+ * is wrong, and it must still fail — which is the case this repository would actually be hurt by.
+ *
+ * AND IT ANNOUNCES ITSELF. A suppression nobody can see is how a check comes to be trusted for
+ * coverage it does not have; the count is printed on the success line.
+ */
+const UPSTREAM = join(HERE, "..", "..", ".upstream");
+const upstreamAbsent = !existsSync(UPSTREAM);
+const isAbsentUpstream = (l: string) =>
+  upstreamAbsent && /error TS2307/.test(l) && /[./]\.upstream\//.test(l);
+
+const suppressed = errors.filter(isAbsentUpstream);
+const real = errors.filter((l) => !/must-not-compile/.test(l) && !isAbsentUpstream(l));
 
 if (real.length) {
   console.error(real.join("\n"));
@@ -73,4 +96,5 @@ if (fixtures.length === 0) {
     + "zero means the build gate stopped gating. See i5/i6/i8's route checks.");
   process.exit(1);
 }
-console.log(`typecheck clean (${fixtures.length} expected fixture errors)`);
+console.log(`typecheck clean (${fixtures.length} expected fixture errors`
+  + `${suppressed.length ? `, ${suppressed.length} suppressed — .upstream/ is not checked out here` : ""})`);
