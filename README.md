@@ -46,6 +46,8 @@ public chain that metadata is permanent and free to read. This client spends its
 message's chain event is separated in time from its upload, and the upload travels beside cover
 objects that are indistinguishable from it.
 
+<img src="https://raw.githubusercontent.com/charlesms1246/hydra/main/docs/figures/halves.svg" alt="Content is sealed and is the smaller problem. What survives encryption is who talked to whom, when, and how often." width="640">
+
 **2. What leaks is computed, never promised.**
 `hydra disclose` prints what every party in the system can see, and each row is generated from the
 value that makes it true rather than written by hand. The marketing site renders the *same*
@@ -144,6 +146,12 @@ no key-handling code in a browser context — and
 
 ## The flow, source to organisation
 
+<img src="https://raw.githubusercontent.com/charlesms1246/hydra/main/docs/figures/message-path.svg" alt="A message splits in two: a pointer goes on chain, and the body goes to a server that cannot read it, beside four decoys." width="700">
+
+**The same thing again as a sequence, for a reader who wants the order.** The diagram below renders
+on GitHub and not on npm; the figure above renders on both, which is why the argument is carried by
+the figure and the ordering by the diagram.
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -184,6 +192,8 @@ it is not. The receiving guide covers it; the vault says so in its own startup b
 ## Disclosure
 
 Most projects put this in a footnote. It is the product.
+
+<img src="https://raw.githubusercontent.com/charlesms1246/hydra/main/docs/figures/disclosure-map.svg" alt="The disclosure statement as three sections: what they can see, what they cannot, and what is unknown." width="640">
 
 ```
 $ hydra disclose

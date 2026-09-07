@@ -42,6 +42,8 @@ spent there.
 ## The background
 
 **1. What leaks is computed, never promised.**
+<img src="https://raw.githubusercontent.com/charlesms1246/hydra/main/docs/figures/verbs.svg" alt="One conversation: send is deniable, publish is signed and still private to the conversation. A post goes to strangers, one at a time." width="640">
+
 `hydra disclose` prints **58** rows describing what every party can see, and each is generated from
 the value that makes it true rather than written by hand. The terminal interface and the marketing
 site render the *same* statement from the *same* function in
@@ -198,6 +200,8 @@ $ hydra disclose
 - The chain shows that YOU published, and in what order.
 …
 ```
+
+<img src="https://raw.githubusercontent.com/charlesms1246/hydra/main/docs/figures/anonymity-set.svg" alt="Sent on its own a message is one of five objects that look the same; sent close together, messages hide in each other's cover too." width="640">
 
 58 rows, every one generated from the mechanism that makes it true.
 

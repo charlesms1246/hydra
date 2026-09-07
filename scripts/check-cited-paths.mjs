@@ -615,11 +615,42 @@ const deadLinks = [];
   for (const t of tracked) {
     for (let d = dirname(t); d && d !== "."; d = dirname(d)) dirs.add(d);
   }
+  /*
+   * ⛔ **AN `https://raw.githubusercontent.com/<us>/…` URL IS A REPOSITORY PATH WEARING A URL.**
+   *
+   * The `https?:` skip below is right for a link to somebody else's site and wrong for a link to
+   * our own tree, and the difference is invisible in the markup. A README embedding a figure has
+   * to use an absolute URL — npm renders no relative image — so **every image in both published
+   * READMEs takes this shape**, and every one of them was unchecked: I added five and the guard
+   * exited 0 with one of them pointed at a file that does not exist. Measured, not assumed.
+   *
+   * Derived from `origin` rather than hard-coded, so a fork's URLs are external to it and are
+   * skipped rather than reported as broken against a tree they do not belong to.
+   */
+  let SELF_RAW = null;
+  try {
+    const origin = execFileSync("git", ["remote", "get-url", "origin"], { cwd: ROOT, encoding: "utf8" }).trim();
+    const m = origin.match(/[:/]([^/:]+)\/([^/]+?)(?:\.git)?$/);
+    if (m) SELF_RAW = new RegExp(`^https://raw\\.githubusercontent\\.com/${m[1]}/${m[2]}/[^/]+/(.+)$`);
+  } catch { /* no origin is not a failure here — nothing to compare against */ }
+
+  /** `<img src="…">` and `<a href="…">`. Markdown links are covered by LINK; HTML was not. */
+  const HTML_ATTR = /<[a-zA-Z][^>]*?\s(?:src|href)=["']([^"']+)["']/g;
+
   for (const file of TRACKED_DOCS) {
     const base = dirname(file) === "." ? "" : dirname(file);
-    for (const m of readFileSync(join(ROOT, file), "utf8").matchAll(LINK)) {
-      const target = m[1];
-      if (/^(?:https?:|mailto:|#)/.test(target)) continue;
+    const text = readFileSync(join(ROOT, file), "utf8");
+    for (const m of [...text.matchAll(LINK), ...text.matchAll(HTML_ATTR)]) {
+      let target = m[1];
+      // Our own raw URL: strip it back to the path it is really citing.
+      const own = SELF_RAW && target.match(SELF_RAW);
+      if (own) {
+        const at = own[1].split("#")[0];
+        linkTargets.push(at);
+        if (!tracked.has(at)) deadLinks.push(`${file} -> ${target}`);
+        continue;
+      }
+      if (/^(?:https?:|mailto:|data:|#)/.test(target)) continue;
       const at = relative(ROOT, join(ROOT, base, target.split("#")[0]));
       linkTargets.push(at);
       if (!tracked.has(at) && !dirs.has(at)) deadLinks.push(`${file} -> ${target}`);
