@@ -27,7 +27,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { uncoveredRoutes } from "../src/must-not-compile.ts";
+import { uncoveredRoutes, absentUpstreamNoise } from "../src/must-not-compile.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGES = join(HERE, "..", "..");
@@ -175,6 +175,7 @@ test("NO ROUTE FROM A USER'S VALUE TO REMOVAL AUTHORITY COMPILES", () => {
     + `\n\nfull tsc output:\n${out}`);
   assert.deepEqual(orphans, [],
     `type errors in the fixture outside any numbered route: lines ${orphans.join(", ")}`);
-  const other = out.split("\n").filter((l) => /error TS/.test(l) && !/must-not-compile/.test(l));
+  const other = out.split("\n").filter((l) => /error TS/.test(l) && !/must-not-compile/.test(l)
+    && !absentUpstreamNoise(l));
   assert.deepEqual(other, [], `type errors outside the fixtures:\n${other.join("\n")}`);
 });

@@ -21,7 +21,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { scanMatches, assertScansEveryFile } from "../src/scan.ts";
-import { uncoveredRoutes } from "../src/must-not-compile.ts";
+import { uncoveredRoutes, absentUpstreamNoise } from "../src/must-not-compile.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -181,6 +181,6 @@ test("none of the eight publish routes compiles", () => {
   // Nothing ELSE may fail to type-check, or this passes for the wrong reason. Every
   // `*-must-not-compile.ts` is excluded, not just this one: they exist to fail, and a new
   // invariant's fixture must not break an older invariant's build gate.
-  const other = lines.filter((l) => !/must-not-compile/.test(l));
+  const other = lines.filter((l) => !/must-not-compile/.test(l) && !absentUpstreamNoise(l));
   assert.deepEqual(other, [], `type errors outside the fixtures:\n${other.join("\n")}`);
 });

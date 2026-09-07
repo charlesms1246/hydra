@@ -22,7 +22,9 @@
  * So it lives here, and a fourth invariant that wants this instrument gets the fixed one.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** One numbered route in a fixture: its label and the lines it owns. */
 export type Route = { readonly label: string; readonly from: number; readonly to: number };
@@ -88,4 +90,30 @@ export function uncoveredRoutes(
     // errors are being credited to the wrong attempt.
     orphans: errorLines.filter((n) => !routes.some((r) => n >= r.from && n < r.to)),
   };
+}
+
+
+/**
+ * Is this tsc line the noise a missing `.upstream/` makes, and nothing else?
+ *
+ * **SHARED RATHER THAN COPIED, because the thing it filters is already triplicated.** I5, I6 and
+ * I8 each end with the same `assert.deepEqual(other, [], "type errors outside the fixtures")`, and
+ * a predicate written into one of them and not the others is the defect this module was created
+ * to stop — three copies of an instrument, fixed in one.
+ *
+ * `live-lifecycle.test.ts` imports StarkWare's SDK by path, out of `.upstream/`, which is a
+ * vendored checkout and gitignored. A clone does not have it, so tsc raises TS2307 and all three
+ * route checks fail — **measured in a real `git clone` on 2026-09-07: 5 failures, 3 of them this
+ * one line.** They fail as invariant violations, which sends a reader hunting for a route that
+ * hands away removal authority when the actual cause is a directory nobody checked out.
+ *
+ * ⚠ NARROW, and every clause is load-bearing: only TS2307, only a specifier under `.upstream/`,
+ * and only when `.upstream/` is genuinely absent. On a machine that HAS the tree, this same error
+ * means the SDK moved — which is a real finding and must still fail. The same predicate, for the
+ * same reason, is in `scripts/typecheck.ts`; that one runs first and prints its suppression count.
+ */
+const UPSTREAM = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", ".upstream");
+
+export function absentUpstreamNoise(line: string): boolean {
+  return !existsSync(UPSTREAM) && /error TS2307/.test(line) && /[./]\.upstream\//.test(line);
 }

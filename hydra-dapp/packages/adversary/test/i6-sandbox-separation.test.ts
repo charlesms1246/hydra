@@ -18,6 +18,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+
+import { absentUpstreamNoise } from "../src/must-not-compile.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -159,6 +161,6 @@ test("no route from sandbox material to the chain compiles", () => {
   const fixture = lines.filter((l) => l.includes("i6-must-not-compile"));
   assert.ok(fixture.length >= 6,
     `the fixture produced ${fixture.length} type errors, expected at least 6:\n${out}`);
-  const other = lines.filter((l) => !/must-not-compile/.test(l));
+  const other = lines.filter((l) => !/must-not-compile/.test(l) && !absentUpstreamNoise(l));
   assert.deepEqual(other, [], `type errors outside the fixtures:\n${other.join("\n")}`);
 });
