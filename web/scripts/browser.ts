@@ -146,6 +146,29 @@ export function launch(exe: string): Promise<{ ws: string; kill: () => void }> {
     "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"] });
 
+  /*
+   * ⛔ **THE BROWSER MUST DIE WITH THIS PROCESS, WHATEVER KILLED IT.**
+   *
+   * Every caller of this function exits non-zero from the middle of a run when a check fails —
+   * that is what a gate does — and every one of those paths used to skip the `kill` at the bottom
+   * of the script. Ninety-one orphaned Chrome processes were found alive two hours after the runs
+   * that spawned them, several over 600MB, on a 13GB machine that had already crashed once that
+   * day for want of memory. **A gate that leaks the browser it measures with makes the machine
+   * worse every time it correctly reports a failure**, which is the wrong incentive to build into
+   * a check.
+   *
+   * `process.once("exit")` fires for a normal return, for `process.exit()`, and for an uncaught
+   * throw. Only synchronous work is permitted there, which is why the signal and the profile
+   * removal are both synchronous here and the graceful async `kill()` below is kept as well: that
+   * one waits for the process to be gone before removing its directory, which is the tidy path
+   * when there is one.
+   */
+  const reap = () => {
+    try { proc.kill(); } catch { /* already gone */ }
+    try { rmSync(profile, { recursive: true, force: true }); } catch { /* tmpfs, best effort */ }
+  };
+  process.once("exit", reap);
+
   return new Promise((resolve, reject) => {
     let buf = "";
     const timer = setTimeout(() => reject(new Error("Chrome did not report a debugging port")), 30_000);
@@ -160,6 +183,7 @@ export function launch(exe: string): Promise<{ ws: string; kill: () => void }> {
           // to it at the moment it is signalled, and an `ENOTEMPTY` here would fail a run whose
           // measurements had all passed.
           kill: async () => {
+            process.removeListener("exit", reap);
             const gone = new Promise((done) => proc.once("exit", done));
             proc.kill();
             await Promise.race([gone, new Promise((r) => setTimeout(r, 2000))]);
