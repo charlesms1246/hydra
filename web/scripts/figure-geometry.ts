@@ -142,6 +142,41 @@ const PROBE = `(() => {
 
 /* ------------------------------------------------------------------------------------------- */
 
+
+/**
+ * Does anything run off the right edge — **with every fold opened**.
+ *
+ * ⛔ **THE STATE THAT OVERFLOWED WAS BEHIND A `<details>`, WHICH IS WHY NOTHING CAUGHT IT.**
+ * `.tg-help-body` ran 68px past the viewport at 390px and off the edge at every width below
+ * 768px, for two days, through 27 tests and both rendering gates. It was found by a person
+ * opening the `?` panel on a phone-width window — the one state nobody measures, because a
+ * default render never enters it.
+ *
+ * So this opens every `<details>` on the page before measuring. That is not a trick: this site's
+ * own rule is that a fold keeps its words in the shipped document rather than hiding them, so the
+ * unfolded page is the real page and measuring only the folded one measures less than ships.
+ *
+ * It reports the WIDEST element rather than just the overflow, because "the document is 458 wide
+ * in a 390 viewport" sends you looking and "div.tg-help-body ends at 458" tells you where.
+ */
+const OVERFLOW = `(() => {
+  for (const d of document.querySelectorAll("details")) d.open = true;
+  const vw = document.documentElement.clientWidth;
+  const scroll = document.documentElement.scrollWidth;
+  if (scroll <= vw + 1) return null;
+  let worst = null;
+  for (const el of document.querySelectorAll("body *")) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    if (!worst || r.right > worst.right) {
+      worst = { right: Math.round(r.right), what: el.tagName.toLowerCase()
+        + (typeof el.className === "string" && el.className
+           ? "." + el.className.trim().split(/\\s+/).join(".") : "") };
+    }
+  }
+  return { scroll, vw, worst };
+})()`;
+
 const root = normalize(join(import.meta.dirname, "..", "out"));
 if (!existsSync(join(root, "index.html"))) {
   console.error(`::error::${root}/index.html is missing — build before measuring.`);
@@ -186,6 +221,23 @@ for (const width of WIDTHS) {
     const { result } = await cdp.send("Runtime.evaluate", {
       expression: PROBE, returnByValue: true, awaitPromise: false,
     }, sessionId);
+
+    /*
+     * Opens every fold and re-measures. It runs after the figure probe rather than before so the
+     * geometry above is measured on the page as it renders, and the overflow below on the page as
+     * a reader can unfold it — two different questions about the same route.
+     */
+    const { result: over } = await cdp.send("Runtime.evaluate", {
+      expression: OVERFLOW, returnByValue: true, awaitPromise: false,
+    }, sessionId);
+    const spill = over.value as { scroll: number; vw: number; worst: { right: number; what: string } } | null;
+    if (spill) {
+      failures += 1;
+      console.error(`\n${width}px ${route}`);
+      console.error(`  ::error::the document is ${spill.scroll}px wide in a ${spill.vw}px viewport `
+        + `— ${spill.worst.what} ends at ${spill.worst.right}. A reader scrolls sideways and the `
+        + "right-hand text is cut. Measured with every <details> open.");
+    }
 
     const out = result.value as { violations: string[]; figures: number; texts: number };
     widthFigures += out.figures;
