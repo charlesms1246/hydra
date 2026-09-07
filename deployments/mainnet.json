@@ -1,0 +1,65 @@
+{
+  "_note": [
+    "The MAINNET deployment of the channel contract, as a record a reader can re-derive.",
+    "Same purpose as `sepolia.json`: a public document can cite a file instead of restating a hex",
+    "string, and the deployment's own working files are gitignored, so without this record the tree",
+    "cannot show that the contract exists and 'absent from tracked source' reads as 'not deployed'.",
+    "Every value below was read from a node with the query beside it, not copied from a document.",
+    "Re-derive it: run the queries in `verified_by` against `rpc` and compare.",
+    "THE CLASS HASH IS NOT SEPOLIA'S. Sepolia carries 0x07d2f324…4467, the version with a `u64`",
+    "counter in storage; that counter was removed before this deployment, so mainnet carries a",
+    "different class. `scarb build && sncast utils class-hash --contract-name Channel` on the",
+    "tracked source reproduces the value below, which is the check that this record is honest.",
+    "This is NOT strk20.json. That file wants three mainnet hashes each proving a real call against",
+    "the STRK20 pool. This deploys our own contract and moves no value through any pool, so it",
+    "belongs here and would be a false claim there."
+  ],
+  "network": "mainnet",
+  "chain_id": "0x534e5f4d41494e",
+  "rpc": "https://api.cartridge.gg/x/starknet/mainnet",
+  "contract": {
+    "name": "channel",
+    "source": "hydra-dapp/contracts/src/channel.cairo",
+    "address": "0x022baaf7927aad02563ec530a0b9fbc42cedb5ce8beb8d98c0629ef1491ffbdf",
+    "class_hash": "0x078b9f5e767aaf311db347afc3f233bb848e4a49983cbd3046bf921649c5ef03"
+  },
+  "declared_by": {
+    "transaction_hash": "0x047b2cb9132b7e872a91dbd29113c707ac8bb42d875ae9d87c738ecb538ead9e",
+    "type": "DECLARE",
+    "block_number": 14523447,
+    "execution_status": "SUCCEEDED",
+    "finality_status": "ACCEPTED_ON_L2",
+    "fee_strk": "0.575121"
+  },
+  "deployed_by": {
+    "transaction_hash": "0x048f73141249d2679b796d4ae1b02f6423f522a71af8077516e3437f5ebd5186",
+    "type": "INVOKE",
+    "_type_note": "INVOKE because the deploy went through an account, via the universal deployer. It is the transaction that deployed the contract; calling it 'the deploy transaction' is loose.",
+    "block_number": 14523463,
+    "execution_status": "SUCCEEDED",
+    "finality_status": "ACCEPTED_ON_L2",
+    "fee_strk": "0.037265"
+  },
+  "cost": {
+    "_note": [
+      "Paid, not estimated. Predicted from a local devnet rehearsal before spending: declare 0.5842,",
+      "deploy 0.0347. Both came in 1.6% and 7% under. `l1_gas` was 0 on every transaction, so none",
+      "of this is exposed to Ethereum L1 gas.",
+      "The account itself was counterfactual — funded but never deployed — so its DEPLOY_ACCOUNT is",
+      "part of what this deployment cost and is recorded rather than netted out."
+    ],
+    "account_deploy_strk": "0.037866",
+    "declare_strk": "0.575121",
+    "deploy_strk": "0.037265",
+    "total_strk": "0.650251",
+    "per_message_strk_measured_locally": "0.028133"
+  },
+  "verified_by": [
+    "starknet_getClassHashAt(block_id=latest, contract_address=<contract.address>) -> <contract.class_hash>",
+    "starknet_getTransactionReceipt(<declared_by.transaction_hash>) -> execution_status, finality_status, block_number, actual_fee",
+    "starknet_getTransactionReceipt(<deployed_by.transaction_hash>) -> execution_status, finality_status, block_number, actual_fee",
+    "starknet_call(<contract.address>, selector('privacy_invoke'), [0x1234, 0x5678]) -> ['0x0'] — the empty open-note deposits array a pool-routed publish requires"
+  ],
+  "verified_at": "2026-09-07",
+  "deployed_at": "2026-09-07"
+}
