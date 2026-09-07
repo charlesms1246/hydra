@@ -8,16 +8,18 @@
 [![packages](https://img.shields.io/badge/packages-13-black)](packages)
 [![dependencies](https://img.shields.io/badge/declared%20dependencies-1-black)](packages/channel/package.json)
 
-> ### ⚠️ Testnet, and unreviewed in three specific ways
+> ### ⚠️ On mainnet, and unreviewed in three specific ways
 >
 > **The protocol composition is ours.** The primitives are Node's — X25519, Ed25519, AES-GCM and
 > HKDF from `node:crypto` — but the prekey exchange, the ratchet and the sealing around them are
 > written in [`packages/handshake`](packages/handshake) and have had **no external review**. A
 > correct primitive assembled wrongly is still wrong.
 >
-> **The contract is deployed on Sepolia and nowhere else** — see
+> **The contract is deployed on Starknet mainnet and on Sepolia** — see
+> [`deployments/mainnet.json`](https://github.com/charlesms1246/hydra/blob/main/deployments/mainnet.json) and
 > [`deployments/sepolia.json`](https://github.com/charlesms1246/hydra/blob/main/deployments/sepolia.json). 30 lines of Cairo, no storage at all,
-> no owner, no upgrade path, no custody. A small surface, not a reviewed one.
+> no owner, no upgrade path, no custody. A small surface, not a reviewed one — and being on
+> mainnet does not make it a reviewed one.
 >
 > **Publishing a record is permanent and public.** `hydra record` links a Starknet address to a
 > messaging identity, on chain, forever — and everything that address ever does joins to your
@@ -110,7 +112,7 @@ flowchart TB
   subgraph fe["Three front ends — none of them owns a sentence"]
     CLI["hydra<br/><i>packages/cli</i>"]
     TUI["hydra-tui<br/><i>packages/tui</i>"]
-    GUI["hydra-gui<br/><i>packages/gui</i><br/>loopback API"]
+    GUI["hydra gui<br/><i>packages/gui</i><br/>loopback API"]
   end
 
   CMD["commands.ts<br/><b>the only path to key material</b>"]
@@ -240,10 +242,11 @@ rather than a tick a reader has to interpret:
 
 | | |
 |---|---|
-| Network | Starknet **Sepolia** |
-| Record | [`deployments/sepolia.json`](https://github.com/charlesms1246/hydra/blob/main/deployments/sepolia.json) — address, class hash, transaction, block, finality, and the two queries that re-derive it |
+| Mainnet | `0x022baaf7927aad02563ec530a0b9fbc42cedb5ce8beb8d98c0629ef1491ffbdf` — [`deployments/mainnet.json`](https://github.com/charlesms1246/hydra/blob/main/deployments/mainnet.json) |
+| Sepolia | `0x01551ea15c89b8b7308331eaddf59795c09be5274e59fac03c3d52a90f277a6e` — [`deployments/sepolia.json`](https://github.com/charlesms1246/hydra/blob/main/deployments/sepolia.json). An older class, the one that still carried a `u64` counter |
 | Contract | [`contracts/src/channel.cairo`](contracts/src/channel.cairo) — no storage, two felts per message, no owner |
-| Mainnet | **Not deployed.** The reason, and the measured cost, are in the [root README](https://github.com/charlesms1246/hydra/blob/main/README.md) |
+| What it cost | **0.650251 STRK** to put on mainnet; **0.031062 STRK** per message, measured across five real mainnet publishes. Breakdown in the [root README](https://github.com/charlesms1246/hydra/blob/main/README.md) |
+| Traffic | Five channel publishes and one public post — the contract's whole event log |
 
 ---
 

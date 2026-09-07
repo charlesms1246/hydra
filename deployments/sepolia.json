@@ -7,9 +7,13 @@
     "~/.hydra-msg/state.json) are gitignored, so without this record the tree cannot show that the",
     "contract exists and 'absent from tracked source' reads as 'not deployed'.",
     "Re-derive it: run the two queries in `verified_by` against `rpc` and compare.",
-    "This is NOT strk20.json. That file wants three MAINNET hashes each proving a real call",
-    "against the STRK20 pool; this is Sepolia and it deploys our own contract, so it belongs here",
-    "and would be a false claim there."
+    "This is NOT strk20.json, and the reason is the NETWORK rather than the pool. strk20.json now",
+    "carries the mainnet contract and the five mainnet message hashes. This record is Sepolia, so",
+    "it belongs here and would be a false claim there whatever strk20.json holds.",
+    "An earlier version of this note asserted that strk20.json 'wants three MAINNET hashes each",
+    "proving a real call against the STRK20 pool'. Those five are direct privacy_invoke calls and",
+    "are not pool-routed; the root README says so beside them rather than letting the file imply",
+    "otherwise."
   ],
   "network": "sepolia",
   "chain_id": "0x534e5f5345504f4c4941",

@@ -123,8 +123,9 @@ export const SITE = {
 
   /** Who should not use it yet, stated before anyone asks. */
   notYet: [
-    "This is a client for a devnet and a testnet. It is not ready for anyone whose safety "
-    + "depends on it.",
+    "The contract this client publishes to is on mainnet, and the client is not ready for anyone "
+    + "whose safety depends on it. Being on mainnet is a fact about the contract, not a claim "
+    + "about the client: nothing here has had an external review.",
     "Your root key and every message you have sent or read live in one state file. By default it "
     + "is written in the clear with mode 0600, so anyone who reads it reads everything. "
     + "`hydra lock` encrypts the whole file with a passphrase — and forgetting that passphrase "
@@ -182,8 +183,8 @@ export const SITE = {
     + "contact, no terms and no warrant canary — a canary published by nobody, on behalf of "
     + "nothing, would be theatre. The licence holder is a placeholder on purpose.",
     "That posting is easy. Making a message readable by strangers is an act you carry out "
-    + "deliberately, one message at a time, and it permanently joins your messaging identity to "
-    + "a Starknet address. It is never a mode you switch on and forget.",
+    + "deliberately, one message at a time, and the vault you upload to sees that you did it. "
+    + "It is never a mode you switch on and forget.",
   ],
 
   /**
@@ -194,8 +195,9 @@ export const SITE = {
    * makes somebody find that out later is a marketing page that misled them.
    */
   beforeYouUse: [
-    "This is a client for a devnet and a testnet. It is not ready for anyone whose safety "
-    + "depends on it.",
+    "The contract this client publishes to is on mainnet, and the client is not ready for anyone "
+    + "whose safety depends on it. Being on mainnet is a fact about the contract, not a claim "
+    + "about the client: nothing here has had an external review.",
     "Your state file is written in the clear unless you run `hydra lock`, and the pool's auditor "
     + "holds a viewing key you did not choose. What that means in detail is on the disclosure "
     + "page, which is generated rather than written.",
@@ -230,7 +232,7 @@ export const SITE = {
      * checkable — a thesis, and a room that has just been pitched to needs something to do rather
      * than something to consider.
      */
-    close: "It runs in a terminal, on your machine, from a checkout.",
+    close: "It runs in a terminal, on your machine, from npm or from a checkout.",
 
     /**
      * Slide 01. The missing slide, and its absence is why the deck opened on a method.
@@ -263,8 +265,8 @@ export const SITE = {
         + "you could have written it. When you want a message to be provably yours you publish it "
         + "instead, and that attribution is permanent. Both stay inside the conversation.",
         "Making something readable by strangers is a different verb. You post it, deliberately, "
-        + "one message at a time — and posting permanently joins your messaging identity to a "
-        + "Starknet address.",
+        + "one message at a time. It goes to a vault and not to the chain, so it costs nothing and "
+        + "leaves no transaction; what it exposes is the upload, which the vault operator sees.",
       ],
     },
     problem: {
@@ -328,44 +330,58 @@ export const SITE = {
   },
 
   /**
-   * INSTALL. Accurate today, which is awkward today.
+   * INSTALL. There is a published package now, and this page says so because it is true.
    *
-   * There is no published package: `@hydra-platform/cli` is `private: true` at version 0.0.0.
-   * **Do not write an install line that will work later.** An install page describing a package
-   * nobody can fetch is the most concrete false claim available to this site, and it is the one a
-   * reader tests first — within about ten seconds, at a shell prompt, and the answer is a 404.
+   * ⛔ **THE RULE THAT WROTE THIS BLOCK HAS NOT CHANGED, ONLY THE FACT IT DESCRIBES.** It used to
+   * say *"do not write an install line that will work later"*, because an install page describing
+   * a package nobody can fetch is the most concrete false claim available to this site and the one
+   * a reader tests first — at a shell prompt, in about ten seconds, and the answer is a 404. The
+   * client is on npm as `hydra-strk`, so the line is now the one that works.
    *
-   * If that reads badly, that is information about readiness rather than a copy problem.
+   * The same rule still binds in the other direction: **the devtool is NOT published**, so it is
+   * still a checkout, and the copy for it must not borrow the client's install line.
+   *
+   * ⚠ The `-p` in the `npx` form is required, not stylistic: the package ships three binaries and
+   * none is named `hydra-strk`, so `npx hydra-strk …` cannot pick one and fails. That was found by
+   * running it against the published tarball, after shipping the wrong form once.
    */
   install: {
-    lede: "There is nothing to install yet. Both tools run from a checkout, and every command "
-      + "on this page was run in a fresh clone rather than on the machine that wrote it.",
+    lede: "The client is on npm. The devtool is not, and still runs from a checkout — every "
+      + "command on this page was run as written, against the published package or a fresh clone "
+      + "rather than on the machine that wrote it.",
     /** Verified by running them. If you change these, run them. */
     steps: [
       {
         label: "01",
-        title: "Clone it",
-        commands: ["git clone https://github.com/charlesms1246/hydra", "cd hydra"],
-        note: "Node 24 or later. Nothing else is needed on the machine.",
+        title: "The platform client",
+        commands: ["npm install -g hydra-strk", "hydra-tui"],
+        note: "Node 24 or later. The package is `hydra-strk` — `npm install hydra` fetches "
+          + "something that is not this. It links three binaries: `hydra` scriptable, `hydra-tui` "
+          + "resident, `hydra-vault` for whoever runs storage. The loopback API a browser talks "
+          + "to is `hydra gui`, a subcommand rather than a binary of its own.",
       },
       {
         label: "02",
-        title: "The platform client",
-        commands: [
-          "npm install --prefix hydra-dapp/packages/channel",
-          "cd hydra-dapp/packages/cli",
-          "node src/cli.ts",
-        ],
-        note: "Run with no arguments and it prints every command. The install is in `channel` "
-          + "rather than here because that is the package that declares dependencies — the "
-          + "client itself has none, and skipping it fails on a missing `@scure/starknet` "
-          + "rather than on anything informative. It is `private: true` at version 0.0.0: there "
-          + "is no npm package, and `npm install hydra` fetches something that is not this. Its "
-          + "manifest reserves the name `hydra` for whenever there is something to publish, "
-          + "which is a note about the future rather than a command you can run.",
+        title: "Or without installing",
+        commands: ["npx -y -p hydra-strk hydra-tui"],
+        note: "The `-p` is required. The package ships three binaries and none of them is named "
+          + "`hydra-strk`, so `npx hydra-strk …` cannot tell which one you meant and refuses. "
+          + "Same client, same code, nothing left on the machine afterwards.",
       },
       {
         label: "03",
+        title: "Or from a checkout",
+        commands: [
+          "git clone https://github.com/charlesms1246/hydra",
+          "cd hydra/hydra-dapp && npm install",
+          "npx hydra-tui",
+        ],
+        note: "What you want if you intend to run the suites, which is the argument this project "
+          + "rests on rather than a footnote to it. The published package carries the built "
+          + "client and not the tests.",
+      },
+      {
+        label: "04",
         title: "The devtool",
         commands: ["cd devtool", "node packages/cli/src/cli.mjs help"],
         note: "No install needed for this one. A different tool for a different audience: it "
@@ -382,8 +398,9 @@ export const SITE = {
      * which makes it the right place for the readiness material and not the wrong one.
      */
     warnings: [
-      "This runs against a devnet and a testnet. It is not ready for anyone whose safety depends "
-      + "on it, and nothing about the install changes that.",
+      "This publishes to a contract that is on mainnet, and it is not ready for anyone whose "
+      + "safety depends on it. Nothing about the install changes that, and neither does the "
+      + "contract being live — no part of this has had an external review.",
       "One state file holds your root key and every message you have sent or read, as text. "
       + "`init` writes it in the clear with mode 0600. Run `hydra lock` after it — that "
       + "encrypts the whole file with a passphrase, which is the case a seized or imaged device "

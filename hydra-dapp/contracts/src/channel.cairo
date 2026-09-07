@@ -55,22 +55,50 @@ pub mod Channel {
     /// events, reading L1 alone, learned **how many pointers were published in each block**. That
     /// is a rate signal on the whole system, free, permanent, and disclosed by nothing else here.
     ///
-    /// Measured, `snforge`, one publish:
+    /// **MEASURED ON REAL TRANSACTIONS, BECAUSE THE `snforge` NUMBERS OVERSTATED IT BY 5x.** This
+    /// said *"0.0138 STRK a message, 57% of a publish"*, from `snforge`'s `l2_gas`: 855,710 with the
+    /// counter against 365,130 without. That figure is the CONTRACT's execution and nothing else. A
+    /// publish is a transaction through an account, and account `__validate__`/`__execute__` costs
+    /// ~600k `l2_gas` the counter never touched — so it is the denominator, and leaving it out
+    /// inflated the saving.
     ///
-    ///     with the counter     l1_data_gas 192   l2_gas 855,710
-    ///     without              l1_data_gas  96   l2_gas 365,130
+    /// Both contracts deployed to one local devnet, same account, same calldata, only the contract
+    /// differing:
     ///
-    /// **The `l1_data_gas` halving IS the state diff** — L1 data gas is what it costs to post one.
-    /// The same number that priced the counter is the number that proves it was visible. At live
-    /// mainnet prices that is **0.0138 STRK a message, 57% of a publish, 13.8 STRK per thousand.**
+    ///     with the counter     l1_data_gas 256   l2_gas 1,101,440
+    ///     without              l1_data_gas 128   l2_gas   981,440
+    ///
+    /// That is a **10.9% `l2_gas` saving, devnet-to-devnet** — not 57%.
+    ///
+    /// ⛔ **AND DEVNET NUMBERS DO NOT TRANSFER TO MAINNET. MEASURED, AFTER SAYING THEY DID.** This
+    /// comment previously converted the devnet figure straight into "0.028133 STRK a message" at
+    /// mainnet prices. Five real publishes on mainnet then cost **0.031062 STRK each**
+    /// (`l1_gas` 0, `l1_data_gas` 128, `l2_gas` 1,097,280) — the same class costs **11.8% more
+    /// `l2_gas` on mainnet than on devnet**, so the absolute figure was 10.4% low.
+    ///
+    /// **The mainnet saving is therefore UNMEASURED and this comment will not invent it.** The old
+    /// class was never deployed to mainnet, so there is no mainnet pair to difference. What is
+    /// measured is the devnet pair (10.9%) and the mainnet absolute (0.031062). Scaling one by the
+    /// other is the move that produced the wrong number in the first place.
+    ///
+    /// The counter's real price was paid at DECLARE, where the storage-bearing class costs
+    /// 35,690,880 `l2_gas` against 20,383,360 — **43% off a one-time cost**, and that one is large.
+    ///
+    /// **The `l1_data_gas` halving IS the state diff, and it survives contact with mainnet
+    /// exactly**: 256 -> 128 on devnet, and every mainnet publish shows `l1_data_gas` 128. L1 data
+    /// gas is what it costs to post a state diff, so the number that priced the counter is the
+    /// number that proves it was visible. **That is the argument for this change. The per-message
+    /// money never was, and is smaller than this comment once claimed twice over.**
     ///
     /// It was also a single global slot every publisher writes, which serialises under parallel
     /// execution — a throughput cost on top of the other two.
     ///
     /// **Adding storage back re-opens all three.** If a counter is ever wanted, it belongs in an
     /// indexer reading the events, which are public already and cost L2 gas only.
-    /// `tests/channel.cairo` asserts the class declares no storage, so this comment cannot quietly
-    /// stop being true.
+    /// `tests/channel.cairo::publishing_writes_no_state` covers the observable consequence — every
+    /// call returning identically however many preceded it. It cannot prove a `#[storage]` field
+    /// absent from outside the contract, and it no longer claims to: the guarantee is the empty
+    /// `struct Storage {}` below, which is verified by reading it.
     #[storage]
     struct Storage {}
 

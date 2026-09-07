@@ -9,16 +9,18 @@ import { Footer } from "../../components/Footer.tsx";
 import { Close } from "../../components/Close.tsx";
 
 /**
- * How to actually run this, which today means from a checkout.
+ * How to actually run this, which now means `npm install -g hydra-strk`.
  *
- * **There is no published package and this page does not pretend there is.**
- * `@hydra-platform/cli` is `private: true` at version `0.0.0`; `hydra-devtool` is publishable and
- * unpublished. An install page describing a package nobody can fetch is the most concrete false
- * claim available to a site, and the one a reader tests first — within about ten seconds, at a
- * shell prompt, and the answer is a 404. So the commands here are the ones that work, and the
- * `bin: hydra` name appears as a note about the future rather than as an instruction.
+ * ⛔ **THE RULE DID NOT CHANGE, THE FACT DID.** This said *"there is no published package and this
+ * page does not pretend there is"* — because an install page describing a package nobody can fetch
+ * is the most concrete false claim available to a site, and the one a reader tests first, at a
+ * shell prompt, in about ten seconds. The client is published as `hydra-strk`, so the command here
+ * is now one that works. `hydra-devtool` is still unpublished, so it is still a checkout, and the
+ * step for it must not borrow the client's install line.
  *
- * If that reads badly, that is information about readiness rather than a copy problem.
+ * The section headings come from the steps rather than naming a route: step 01 is npm and step 04
+ * is a clone, so a heading that said FROM A CHECKOUT would be wrong about three quarters of the
+ * list.
  *
  * The readiness warnings are ON this page rather than linked from it. Somebody here is closer to
  * running this than a reader anywhere else on the site, which makes it the right place for them.
@@ -47,7 +49,7 @@ export default function Install() {
           </Reveal>
         </header>
 
-        <Section n="01" id="steps" title="FROM A CHECKOUT">
+        <Section n="01" id="steps" title="RUN IT">
           <ol className="steps">
             {SITE.install.steps.map((s) => (
               <li key={s.label}>

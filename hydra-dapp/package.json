@@ -1,6 +1,6 @@
 {
   "name": "hydra-strk",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Private messaging on Starknet: what leaks is computed from the code that makes it true, never asserted",
   "license": "Apache-2.0",
   "repository": {

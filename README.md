@@ -8,12 +8,13 @@
 [![devtool](https://img.shields.io/badge/devtool-164%20checks-black)](devtool)
 [![site](https://img.shields.io/badge/site-27%20tests-black)](web)
 
-> ### ⚠️ Testnet, and unaudited in a specific way
+> ### ⚠️ On mainnet, and unaudited in a specific way
 >
-> The channel contract is **deployed on Sepolia and nowhere else** — see
+> The channel contract is **deployed on Starknet mainnet and on Sepolia** — see
+> [`deployments/mainnet.json`](deployments/mainnet.json) and
 > [`deployments/sepolia.json`](deployments/sepolia.json). It has **had no external audit**: 30 lines
 > of Cairo, **no storage at all**, no owner, no upgrade path, no custody. That is a small surface, not a
-> reviewed one.
+> reviewed one — and being on mainnet does not make it a reviewed one.
 >
 > The **disclosure statement is generated** from the code that makes it true. The **deployment is
 > not**: nothing on chain has been reviewed by anyone outside this repository.
@@ -83,7 +84,16 @@ and with no terminal it **refuses rather than assuming**.
 **Step 3 takes a few minutes on a cold checkout** — around two of Cairo compilation, plus a Rust
 build and two npm installs. Silence is `cargo` or `npm`, not a hang.
 
-For the messaging client:
+For the messaging client, which is on npm:
+
+```bash
+npm install -g hydra-strk
+hydra-tui
+```
+
+Or without installing: `npx -y -p hydra-strk hydra-tui`. The `-p` is required — the package ships
+three binaries and none is named `hydra-strk`, so npm cannot pick one on its own. From this
+checkout instead, which is what you want in order to run the suites:
 
 ```bash
 cd hydra/hydra-dapp && npm install
@@ -217,14 +227,38 @@ and the client says so plainly rather than rounding it up.
 
 | | |
 |---|---|
-| Network | Starknet **Sepolia** |
-| Record | [`deployments/sepolia.json`](deployments/sepolia.json) — address, class hash, transaction, block, finality, and the two queries that re-derive it |
-| Mainnet | **Not deployed.** Cost measured against live mainnet prices from the Sepolia deployment's own resource usage: **~1.15 STRK** to declare and deploy, **~0.032 STRK** per message |
+| Mainnet | `0x022baaf7927aad02563ec530a0b9fbc42cedb5ce8beb8d98c0629ef1491ffbdf`, class `0x078b9f5e…5ef03` — [`deployments/mainnet.json`](deployments/mainnet.json) |
+| Sepolia | `0x01551ea15c89b8b7308331eaddf59795c09be5274e59fac03c3d52a90f277a6e` — [`deployments/sepolia.json`](deployments/sepolia.json). An **older class**, the one that still carried a `u64` counter in storage |
+| Record | Each file carries address, class hash, transaction, block, finality, and the queries that re-derive it |
+| What it cost | **0.650251 STRK** to deploy: 0.575121 declare, 0.037265 deploy, 0.037866 for the deploying account, which was counterfactual. Predicted from a local devnet rehearsal before spending — declare came in 1.6% under, deploy 7.4% over |
+| Per message | **0.031062 STRK**, measured on mainnet across five real publishes — `l1_gas` 0, `l1_data_gas` 128, `l2_gas` 1,097,280, identical on all five. `l1_gas` being 0 means none of it is exposed to Ethereum L1 gas |
+| Traffic | Five channel publishes and one public post. [`deployments/mainnet.json`](deployments/mainnet.json) lists the hashes; the contract's whole event log is those five |
+| Total spent | **0.805562 STRK** |
 
-`strk20.json` is empty, and that is deliberate. Populating it means writing a record on mainnet,
-which **permanently and publicly links a Starknet account to a messaging identity** — the disclosure
-this product is loudest about. A project whose argument is that it computes what leaks does not make
-that link early to fill in a submission field.
+> **The devnet rehearsal under-priced a message by 10.4%, and that is worth stating rather than
+> quietly correcting.** It predicted 0.028133 STRK; mainnet charged 0.031062. The same class costs
+> **11.8% more `l2_gas` on mainnet than on devnet**, so a devnet figure is the right instrument for
+> comparing two contracts against each other and the wrong one for an absolute price. The figure
+> that did transfer exactly is `l1_data_gas`: 128, on devnet and on mainnet alike.
+
+`strk20.json` carries the contract and the five message transactions. Every entry re-derives:
+`starknet_getClassHashAt` on the address returns the class hash above, and each hash is a
+`SUCCEEDED` receipt in blocks 14525150–14525168.
+
+⛔ **WHAT THOSE FIVE ARE, STATED HERE SO THE FILE DOES NOT HAVE TO OVERCLAIM.** They are direct
+`privacy_invoke` calls against our own contract, sent from the author's own account. They are
+**not** routed through the STRK20 pool. There is no mainnet route to one from this client:
+`poolChain` needs the devtool's control API, which holds the proving loop and the relayer key and
+is devnet-only — see [`packages/cli/src/chain.ts`](hydra-dapp/packages/cli/src/chain.ts). So what
+these hashes demonstrate is the channel contract carrying real traffic on mainnet, and what they do
+**not** demonstrate is pool-routed privacy. Anyone reading them as the second thing is reading more
+than is there.
+
+And `hydra record` stays unrun. It **permanently and publicly links a Starknet account to a messaging
+identity** — the disclosure this product is loudest about. A project whose argument is that it
+computes what leaks does not make that link early to fill in a submission field. That is also why
+the five transactions above name no recipient: neither felt in a `PointerPublished` event says who
+sent it or who it is for, so the traffic is real and the counterparty is still not on chain.
 
 ---
 

@@ -6,13 +6,15 @@
     "cannot show that the contract exists and 'absent from tracked source' reads as 'not deployed'.",
     "Every value below was read from a node with the query beside it, not copied from a document.",
     "Re-derive it: run the queries in `verified_by` against `rpc` and compare.",
-    "THE CLASS HASH IS NOT SEPOLIA'S. Sepolia carries 0x07d2f324…4467, the version with a `u64`",
+    "THE CLASS HASH IS NOT SEPOLIA'S. Sepolia carries 0x07d2f324\u20264467, the version with a `u64`",
     "counter in storage; that counter was removed before this deployment, so mainnet carries a",
     "different class. `scarb build && sncast utils class-hash --contract-name Channel` on the",
     "tracked source reproduces the value below, which is the check that this record is honest.",
-    "This is NOT strk20.json. That file wants three mainnet hashes each proving a real call against",
-    "the STRK20 pool. This deploys our own contract and moves no value through any pool, so it",
-    "belongs here and would be a false claim there."
+    "strk20.json now lists this contract and the five mainnet message hashes; this file is the",
+    "deployment record behind them, carrying the declare/deploy detail a submission manifest has",
+    "no field for. The five are direct privacy_invoke calls, NOT routed through the STRK20 pool -",
+    "there is no mainnet pool route from this client - and the root README states that beside",
+    "them so neither file implies more than happened."
   ],
   "network": "mainnet",
   "chain_id": "0x534e5f4d41494e",
@@ -43,23 +45,59 @@
   "cost": {
     "_note": [
       "Paid, not estimated. Predicted from a local devnet rehearsal before spending: declare 0.5842,",
-      "deploy 0.0347. Both came in 1.6% and 7% under. `l1_gas` was 0 on every transaction, so none",
-      "of this is exposed to Ethereum L1 gas.",
-      "The account itself was counterfactual — funded but never deployed — so its DEPLOY_ACCOUNT is",
+      "deploy 0.0347. The declare came in 1.6% UNDER; the deploy came in 7.4% OVER. An earlier version",
+      "of this note said 'both came in under', which was wrong about the deploy in both size and sign.",
+      "`l1_gas` was 0 on every transaction, so none of this is exposed to Ethereum L1 gas.",
+      "The account itself was counterfactual - funded but never deployed - so its DEPLOY_ACCOUNT is",
       "part of what this deployment cost and is recorded rather than netted out."
     ],
     "account_deploy_strk": "0.037866",
     "declare_strk": "0.575121",
     "deploy_strk": "0.037265",
     "total_strk": "0.650251",
-    "per_message_strk_measured_locally": "0.028133"
+    "per_message_strk": "0.031062",
+    "_per_message_note": [
+      "MEASURED ON MAINNET, from five real publishes, not estimated. Each cost 0.031062 STRK with",
+      "l1_gas 0, l1_data_gas 128, l2_gas 1,097,280 - identical across all five.",
+      "This field previously read 0.028133 and was derived from a devnet rehearsal. It was 10.4% low:",
+      "the same class costs 11.8% more l2_gas on mainnet than on devnet. Devnet is the right instrument",
+      "for comparing two contracts against each other and the wrong one for an absolute price."
+    ]
   },
   "verified_by": [
     "starknet_getClassHashAt(block_id=latest, contract_address=<contract.address>) -> <contract.class_hash>",
     "starknet_getTransactionReceipt(<declared_by.transaction_hash>) -> execution_status, finality_status, block_number, actual_fee",
     "starknet_getTransactionReceipt(<deployed_by.transaction_hash>) -> execution_status, finality_status, block_number, actual_fee",
-    "starknet_call(<contract.address>, selector('privacy_invoke'), [0x1234, 0x5678]) -> ['0x0'] — the empty open-note deposits array a pool-routed publish requires"
+    "starknet_call(<contract.address>, selector('privacy_invoke'), [0x1234, 0x5678]) -> ['0x0'] \u2014 the empty open-note deposits array a pool-routed publish requires",
+    "starknet_getEvents(address=<contract.address>, from_block=<deployed_by.block_number>, to_block=latest) -> exactly 5 PointerPublished events, keys[0] = starknet_keccak('PointerPublished'), one per hash in messages.transaction_hashes",
+    "starknet_getNonce(latest, deployer) -> 8 == 1 DEPLOY_ACCOUNT + 1 DECLARE + 1 deploy + 5 publishes; the public post added none, because a post never touches the chain"
   ],
   "verified_at": "2026-09-07",
-  "deployed_at": "2026-09-07"
+  "deployed_at": "2026-09-07",
+  "messages": {
+    "_note": [
+      "Five real channel publishes, the first traffic on this contract. Neither felt in a",
+      "PointerPublished event names a sender or a recipient; that is the design, so these",
+      "transactions demonstrate the chain path and disclose no counterparty."
+    ],
+    "count": 5,
+    "transaction_hashes": [
+      "0x079899ecdbe9eff59b575ee30e6c4d45fb51b5d59e000974e069a297bf42a328",
+      "0x045d15aebe4b296521600084c9f801fa233f0c10987a9676b3cf019ce57da66b",
+      "0x010bbab17d26146dda4970c63c21a99910b1e3f8a4cbbf5c5fa9550d74727583",
+      "0x04a3cee0d50e84a43e18fff6d4808b39f67f4b4cd6982056884354f731f29709",
+      "0x03499317c937eefa784752d6e6885a585ac72f6eba82075a756b90e9a07238f1"
+    ],
+    "blocks": [
+      14525150,
+      14525153,
+      14525158,
+      14525163,
+      14525168
+    ],
+    "total_strk": "0.155311",
+    "execution_status": "SUCCEEDED (all five)",
+    "finality_status": "ACCEPTED_ON_L2 (all five)"
+  },
+  "total_spent_strk": "0.805562"
 }
