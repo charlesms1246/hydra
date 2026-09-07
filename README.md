@@ -67,9 +67,9 @@ npx hydra-dev up
 ```
 
 **Three steps — and here is what they assume.** They assume a machine that already has the
-toolchain: Node ≥ 24, `scarb`, `snforge`, `starknet-devnet`, and a Rust toolchain. From a genuinely
-bare machine it is **seventeen** commands, most of them third-party installs this project will not
-run for you.
+toolchain: Node ≥ 24, `scarb`, `snforge` (which brings `universal-sierra-compiler`),
+`starknet-devnet`, and a Rust toolchain. **From a bare machine, add one install per missing tool** —
+this project will not run those for you, and `doctor` prints the exact command for each.
 
 `hydra-dev doctor` reports every one with the exact version wanted and the command that installs
 it. How many rows it prints tells you where you are:
