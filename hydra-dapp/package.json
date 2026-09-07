@@ -5,7 +5,15 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/charlesms1246/hydra.git"
+    "url": "git+https://github.com/charlesms1246/hydra.git",
+    "//directory": [
+      "The package lives in a subdirectory, and npmjs.com resolves the README's relative links",
+      "against repository.url + this. Without it every `packages/...` link on the package page",
+      "resolves a level too high and 404s; the README renders correctly on GitHub either way, so",
+      "the breakage is invisible from inside the repo. Links that point ABOVE this directory",
+      "cannot be fixed here and are absolute in the README instead."
+    ],
+    "directory": "hydra-dapp"
   },
   "homepage": "https://hydra-strk.vercel.app",
   "type": "module",
@@ -15,9 +23,20 @@
   "engines": {
     "node": ">=24"
   },
+  "//bin": [
+    "THREE, matching what a checkout links. `hydra-vault` was missing here while",
+    "`dist/vault-server/src/main.js` shipped in the tarball with a shebang and a working server",
+    "behind it — so an operator who installed the package got the code and no way to run it,",
+    "and the README promised the command anyway. `packages/vault-server/package.json` declares",
+    "the same bin for the workspace, which is why a checkout had it and the published package",
+    "did not.",
+    "There is no `hydra-gui`. The loopback API is `hydra gui`, a subcommand — `packages/gui/src/",
+    "main.ts` names itself that in its own header and its banner prints it."
+  ],
   "bin": {
     "hydra": "dist/cli/src/cli.js",
-    "hydra-tui": "dist/tui/src/main.js"
+    "hydra-tui": "dist/tui/src/main.js",
+    "hydra-vault": "dist/vault-server/src/main.js"
   },
   "dependencies": {
     "@scure/starknet": "^2.4.0"

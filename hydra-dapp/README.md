@@ -2,7 +2,7 @@
 
 **A messaging client that computes what it discloses, and shows you the answer.**
 
-[![Licence](https://img.shields.io/badge/licence-Apache--2.0-black)](../LICENSE)
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0-black)](https://github.com/charlesms1246/hydra/blob/main/LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-black)](package.json)
 [![tests](https://img.shields.io/badge/tests-716-black)](packages/adversary)
 [![packages](https://img.shields.io/badge/packages-13-black)](packages)
@@ -16,7 +16,7 @@
 > correct primitive assembled wrongly is still wrong.
 >
 > **The contract is deployed on Sepolia and nowhere else** — see
-> [`deployments/sepolia.json`](../deployments/sepolia.json). 30 lines of Cairo, no storage at all,
+> [`deployments/sepolia.json`](https://github.com/charlesms1246/hydra/blob/main/deployments/sepolia.json). 30 lines of Cairo, no storage at all,
 > no owner, no upgrade path, no custody. A small surface, not a reviewed one.
 >
 > **Publishing a record is permanent and public.** `hydra record` links a Starknet address to a
@@ -74,12 +74,23 @@ empty corpus.
 ## Install
 
 ```bash
+npm install -g hydra-strk
+hydra-tui
+```
+
+Or without installing: `npx -y hydra-strk hydra-tui`. Node 24 or newer.
+
+From a checkout instead — which is what you want if you intend to run the suites:
+
+```bash
+git clone https://github.com/charlesms1246/hydra.git
 cd hydra/hydra-dapp && npm install
 npx hydra-tui
 ```
 
-`npm install` links four binaries: `hydra` (scriptable), `hydra-tui` (resident), `hydra-vault`
-(storage, for an operator), and `hydra-gui` (the loopback API a browser talks to).
+Either route links three binaries: `hydra` (scriptable), `hydra-tui` (resident), and `hydra-vault`
+(storage, for an operator). The loopback API a browser talks to is **`hydra gui`**, a subcommand of
+the first — not a binary of its own.
 
 A fresh `hydra init` **succeeds and cannot send anything** — no contract, no invites, no publishing
 account. It says so at that moment rather than leaving you to discover it: the missing settings are
@@ -134,7 +145,7 @@ flowchart TB
 
 **The browser reaches `identity` and `vault-client` through nothing.** It speaks HTTP to a local
 process and renders JSON. That is invariant **I6** — no pool viewing key and no vault content key in
-a browser context — and [`module-graph.ts`](../web/scripts/module-graph.ts) walks the static import
+a browser context — and [`module-graph.ts`](https://github.com/charlesms1246/hydra/blob/main/web/scripts/module-graph.ts) walks the static import
 graph and fails the build if any page can reach them. It counts `import type` edges too, which the
 bundler erases: an over-approximation, so it produces false alarms and never a false pass.
 
@@ -226,9 +237,9 @@ rather than a tick a reader has to interpret:
 | | |
 |---|---|
 | Network | Starknet **Sepolia** |
-| Record | [`deployments/sepolia.json`](../deployments/sepolia.json) — address, class hash, transaction, block, finality, and the two queries that re-derive it |
-| Contract | [`contracts/src/channel.cairo`](contracts/src/channel.cairo) — one `u64` counter, two felts per message, no owner |
-| Mainnet | **Not deployed.** The reason, and the measured cost, are in the [root README](../README.md) |
+| Record | [`deployments/sepolia.json`](https://github.com/charlesms1246/hydra/blob/main/deployments/sepolia.json) — address, class hash, transaction, block, finality, and the two queries that re-derive it |
+| Contract | [`contracts/src/channel.cairo`](contracts/src/channel.cairo) — no storage, two felts per message, no owner |
+| Mainnet | **Not deployed.** The reason, and the measured cost, are in the [root README](https://github.com/charlesms1246/hydra/blob/main/README.md) |
 
 ---
 
@@ -271,4 +282,4 @@ seen fail is a guard nobody has tested.
 
 ## Licence
 
-[Apache-2.0](../LICENSE).
+[Apache-2.0](https://github.com/charlesms1246/hydra/blob/main/LICENSE).
