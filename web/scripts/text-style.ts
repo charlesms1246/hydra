@@ -79,11 +79,30 @@ const WIDTHS = [390, 1440];
  * summed across widths, because a sum passes with one width blind.
  */
 const MIN_ELEMENTS = 150;
+
+/*
+ * The settle ceiling. Three equal readings 150ms apart, within twenty tries — enough for hydration
+ * and a first canvas paint on a loaded machine, and short enough that a genuinely unstable page
+ * fails rather than hangs.
+ */
+const SETTLE_TRIES = 20;
+const SETTLE_MS = 150;
 const MIN_TOKENS = 8;
 const MIN_SIZES = 4;
 
 /** The measurement, evaluated in the page. */
 const PROBE = `(() => {
+  /*
+   * ⛔ NOT READY IS NOT A FAILURE, AND IT MUST NOT LOOK LIKE ONE.
+   *
+   * Runtime.evaluate lands the instant after Page.navigate, when the old document has gone and
+   * the new one has not been committed: documentElement is null and appendChild threw. The first
+   * repair made that a hard error, which turned an ordinary navigation into a red build one run
+   * in three. It is a state to wait through, not to report — so it is a value, and everything
+   * that is genuinely an error still throws and is still fatal.
+   */
+  if (!document.documentElement || document.readyState !== "complete") return { ready: false };
+
   const root = document.documentElement;
 
   // The palette and the type scale, resolved BY THE BROWSER from the sheet's own custom
@@ -162,7 +181,7 @@ const PROBE = `(() => {
       violations.push(where + " — " + px + "px is under the scale's smallest (" + floor + "px) — \\"" + text + "\\"");
     }
   }
-  return { violations: [...new Set(violations)], seen, tokens: tokens.size, sizes: sizes.length, floor };
+  return { ready: true, violations: [...new Set(violations)], seen, tokens: tokens.size, sizes: sizes.length, floor };
 })()`;
 
 const root = normalize(join(import.meta.dirname, "..", "out"));
@@ -184,6 +203,77 @@ const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" 
 const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
 await cdp.send("Page.enable", {}, sessionId);
 
+
+type Reading = {
+  ready: boolean;
+  violations: string[]; seen: number; tokens: number; sizes: number; floor: number;
+};
+
+/**
+ * Measure the page ONCE IT HAS STOPPED CHANGING, and prove that it has.
+ *
+ * ⛔ **THE FIRST VERSION SLEPT 120ms AND SAMPLED WHATEVER HAD RENDERED.** `out/` is static, so the
+ * corpus should be identical every run — and it was not: 606 elements, then 607, then 606, and one
+ * run in four threw `Cannot read properties of null (reading 'appendChild')` because the document
+ * had no `documentElement` yet. `/demo/hydra/` hydrates a live terminal and `Solids` paints a
+ * canvas; the gate was reading a page mid-hydration.
+ *
+ * ⛔ **THE CRASH WAS NEVER THE PROBLEM. THE QUIET RUN WAS.** A pass over 606 elements instead of
+ * 607 reports clean **about a smaller site**, says nothing about the difference, and the element it
+ * missed is disproportionately likely to be from the client-rendered subtree — the newest and
+ * least-covered markup here. **A gate whose corpus varies run to run reports clean about a
+ * different thing each time.** That is the vacuity failure with a race for a cause instead of a
+ * person.
+ *
+ * So: the same probe is run until it returns the same population size three times running, and
+ * **the reading that is used is one of those three** — the stability is established on the
+ * measurement itself rather than on a proxy for it, which is the only way the two cannot disagree.
+ * If it never settles, that is a failure and not a longer sleep: a page still mutating after the
+ * ceiling is a page this gate cannot make a true statement about.
+ */
+async function settled(route: string, width: number): Promise<Reading> {
+  let previous = -1;
+  let same = 0;
+  let last: Reading | undefined;
+
+  for (let attempt = 0; attempt < SETTLE_TRIES; attempt++) {
+    const { result, exceptionDetails } = await cdp.send("Runtime.evaluate",
+      { expression: PROBE, returnByValue: true, awaitPromise: false }, sessionId);
+
+    /*
+     * An exception here is a HARD FAILURE and must read as one. The first version checked
+     * `result.subtype` and exited with a bare description, which is easy to mistake for a
+     * measurement. A probe that threw measured nothing.
+     */
+    if (exceptionDetails || result.subtype === "error") {
+      console.error(`::error::the probe threw on ${route} at ${width}px — nothing was measured:`);
+      console.error(`  ${exceptionDetails?.exception?.description ?? result.description}`);
+      process.exit(1);
+    }
+
+    const reading = result.value as Reading;
+    if (!reading.ready) {
+      // The document is not there yet. Not a reading, so it cannot count towards stability.
+      same = 0;
+      previous = -1;
+      await new Promise((r) => setTimeout(r, SETTLE_MS));
+      continue;
+    }
+    last = reading;
+    same = last.seen === previous ? same + 1 : 0;
+    previous = last.seen;
+    if (same >= 2 && last.seen > 0) return last;
+    await new Promise((r) => setTimeout(r, SETTLE_MS));
+  }
+
+  console.error(`::error::${route} at ${width}px never settled (last read: ${last?.seen ?? "none"}): `
+    + `${SETTLE_TRIES} reads over ${(SETTLE_TRIES * SETTLE_MS) / 1000}s and the element count kept `
+    + "moving. This is not a reason to wait longer — a page still mutating is a page this check "
+    + "cannot make a true statement about, and passing over whichever elements happened to exist "
+    + "is how it would report clean about a smaller site.");
+  process.exit(1);
+}
+
 const failures: string[] = [];
 let sawMost = 0;
 let sawTokens = 0;
@@ -196,15 +286,7 @@ for (const width of WIDTHS) {
   let seenHere = 0;
   for (const route of ROUTES) {
     await cdp.send("Page.navigate", { url: `${site.origin}${route}` }, sessionId);
-    await new Promise((r) => setTimeout(r, 120));
-    const { result } = await cdp.send("Runtime.evaluate",
-      { expression: PROBE, returnByValue: true, awaitPromise: false }, sessionId);
-    if (result.subtype === "error" || result.className === "TypeError") {
-      console.error(result.description);
-      process.exit(1);
-    }
-    const out = result.value as
-      { violations: string[]; seen: number; tokens: number; sizes: number; floor: number };
+    const out = await settled(route, width);
     seenHere += out.seen;
     sawTokens = Math.max(sawTokens, out.tokens);
     sawSizes = Math.max(sawSizes, out.sizes);
