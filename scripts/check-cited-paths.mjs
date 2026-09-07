@@ -576,7 +576,83 @@ for (const file of (source ? [] : files)) {
   }
 }
 
+/**
+ * Markdown LINK TARGETS, which the citation walk above never sees.
+ *
+ * **THIS BLIND SPOT SHIPPED DEAD LINKS IN THE PUBLIC README.** `citations()` reads backticked
+ * spans, so `[`claude-docs/RECEIVING.md`](claude-docs/RECEIVING.md)` was checked on the half a
+ * reader does not click. A link whose LABEL resolves and whose TARGET does not passes every check
+ * in this file — and the two are usually written together, so the label being right is what makes
+ * the target look right. Verified by mutation: pointing a link at
+ * `packages/handshake-that-does-not-exist` while leaving the backticked label alone produced a
+ * completely clean run.
+ *
+ * A DIRECTORY IS A VALID TARGET, unlike a citation, because a README links to package folders and
+ * a repository host renders them. So the tracked set is expanded to every ancestor directory
+ * rather than asking the filesystem — the point is what a CLONE contains, and this machine has
+ * gitignored directories a clone does not.
+ *
+ * Anchors and external schemes are dropped. `#fragment` is a place in the same document and
+ * `https:` is somebody else's problem; neither is a claim about this tree.
+ */
+const LINK = /\[(?:[^\[\]]|\[[^\]]*\]\([^)]*\))*\]\(([^)\s]+)\)/g;
+const linkTargets = [];
+const deadLinks = [];
+{
+  /*
+   * **RUNS IN BOTH MODES, unlike the `unrunnable` check below it, and the difference is not an
+   * inconsistency.** `unrunnable` executes shell commands out of READMEs, so a devtool README
+   * could stop `hydra-dapp`'s suite over something that is not the dapp's — it is gated for that
+   * reason. A dead link is unambiguous, and `--source` mode ALREADY scans every tracked source
+   * file in the repository, so a devtool citation already fails the dapp's run. The coupling is
+   * the established design here rather than something this check introduces.
+   *
+   * It matters because otherwise this would be dead: `hydra-dapp`'s `check:citations --source` is
+   * the ONLY wired invocation of this script anywhere, and CI covers `web/` alone.
+   */
+  const dirs = new Set();
+  for (const t of tracked) {
+    for (let d = dirname(t); d && d !== "."; d = dirname(d)) dirs.add(d);
+  }
+  for (const file of TRACKED_DOCS) {
+    const base = dirname(file) === "." ? "" : dirname(file);
+    for (const m of readFileSync(join(ROOT, file), "utf8").matchAll(LINK)) {
+      const target = m[1];
+      if (/^(?:https?:|mailto:|#)/.test(target)) continue;
+      const at = relative(ROOT, join(ROOT, base, target.split("#")[0]));
+      linkTargets.push(at);
+      if (!tracked.has(at) && !dirs.has(at)) deadLinks.push(`${file} -> ${target}`);
+    }
+  }
+}
+
 const problems = [];
+{
+  /*
+   * **THE FLOOR IS A SELF-TEST, NOT A COUNT, and the difference matters here.**
+   *
+   * The matcher has to handle a BADGE link — `[![alt](img)](target)`, brackets nested inside the
+   * label — and the first version written here did not: it saw 14 of 51 targets and would have
+   * reported a clean tree while checking a third of it.
+   *
+   * A count would catch that today and is the wrong instrument. This file already says why —
+   * *"a threshold that moves with the list is not a check"* — and a number tuned to the corpus
+   * fails the moment somebody adds or removes a README, which is exactly when a reader is least
+   * inclined to believe it. The shape the matcher must handle does not move, so it is asserted
+   * directly, against a literal that cannot drift with the tree.
+   */
+  const SAMPLE = "[![Licence](https://img.shields.io/x)](../LICENSE) and [plain](packages/cli)";
+  const matched = [...SAMPLE.matchAll(LINK)].map((m) => m[1]);
+  if (matched.join(",") !== "../LICENSE,packages/cli") {
+    problems.push("the markdown link matcher does not extract a badge link's target — it is "
+      + `narrower than its claim and saw ${JSON.stringify(matched)}`);
+  }
+  if (!linkTargets.length) problems.push("no markdown link target was checked at all");
+  if (deadLinks.length) {
+    problems.push(`${deadLinks.length} markdown link(s) point at nothing a clone contains:\n`
+      + deadLinks.map((l) => `    ${l}`).join("\n"));
+  }
+}
 // Not "at least N files" — that was calibrated to a scope which has since changed, and a
 // threshold that moves with the list is not a check. Every named document must have been found:
 // a renamed or deleted one silently leaving scope is the failure this catches.
