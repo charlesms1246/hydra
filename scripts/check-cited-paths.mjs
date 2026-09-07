@@ -62,6 +62,17 @@
  * If `claude-docs/decisions/` is ever published, the part of this that matters most could run in
  * CI. That is a reason to publish them, not a reason to fake the coverage.
  *
+ * **AND ONE BRANCH NOW REQUIRES THE HELD TREE TO BE PRESENT, WHICH IS WORTH READING BEFORE YOU
+ * TRUST A PASS.** A citation in a format this repository defines (`decisions/NNNN`,
+ * `claude-docs/…`) is classified by asking the filesystem: **present and untracked** may be marked
+ * held, **absent** is a failure a marker cannot fix. On a machine without `claude-docs/`, every one
+ * of them is absent, so the run reports them all in the third section rather than passing — loud,
+ * but loud about the wrong thing. **This branch is only meaningful where the held documents are.**
+ * That is the posture this file already had rather than a new cost — see the paragraph above — and
+ * it is stated here because the alternative, keying on `.gitignore` instead, was tried and is
+ * worse: the ignore rule names the DIRECTORY, so it cannot tell `decisions/0012` from
+ * `decisions/9999-invented.md` and reopens the hole `decisions/0041` came through.
+ *
  * NOTHING RUNS THIS AUTOMATICALLY YET, and saying so is better than implying otherwise. There is
  * no repo-root `package.json`, and `.github/workflows/web.yml` belongs to the site lane. It is a
  * step in the publishing runbook and it exits non-zero, so it is one line away from any CI that
@@ -374,6 +385,9 @@ let markedHeld = 0;
 let ok = 0;
 let overMarked = [];
 const failures = [];
+/** Cited, in a format we define, and not on this machine at all — see the branch below. */
+const absentFailures = [];
+let absent = 0;
 
 for (const file of files) {
   const text = readFileSync(file, "utf8");
@@ -393,11 +407,47 @@ for (const file of files) {
     // clone: 193 extracted, 193 discarded, 0 reported. A guard that cannot fail in the world it
     // protects is the one shape this repository has spent a week on.
     if (DEFINED_FORMAT.test(c.path)) {
-      if (!isTracked(full ?? c.path)) {
+      /*
+       * **THREE STATES, BECAUSE TWO OF THEM WERE THE SAME FAILURE AND ARE NOT THE SAME DEFECT.**
+       * This branch failed every untracked citation in a format we define, marker or not. That is
+       * right about `decisions/0041` — cited for weeks, never written — and wrong about
+       * `decisions/0012`, which exists, is gitignored on purpose, and is exactly what the held
+       * marker is for. So "held marker, not deletion" was unsatisfiable for the one format this
+       * repository defines for its own held documents, and the gate stayed red on it forever,
+       * which is how an operator learns to ignore an exit code.
+       *
+       * **EXISTENCE ON DISK IS THE DISCRIMINATOR, AND NOT `.gitignore`.** Keying it on the ignore
+       * rule reads better — withheld is a property of the repository, present is a property of one
+       * machine — and it does not work: the rule ignores the DIRECTORY, so
+       * `claude-docs/decisions/9999-invented.md` matches exactly as well as a real one and the
+       * hole `decisions/0041` came through reopens. `resolve` returns non-null only for something
+       * that is here, so it is the only one of the two that can tell them apart.
+       */
+      // **SOURCE MODE IS UNCHANGED, AND THAT IS THE RULING RATHER THAN A SHORTCUT.** "Held" is
+      // not an answer there, so the three states collapse back to two — and the printed/comment
+      // split below is what decides failure, which a third bucket would have bypassed. It did:
+      // routing source citations here turned `check:citations` from exit 0 to exit 1 on two
+      // pointers sitting in comments the ruling defers.
+      if (source) {
+        if (!isTracked(full ?? c.path)) {
+          unmarked++;
+          failures.push({ file: file.slice(ROOT.length + 1), path: c.path, full: full ?? c.path,
+            inCode: inCode(lines, c.index, text) });
+        } else { ok++; }
+      } else if (full === null) {
+        // Absent, whatever any paragraph says. A marker cannot make a document exist, and this is
+        // the state the branch was added for.
+        absent++;
+        absentFailures.push({ file: file.slice(ROOT.length + 1), path: c.path });
+      } else if (isTracked(full)) {
+        ok++;
+      } else if (marks(paragraphAt(text, c.index)) || heldInDocument(text, c.path)) {
+        markedHeld++;
+      } else {
         unmarked++;
-        failures.push({ file: file.slice(ROOT.length + 1), path: c.path, full: full ?? c.path,
+        failures.push({ file: file.slice(ROOT.length + 1), path: c.path, full,
           inCode: inCode(lines, c.index, text) });
-      } else { ok++; }
+      }
       continue;
     }
     // Names nothing in this tree — a shape that looked like a path and is not, or a file that has
@@ -602,6 +652,9 @@ console.log(`tracked  ${ok} citations resolve to a file a clone contains`);
 console.log(`held     ${markedHeld} are untracked and say so`);
 console.log(`unmarked ${unmarked} are untracked and do not`);
 console.log(`skipped  ${unresolvable} backticked spans name nothing in this tree`);
+// Printed unconditionally, including as `absent 0`, because a state that only appears when it is
+// non-zero is a state a reader learns about on the day it goes wrong.
+if (!source) console.log(`absent   ${absent} are in a format we define and are not here at all`);
 
 if (problems.length) {
   console.log("\nGUARD IS VACUOUS:");
@@ -665,6 +718,29 @@ if (inCodeFailures.length) {
     console.log("\nEither cite something a clone contains, or say it is held and name the route a");
     console.log("reader can take instead. Removing the citation is the wrong fix: a pointer to a");
     console.log("write-up they cannot read yet is still information, provided it says so.");
+  }
+}
+
+/**
+ * The third state, reported apart from the other two because a marker cannot fix it.
+ *
+ * "You cited something withheld without saying so" and "you cited something that does not exist"
+ * are one exit code and two different jobs: the first is a sentence to write, the second is a
+ * document to write or a pointer to drop. Printing them together is what let `decisions/0041` —
+ * cited for weeks, never written — read as a formatting complaint.
+ */
+if (absentFailures.length) {
+  console.log("\nCitations in a format this repository defines that name nothing on this machine.");
+  console.log("A held marker cannot fix these and must not be used on them: the document does not");
+  console.log("exist, so there is no route to name. Write it, or drop the pointer.\n");
+  const byAbsent = new Map();
+  for (const f of absentFailures) {
+    if (!byAbsent.has(f.file)) byAbsent.set(f.file, new Set());
+    byAbsent.get(f.file).add(f.path);
+  }
+  for (const [f, paths] of [...byAbsent].sort()) {
+    console.log(`  ${f}`);
+    for (const pth of [...paths].sort()) console.log(`      ${pth}`);
   }
 }
 
@@ -770,4 +846,4 @@ if (testCiteFailures.length) {
   console.log("a backtick is the claim that it resolves.");
 }
 
-process.exit(inCodeFailures.length || testCiteFailures.length ? 1 : 0);
+process.exit(inCodeFailures.length || testCiteFailures.length || absentFailures.length ? 1 : 0);
