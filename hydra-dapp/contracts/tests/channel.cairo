@@ -17,6 +17,23 @@ fn deploy() -> (IChannelDispatcher, ContractAddress) {
     (IChannelDispatcher { contract_address: address }, address)
 }
 
+/// ⛔ **THE RETURN VALUE IS THE INVARIANT AND NOTHING IN THIS SUITE READ IT.**
+///
+/// `privacy_invoke` must answer with an EMPTY array or every pool-routed publish reverts with
+/// `INVALID_INVOKE_RETURN_DATA` — the header of `channel.cairo` records that being found in
+/// production. All three tests below called the entrypoint and discarded what it returned, so the
+/// only check on it was `live-authorship.test.ts`, which needs a devnet, the control API and
+/// `HYDRA_LIVE_WRITE=1`, and is not in `npm test`. Its own comment says so: *"The snforge tests
+/// call the entrypoint directly and never saw it."*
+///
+/// **A guarantee whose only witness needs three preconditions is a guarantee nobody checks.** This
+/// is the same property, in the suite people actually run, and it costs one line.
+#[test]
+fn returns_no_deposits_so_the_pool_does_not_revert() {
+    let (channel, _) = deploy();
+    assert(channel.privacy_invoke(1, 2).len() == 0, 'must return no deposits');
+}
+
 #[test]
 fn publishes_both_fields_unchanged() {
     let (channel, address) = deploy();

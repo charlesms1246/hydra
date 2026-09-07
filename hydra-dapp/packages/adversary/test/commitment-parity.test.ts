@@ -72,8 +72,22 @@ test("every Cairo vector reproduces exactly in TypeScript", () => {
 test("the vectors actually cover the field boundary", () => {
   // A parity suite of small numbers passes even when the field arithmetic is wrong, which is
   // the case that matters: a reduction that misbehaves only near the prime.
-  const largest = cairo.cases.map(([n, c]) => (n > c ? n : c)).reduce((a, b) => (a > b ? a : b));
-  assert.ok(largest > P / 2n, "no vector exercises the upper half of the field");
+  /*
+   * ⛔ **PER ARGUMENT, BECAUSE THE MAXIMUM OVER BOTH WAS SATISFIED BY ONE OF THEM.**
+   *
+   * This was `max(blind, content_hash)` across the set, compared against P/2. Every large vector
+   * put its big value in `blind`, so the check passed forever while the largest `content_hash`
+   * ever tested was `'authorship'` — about 4.6e23 against a prime of 3.6e75. **The upper half of
+   * the field was untested in the second argument and this assertion said it was covered.**
+   *
+   * That is the exact failure it was written to prevent, one argument over: its own comment says
+   * a parity suite of small numbers passes even when the field arithmetic is wrong. An aggregate
+   * over two positions cannot say which position was exercised — the same shape as counting
+   * errors across routes instead of per route, in `must-not-compile.ts`.
+   */
+  const upper = (i: 0 | 1) => cairo.cases.some((c) => c[i] > P / 2n);
+  assert.ok(upper(0), "no vector exercises the upper half of the field in `blind`");
+  assert.ok(upper(1), "no vector exercises the upper half of the field in `content_hash`");
   assert.ok(cairo.cases.some(([n, c]) => n === 0n && c === 0n), "no zero vector");
 });
 

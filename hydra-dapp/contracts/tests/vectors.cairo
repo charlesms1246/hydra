@@ -29,6 +29,16 @@ fn emit_parity_vectors() {
         (255, 256),
         (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff, 0xff),
         (3618502788666131213697322783095070105623107215331596699973092056135872020480, 7),
+        // ⛔ **THE UPPER HALF OF THE FIELD WAS ONLY EVER TESTED IN ARGUMENT 1.** Every large case
+        // above puts its big value in `blind`; the largest `content_hash` across all ten was
+        // 'authorship' — about 4.6e23 against a prime of 3.6e75. **And the coverage check could not
+        // say so**: `commitment-parity.test.ts` took `max(blind, content_hash)` over the whole set
+        // and asserted the maximum exceeded P/2, which one big first argument satisfies forever.
+        // A check written to prevent a parity suite of small numbers, satisfied while half the
+        // surface it names went untested. These two put P−1 in the second position.
+        (1, 3618502788666131213697322783095070105623107215331596699973092056135872020480),
+        (3618502788666131213697322783095070105623107215331596699973092056135872020480,
+         3618502788666131213697322783095070105623107215331596699973092056135872020480),
     ];
     println!("DOMAIN {}", DOMAIN);
     for case in cases {
