@@ -1,8 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
+  "framework": null,
   "outputDirectory": "out",
   "installCommand": "npm ci && npm ci --prefix ../hydra-dapp/packages/channel && npm ci --prefix ../hydra-dapp/packages/identity",
   "buildCommand": "npm run typecheck && npm run build && node scripts/assert-public.ts",
-  "github": { "silent": true }
+  "github": {
+    "silent": true
+  }
 }

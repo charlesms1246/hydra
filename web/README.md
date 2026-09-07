@@ -136,9 +136,24 @@ substitution actually happened rather than the build having quietly broken.
 
 ### The host: Vercel, and two project settings this repository cannot set
 
-`vercel.json` pins the parts that live in the repository: `build:public` as the build command,
+`vercel.json` pins the parts that live in the repository: the build command in force today,
 `scripts/assert-public.ts` immediately after it, and an install command that also installs
 `hydra-dapp/packages/channel` and `identity`.
+
+**`framework` is `null`, and that is the fix for a real failed deploy rather than a
+preference.** With `"framework": "nextjs"` Vercel runs its own Next builder after the build
+command, and that builder reads `routes-manifest.json` from whatever `outputDirectory` names.
+`next build` writes that file into `.next/`; `output: "export"` writes the site into `out/` and
+never puts a manifest there. So `outputDirectory: "out"` pointed the builder at a directory the
+manifest cannot be in, and the deploy failed with *the file `out/routes-manifest.json` couldn't
+be found* — **after** the build, the licence gate and every one of the 15 routes had succeeded.
+A failure that reads like a broken build and is a host setting.
+
+`null` means Vercel builds nothing of its own and serves `out/` as a directory, which is what
+`next.config.ts` says this site is. It also stops the two lines the log showed Vercel injecting
+— `Applying modifyConfig` and `Running onBuildComplete` — which is the same reason
+`next.config.ts` bans `@vercel/*` packages. The other repair is to delete `outputDirectory` and
+let the Next builder find `.next/` itself; it works, and it keeps the builder.
 
 Two things must be set in the Vercel project itself and are **not** in any file here:
 
