@@ -1,0 +1,37 @@
+{
+  "_note": [
+    "The Sepolia deployment of the channel contract, as a record a reader can re-derive.",
+    "This file exists so that a public document — the root README — can cite a file instead of",
+    "restating a hex string. Every value below was read from a node with the query beside it, not",
+    "copied from a document; the deployment's own working files (~/.hydra/sepolia-env.sh,",
+    "~/.hydra-msg/state.json) are gitignored, so without this record the tree cannot show that the",
+    "contract exists and 'absent from tracked source' reads as 'not deployed'.",
+    "Re-derive it: run the two queries in `verified_by` against `rpc` and compare.",
+    "This is NOT strk20.json. That file wants three MAINNET hashes each proving a real call",
+    "against the STRK20 pool; this is Sepolia and it deploys our own contract, so it belongs here",
+    "and would be a false claim there."
+  ],
+  "network": "sepolia",
+  "chain_id": "0x534e5f5345504f4c4941",
+  "rpc": "https://api.cartridge.gg/x/starknet/sepolia",
+  "contract": {
+    "name": "channel",
+    "source": "hydra-dapp/contracts/src/channel.cairo",
+    "address": "0x01551ea15c89b8b7308331eaddf59795c09be5274e59fac03c3d52a90f277a6e",
+    "class_hash": "0x07d2f3245fe24cbeea747cd85846e40fcdf06b835a371e7cc870b65ee76b4467"
+  },
+  "deployed_by": {
+    "transaction_hash": "0x01c1fe382140d6b172325ed9748769bbd82cb09ea5e622a0b00fef261479f793",
+    "type": "INVOKE",
+    "_type_note": "INVOKE because the deploy went through an account. It is the transaction that deployed the contract; calling it 'the deploy transaction' is loose.",
+    "block_number": 14643851,
+    "execution_status": "SUCCEEDED",
+    "finality_status": "ACCEPTED_ON_L1"
+  },
+  "verified_by": [
+    "starknet_getClassHashAt(block_id=latest, contract_address=<contract.address>) -> <contract.class_hash>",
+    "starknet_getTransactionReceipt(<deployed_by.transaction_hash>) -> execution_status, finality_status, block_number"
+  ],
+  "verified_at": "2026-09-07",
+  "deployed_at": "2026-09-06"
+}
