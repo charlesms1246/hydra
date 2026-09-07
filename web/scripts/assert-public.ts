@@ -1,34 +1,3 @@
-/**
- * Assert that `out/` carries the assets it is supposed to carry — and refuses the ones it is not.
- *
- * ⛔ **THIS GATE INVERTS; IT DOES NOT GET DELETED.** One environment variable chooses which of two
- * failures it is looking for, and both are real:
- *
- *   `HYDRA_ASSETS=licensed`   the restricted files must be ABSENT, and `data-build="public"` must
- *                             be stamped. This is the posture that protects a third party's
- *                             trademark and a personal-use font licence from being redistributed
- *                             by a static host.
- *   `HYDRA_ASSETS=restricted` the restricted files must be PRESENT. A build that silently lost
- *                             them substitutes a fallback face and a plain glyph and **succeeds**,
- *                             which is the same class of silent-wrong-artefact failure in the
- *                             other direction and nothing else would catch it.
- *
- * ## Why it is on `restricted` today
- *
- * The user's decision, 2026-09-05, after being told the concern: *"ship it anyway (will replace
- * once commissioned work returns, currently we need it to verify the UI/UX and the rest)."* The
- * mark is Marvel's HYDRA insignia and the wordmark face is licensed for personal use. **This is a
- * held position pending commissioned art, not an oversight**, and it is the user's project and
- * their exposure to weigh.
- *
- * Reverting is one token here plus two elsewhere — see the block at the top of `.gitignore`, which
- * lists all three so nobody changes one and believes they are done.
- *
- * ## Why this is a script and not inline CI shell
- *
- * The same assertion guards the GitHub check and the host's build command. A copy in each is a
- * copy that drifts, and the one that drifts is the one nobody watches.
- */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
