@@ -39,18 +39,40 @@ pub trait IChannel<TContractState> {
     fn privacy_invoke(
         ref self: TContractState, pointer: felt252, commitment: felt252,
     ) -> Array<felt252>;
-    /// How many pointers this contract has published. Public by construction — the events are.
-    fn published(self: @TContractState) -> u64;
 }
 
 #[starknet::contract]
 pub mod Channel {
-    use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
-
+    /// ⛔ **NO STORAGE, AND THE EMPTINESS IS THE FEATURE.**
+    ///
+    /// This held `published: u64`, a counter incremented on every publish, read by nothing outside
+    /// its own test. Removing it was not a tidy-up; it removed a disclosure and more than half the
+    /// cost of a message.
+    ///
+    /// **Starknet events are L2-only. Storage diffs are posted to L1.** That counter was this
+    /// contract's ONLY storage, so it was the only thing that put the contract into the L1 state
+    /// diff at all — and it changed on every single publish. An observer with no access to L2
+    /// events, reading L1 alone, learned **how many pointers were published in each block**. That
+    /// is a rate signal on the whole system, free, permanent, and disclosed by nothing else here.
+    ///
+    /// Measured, `snforge`, one publish:
+    ///
+    ///     with the counter     l1_data_gas 192   l2_gas 855,710
+    ///     without              l1_data_gas  96   l2_gas 365,130
+    ///
+    /// **The `l1_data_gas` halving IS the state diff** — L1 data gas is what it costs to post one.
+    /// The same number that priced the counter is the number that proves it was visible. At live
+    /// mainnet prices that is **0.0138 STRK a message, 57% of a publish, 13.8 STRK per thousand.**
+    ///
+    /// It was also a single global slot every publisher writes, which serialises under parallel
+    /// execution — a throughput cost on top of the other two.
+    ///
+    /// **Adding storage back re-opens all three.** If a counter is ever wanted, it belongs in an
+    /// indexer reading the events, which are public already and cost L2 gas only.
+    /// `tests/channel.cairo` asserts the class declares no storage, so this comment cannot quietly
+    /// stop being true.
     #[storage]
-    struct Storage {
-        published: u64,
-    }
+    struct Storage {}
 
     /// The whole on-chain footprint of a message.
     ///
@@ -84,15 +106,10 @@ pub mod Channel {
             // caller would let the pool's address be used to filter our events. Anyone may
             // publish a pointer; a pointer that names no blob you can find is noise, and noise
             // is what the anonymity set is made of.
-            self.published.write(self.published.read() + 1);
             self.emit(PointerPublished { pointer, commitment });
             // No deposits. Publishing a pointer moves no value, and an empty array is how the
             // pool is told so — see the interface.
             array![]
-        }
-
-        fn published(self: @ContractState) -> u64 {
-            self.published.read()
         }
     }
 }

@@ -1,7 +1,7 @@
 {
   "_note": [
     "The Sepolia deployment of the channel contract, as a record a reader can re-derive.",
-    "This file exists so that a public document — the root README — can cite a file instead of",
+    "This file exists so that a public document \u2014 the root README \u2014 can cite a file instead of",
     "restating a hex string. Every value below was read from a node with the query beside it, not",
     "copied from a document; the deployment's own working files (~/.hydra/sepolia-env.sh,",
     "~/.hydra-msg/state.json) are gitignored, so without this record the tree cannot show that the",
@@ -33,5 +33,15 @@
     "starknet_getTransactionReceipt(<deployed_by.transaction_hash>) -> execution_status, finality_status, block_number"
   ],
   "verified_at": "2026-09-07",
-  "deployed_at": "2026-09-06"
+  "deployed_at": "2026-09-06",
+  "_STALE": [
+    "\u26d4 THIS RECORD DESCRIBES THE PREVIOUS CLASS. The source no longer builds to it.",
+    "On 2026-09-07 `published: u64` was removed from the contract \u2014 it was the only storage, and",
+    "therefore the only thing putting this contract into the L1 state diff, which disclosed the",
+    "publish rate to an observer with no L2 access. Removing it changes the class hash, so the",
+    "address and class_hash below are a real deployment of a contract this repository no longer",
+    "contains. Everything here still re-derives against a node; it is the SOURCE that moved.",
+    "Left in place rather than deleted: a reader comparing the tree to the chain must be able to",
+    "see why they differ. Replace it after a redeploy, do not edit the hashes by hand."
+  ]
 }

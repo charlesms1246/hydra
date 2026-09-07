@@ -11,8 +11,8 @@
 > ### ⚠️ Testnet, and unaudited in a specific way
 >
 > The channel contract is **deployed on Sepolia and nowhere else** — see
-> [`deployments/sepolia.json`](deployments/sepolia.json). It has **had no external audit**: 98 lines
-> of Cairo, one storage slot, no owner, no upgrade path, no custody. That is a small surface, not a
+> [`deployments/sepolia.json`](deployments/sepolia.json). It has **had no external audit**: 30 lines
+> of Cairo, **no storage at all**, no owner, no upgrade path, no custody. That is a small surface, not a
 > reviewed one.
 >
 > The **disclosure statement is generated** from the code that makes it true. The **deployment is
@@ -244,7 +244,7 @@ that link early to fill in a submission field.
 ```
 hydra/
 ├── hydra-dapp/      the messaging client — 13 packages, 716 tests
-│   └── contracts/   98 lines of Cairo: one counter, two felts, no owner
+│   └── contracts/   30 lines of Cairo: two felts in, one event, no storage
 ├── devtool/         hydra-dev — 7 packages, 164 checks
 ├── web/             the site — 27 tests, no key-handling code by invariant
 └── deployments/     what is on chain, and how to re-derive it

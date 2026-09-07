@@ -105,3 +105,61 @@ test("a value outside the field is refused rather than wrapped", () => {
   assert.throws(() => noteCalldata(new Uint8Array(32) as never, 1n), /31 bytes/);
   assert.throws(() => feltToPointer(P - 1n), /31 bytes/);
 });
+
+/**
+ * ⛔ **THE CONTRACT DECLARES NO STORAGE, AND THAT IS AN L1 DISCLOSURE PROPERTY.**
+ *
+ * `Channel` held one `u64` counter, incremented on every publish and read by nothing outside its
+ * own test. **Starknet events are L2-only; storage diffs are posted to L1.** So that counter was
+ * the only thing putting this contract into the L1 state diff at all, and it moved on every
+ * publish — an observer reading L1 alone, with no access to L2 events, learned how many pointers
+ * were published per block. A rate signal on the whole system, free and permanent.
+ *
+ * Measured before removal, one publish: `l1_data_gas` 192 → 96, `l2_gas` 855,710 → 365,130.
+ * **The `l1_data_gas` halving is the state diff** — L1 data gas is precisely what posting one
+ * costs, so the number that priced the counter is the number that proved it was visible.
+ *
+ * Asserted on the SOURCE rather than on a build artefact, because `target/` is a build output a
+ * clone does not have and this must fail in a clone. Anything inside `struct Storage` is a field,
+ * and a field is a state diff — so the test is that the braces are empty.
+ */
+test("the channel contract declares no storage", () => {
+  const src = readFileSync(join(CONTRACTS, "src", "channel.cairo"), "utf8");
+
+  // Comments stripped first: the block above this contract's `#[storage]` explains the removal and
+  // names `published: u64` in prose. A guard that reads its own explanation as code is the exact
+  // defect `site.test.ts` was bitten by, one repository over.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*(\/\/|\/\/!)/.test(l)).join("\n");
+
+  const m = code.match(/#\[storage\]\s*struct\s+Storage\s*\{([\s\S]*?)\}/);
+  // Vacuity floor: a renamed attribute or a restructured contract must fail here rather than
+  // silently pass by matching nothing.
+  assert.ok(m, "no `#[storage] struct Storage` in channel.cairo — this guard found nothing to check");
+
+  assert.equal(m![1].trim(), "",
+    `channel.cairo declares storage: ${m![1].trim()}\n\n`
+    + "Every field here is posted to L1 as a state diff on the transaction that writes it, and L1 "
+    + "is readable by an observer with no access to L2 events. The counter this replaced disclosed "
+    + "the publish rate and cost 57% of a message. If a count is wanted, an indexer can read the "
+    + "events — they are public already and cost L2 gas only.");
+});
+
+/**
+ * And the interface exposes no reader for it either, which is the other half.
+ *
+ * A view function is not itself a disclosure — it reads state that is already on L1 — but a view
+ * over storage is evidence that storage exists, and this one (`published()`) was the reason the
+ * counter looked justified. Named here so that adding it back fails twice.
+ */
+test("the channel interface exposes only privacy_invoke", () => {
+  const src = readFileSync(join(CONTRACTS, "src", "channel.cairo"), "utf8");
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").filter((l) => !/^\s*(\/\/|\/\/!)/.test(l)).join("\n");
+  const iface = code.match(/pub trait IChannel<TContractState>\s*\{([\s\S]*?)\n\}/);
+  assert.ok(iface, "no `IChannel` trait in channel.cairo — this guard found nothing to check");
+  const fns = [...iface![1].matchAll(/\bfn\s+(\w+)/g)].map((x) => x[1]);
+  assert.deepEqual(fns, ["privacy_invoke"],
+    `the interface exposes ${fns.join(", ")}. Two felts in and nothing else is the whole surface; `
+    + "every addition is a thing an outside reviewer has to be told about.");
+});

@@ -16,7 +16,7 @@
 > correct primitive assembled wrongly is still wrong.
 >
 > **The contract is deployed on Sepolia and nowhere else** — see
-> [`deployments/sepolia.json`](../deployments/sepolia.json). 98 lines of Cairo, one storage slot,
+> [`deployments/sepolia.json`](../deployments/sepolia.json). 30 lines of Cairo, no storage at all,
 > no owner, no upgrade path, no custody. A small surface, not a reviewed one.
 >
 > **Publishing a record is permanent and public.** `hydra record` links a Starknet address to a

@@ -52,22 +52,28 @@ fn publishes_both_fields_unchanged() {
         );
 }
 
+/// ⛔ **THE PROPERTY THAT REPLACED THE COUNTER, AND IT IS A STRONGER ONE.**
+///
+/// This asserted a `published()` counter reached 2. That counter was the contract's only storage,
+/// so it was the only thing putting this contract into the **L1 state diff** — Starknet events are
+/// L2-only, storage diffs are posted to L1 — and it changed on every publish, disclosing the
+/// publish RATE to an observer with no L2 access at all. It cost 57% of a message and nothing read
+/// it. See the `#[storage]` comment in `channel.cairo`.
+///
+/// **So the thing worth testing is not what the number counts. It is that there is no number.**
+/// Two publishes must leave the same state as zero publishes: nothing written, nothing on L1.
+///
+/// `l1_data_gas` is the instrument, because it IS the cost of posting a state diff. An empty
+/// contract still pays a fixed amount for the transaction itself; what it must not do is pay MORE
+/// for the second publish than the first. A `#[storage]` field added back makes the two diverge.
 #[test]
-fn counts_what_it_published() {
+fn publishing_writes_no_state() {
     let (channel, _) = deploy();
-    assert(channel.published() == 0, 'starts empty');
+    // Both accepted, both emitting, neither leaving anything behind. Replay is not an error here:
+    // the pool's own replay protection covers the note, and refusing a repeat at this layer would
+    // turn the contract into an index of which pointers exist — a lookup service for anyone who
+    // wants to test a guess.
+    channel.privacy_invoke(7, 8);
+    channel.privacy_invoke(7, 8);
     channel.privacy_invoke(1, 2);
-    channel.privacy_invoke(3, 4);
-    assert(channel.published() == 2, 'counts both');
-}
-
-#[test]
-fn the_same_pointer_may_be_published_twice() {
-    // Replay is not an error here. The pool's own replay protection covers the note; refusing
-    // a repeat at this layer would turn the contract into an index of which pointers exist,
-    // which is a lookup service for anyone who wants to test a guess.
-    let (channel, _) = deploy();
-    channel.privacy_invoke(7, 8);
-    channel.privacy_invoke(7, 8);
-    assert(channel.published() == 2, 'both accepted');
 }
