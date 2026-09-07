@@ -73,7 +73,19 @@ export type ChainConfig = {
   readonly fromBlock: number;
   readonly accountsFile: string;
   readonly account: string;
-  /** `sepolia`, or a URL for a devnet. `sncast` wants one or the other, never both. */
+  /**
+   * A NAMED network `sncast` knows — `sepolia`, `mainnet`. **Omit it for a devnet.**
+   *
+   * It said "`sepolia`, or a URL for a devnet", which reads as an invitation to put the devnet's
+   * URL in this field. Doing that produces `--network http://127.0.0.1:5050`, and `sncast` rejects
+   * it: `--network` takes a name and `--url` takes a URL. The devnet path is to leave this
+   * undefined, so `starknet()` below reaches for `--url rpcUrl` instead — which is the "one or the
+   * other" the old sentence was right about, attached to the wrong half.
+   *
+   * Cost three failed attempts to find, because the rejection names the flag and not the field.
+   * `~/.hydra/demo-setup.sh` already carried the correct version in a comment of its own — the
+   * knowledge existed, in the place that was not misleading anybody.
+   */
   readonly network?: string;
 };
 
