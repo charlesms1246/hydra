@@ -147,11 +147,35 @@ test("every citation in the linkage table resolves to a real file and line", () 
   const cites = all.flatMap((r) => [...r.cite.matchAll(/([\w./-]+\.(?:cairo|ts)):(\d+)(?:-(\d+))?/g)]);
   assert.ok(cites.length >= 8, `expected the table to be cited throughout, found ${cites.length}`);
 
+  /*
+   * `.upstream/` IS VENDORED AND GITIGNORED, so a clone has none of it and every citation into it
+   * reports as rot. **Measured in a real `git clone` on 2026-09-07** — this test failed on
+   * `.upstream/packages/privacy/src/privacy.cairo`, a file that is exactly where it should be on
+   * a working machine.
+   *
+   * The suppression is per-citation and only when the whole tree is absent, so it cannot hide the
+   * failure this test exists for: on a machine WITH `.upstream/`, a citation into a file upstream
+   * moved still fails, and so does a line number past the end. What is skipped is announced,
+   * because a count of unchecked citations printed nowhere is coverage nobody can audit.
+   */
+  const upstreamAbsent = !existsSync(join(ROOT, ".upstream"));
+  let unchecked = 0;
+
   for (const [, file, from, to] of cites) {
+    if (upstreamAbsent && file.includes(".upstream/")) { unchecked += 1; continue; }
     const path = join(ROOT, file);
     assert.ok(existsSync(path), `citation points at a file that is not here: ${file}`);
     const lines = readFileSync(path, "utf8").split("\n").length;
     const last = Number(to ?? from);
     assert.ok(last <= lines, `${file}:${last} is past the end of the file (${lines} lines)`);
+  }
+
+  // **THE FLOOR.** If `.upstream/` is absent, everything above could be skipped and this test
+  // would pass having read nothing. At least some citations must be into files this repository
+  // owns, and those are checked either way.
+  assert.ok(cites.length - unchecked >= 1,
+    `every one of the ${cites.length} citations was into an absent .upstream/ — nothing was checked`);
+  if (unchecked) {
+    console.log(`  (${unchecked} of ${cites.length} citations unchecked — .upstream/ is not checked out here)`);
   }
 });
