@@ -531,3 +531,130 @@ body:has(.dash) { background: #000; }
   .tg-list { max-height: 14rem; border-right: none; border-bottom: 1px solid var(--g-12); }
   .tg-messages.is-scroll { overflow: visible; }
 }
+
+/* ---------------------------------------------------------------------------------------------
+   The two tabs, the publish pane, and the mode beside the title.
+
+   ⛔ **ONE GUTTER FOR THE WHOLE PAGE: 0.85rem.** The header already used it; the publish form did
+   not use anything, because its rules were lost in a shared-file collision and it shipped
+   unstyled — inputs at browser defaults, text starting at x=0 outside any column. Everything below
+   states its edges in that one measure so nothing sits at an offset nobody chose.
+   --------------------------------------------------------------------------------------------- */
+
+.tg-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--g-12);
+}
+
+.tg-tabs button {
+  padding: 0.6rem 0.85rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  margin-bottom: -1px;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--g-48);
+  cursor: pointer;
+}
+
+.tg-tabs button:hover { color: var(--g-80); }
+
+.tg-tabs button.is-on {
+  color: var(--white);
+  border-bottom-color: var(--accent);
+}
+
+/*
+ * The publish pane. One column, capped, aligned to the same gutter as everything else — it is a
+ * form to be read before it is used, and a full-width row of inputs reads as a settings screen.
+ */
+.tg-publish {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.1rem 0.85rem 1.5rem;
+}
+
+.tg-post-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 44rem;
+}
+
+.tg-post-line {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--g-80);
+}
+
+.tg-post-cost {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--g-64);
+}
+
+.tg-post-body label {
+  display: block;
+  margin-top: 0.4rem;
+}
+
+.tg-post-body input,
+.tg-post-body textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--g-4);
+  border: 1px solid var(--g-20);
+  color: var(--white);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.tg-post-body input:focus-visible,
+.tg-post-body textarea:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tg-post-body > .button { align-self: flex-start; }
+
+.tg-post-done {
+  margin-top: 0.4rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--g-20);
+}
+
+.tg-post-done p { margin: 0 0 0.35rem; }
+.tg-post-done p:last-child { margin-bottom: 0; }
+
+/*
+ * The send mode, beside the conversation title. Same shape as every other label in the chrome, so
+ * it reads as a property of the conversation rather than as a control competing with the acts.
+ */
+.tg-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.tg-mode input {
+  width: 0.9rem;
+  height: 0.9rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.tg-mode input:disabled { cursor: default; opacity: 0.45; }

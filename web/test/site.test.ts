@@ -1158,4 +1158,39 @@ test("no disclosure is rendered inside a collapsible panel", () => {
   assert.match(code, /postDesc\.lines/,
     "components/Session.tsx no longer renders postDesc.lines — either the public-post disclosure "
     + "is gone or it moved somewhere this guard cannot see");
+
+  /*
+   * ⛔ **THE PUBLISH PANEL LEFT THE FOLD, SO THE CLAUSE ABOVE WENT QUIET — AND THE PROPERTY IT WAS
+   * PROTECTING DID NOT IMPROVE BY ITSELF.** The panel is a tab now, on the user's instruction.
+   * There is no `<details>` around it, so the loop's `postDesc.lines` branch never runs, and a
+   * guard that stops firing because its subject moved is indistinguishable from one that passes.
+   *
+   * The tab makes a different thing true, and it is the same property stated for a page with no
+   * fold: **the act cannot be reached while its disclosure is absent.** In the fold that was
+   * enforced by geometry — collapsing took the button with it. Here it is enforced by a
+   * condition: the fields and the publish control render only inside `{postDesc && …}`.
+   *
+   * Asserted structurally rather than by proximity: `postNow()` must come after the gate opens and
+   * before it closes. Matching a label would repeat the mistake this guard already records.
+   */
+  const gate = code.indexOf("{postDesc && <>");
+  assert.ok(gate > 0,
+    "the publish form is no longer gated on `{postDesc && <>`. The description is what a reader "
+    + "is told before they publish to everybody; a form that renders without it offers the act "
+    + "with its disclosure missing, which is the defect this page was already fixed for once");
+  const close = code.indexOf("</>}", gate);
+  assert.ok(close > gate, "the `postDesc` gate is never closed");
+  /*
+   * ⛔ EVERY call site, not the first one after the gate. Checking only the first would pass while
+   * a second publish control sat outside — which is exactly the shape of a defect somebody adds
+   * on purpose, as an "escape hatch" for the case where the description will not load.
+   */
+  const calls = [...code.matchAll(/void postNow\(\)/g)].map((m) => m.index!);
+  assert.ok(calls.length > 0, "nothing calls postNow() — the publish control is gone");
+  for (const at of calls) {
+    assert.ok(at > gate && at < close,
+      "a publish control renders outside the `postDesc` gate, so it can be reached before the "
+      + "description has arrived. In the old fold this was impossible by geometry; here it is a "
+      + "condition, and a second control outside it puts the act back in front of the disclosure");
+  }
 });

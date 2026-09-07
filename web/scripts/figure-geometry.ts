@@ -159,22 +159,68 @@ const PROBE = `(() => {
  * It reports the WIDEST element rather than just the overflow, because "the document is 458 wide
  * in a 390 viewport" sends you looking and "div.tg-help-body ends at 458" tells you where.
  */
-const OVERFLOW = `(() => {
-  for (const d of document.querySelectorAll("details")) d.open = true;
+const OVERFLOW = `(async () => {
   const vw = document.documentElement.clientWidth;
-  const scroll = document.documentElement.scrollWidth;
-  if (scroll <= vw + 1) return null;
-  let worst = null;
-  for (const el of document.querySelectorAll("body *")) {
-    const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) continue;
-    if (!worst || r.right > worst.right) {
-      worst = { right: Math.round(r.right), what: el.tagName.toLowerCase()
-        + (typeof el.className === "string" && el.className
-           ? "." + el.className.trim().split(/\\s+/).join(".") : "") };
+  const widest = () => {
+    let worst = null;
+    for (const el of document.querySelectorAll("body *")) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (!worst || r.right > worst.right) {
+        worst = { right: Math.round(r.right), what: el.tagName.toLowerCase()
+          + (typeof el.className === "string" && el.className
+             ? "." + el.className.trim().split(/\\s+/).join(".") : "") };
+      }
+    }
+    return { scroll: document.documentElement.scrollWidth, worst };
+  };
+
+  for (const d of document.querySelectorAll("details")) d.open = true;
+
+  /*
+   * ⛔ **AND EVERY TAB, FOR THE SAME REASON AS EVERY FOLD.** The publish pane used to be a
+   * <details> and was measured; it is a tab now, and a tab shows one pane at a time — so the
+   * unselected one is a state this gate would never enter, which is exactly how the last overflow
+   * survived three gates for two days.
+   *
+   * The rule is DECLARED STATE, not a class list: a BUTTON carrying "aria-current" is a control
+   * that says which of several views is showing. **Buttons only** — the first version matched any
+   * "aria-current" and clicked the site nav, whose links carry it to mark the current page, so the
+   * probe navigated away mid-measurement and the run died with "Inspected target navigated or
+   * closed". A link that declares itself current goes somewhere; a button that does changes what
+   * is on screen. Clicking each and taking the worst measurement
+   * means a new tab bar is covered the day somebody writes one, and a bar that stops declaring
+   * its state fails the accessibility it was declaring — not something anyone does to quiet a
+   * check.
+   */
+  /*
+   * ⛔ **AWAIT A PAINT AFTER EACH CLICK, AND THIS IS NOT DEFENSIVE.** The first version measured
+   * synchronously after "click()" — before React had re-rendered — so it measured the OLD pane
+   * every time and the new tab was never seen. It reported clean, and a deliberate 60rem overflow
+   * planted in the publish pane did not fire it: the check had been extended to cover a state it
+   * still could not reach. Two frames is what a state change plus its layout costs.
+   */
+  const painted = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  /*
+   * ⛔ **A BUTTON THAT DECLARES ITSELF CURRENT IS THE ONE ALREADY SHOWING**, so clicking it shows
+   * nothing new — the first version selected exactly the pane that was already measured and left
+   * the other one unvisited. React omits a false "aria-current" entirely, which is correct and is
+   * why the selector found one button rather than two. The current button identifies the BAR; its
+   * siblings are the states.
+   */
+  let worst = widest();
+  for (const current of document.querySelectorAll("button[aria-current]")) {
+    for (const tab of current.parentElement?.querySelectorAll(":scope > button") ?? []) {
+      tab.click();
+      await painted();
+      const here = widest();
+      if (here.scroll > worst.scroll) worst = here;
     }
   }
-  return { scroll, vw, worst };
+
+  if (worst.scroll <= vw + 1) return null;
+  return { scroll: worst.scroll, vw, worst: worst.worst };
 })()`;
 
 const root = normalize(join(import.meta.dirname, "..", "out"));
@@ -228,7 +274,7 @@ for (const width of WIDTHS) {
      * a reader can unfold it — two different questions about the same route.
      */
     const { result: over } = await cdp.send("Runtime.evaluate", {
-      expression: OVERFLOW, returnByValue: true, awaitPromise: false,
+      expression: OVERFLOW, returnByValue: true, awaitPromise: true,
     }, sessionId);
     const spill = over.value as { scroll: number; vw: number; worst: { right: number; what: string } } | null;
     if (spill) {
@@ -236,7 +282,7 @@ for (const width of WIDTHS) {
       console.error(`\n${width}px ${route}`);
       console.error(`  ::error::the document is ${spill.scroll}px wide in a ${spill.vw}px viewport `
         + `— ${spill.worst.what} ends at ${spill.worst.right}. A reader scrolls sideways and the `
-        + "right-hand text is cut. Measured with every <details> open.");
+        + "right-hand text is cut. Measured with every <details> open and every tab selected.");
     }
 
     const out = result.value as { violations: string[]; figures: number; texts: number };

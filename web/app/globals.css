@@ -3042,28 +3042,10 @@ html[data-build="public"] .wordmark {
 }
 
 /*
- * The mode, beside the verb rather than inside it. Sized and coloured like every other label on
- * the page, so it reads as a setting and the button next to it stays the act.
+ * The mode toggle moved to the conversation title (`.tg-mode` in `dashboard.css`), so the rules
+ * that styled it in the compose row are gone rather than left behind — they were mine, they are
+ * unused, and a stylesheet is where dead rules are hardest to notice.
  */
-.compose-mode {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-}
-
-.compose-mode input {
-  width: 0.9rem;
-  height: 0.9rem;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.compose-mode input:disabled,
-.compose-mode:has(input:disabled) {
-  cursor: default;
-  opacity: 0.45;
-}
 
 .session-compose textarea:focus-visible {
   outline: 1px solid var(--accent);

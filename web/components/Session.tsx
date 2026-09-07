@@ -253,6 +253,21 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
    * already granted the permission meets a sentence that is merely redundant.
    */
   const [tourOpen, setTourOpen] = useState(true);
+
+  /*
+   * ⛔ **TWO TABS, BECAUSE A PUBLIC POST HAS NO CHANNEL.** The publish form used to be a fold in
+   * the conversation list, which put an act with no counterparty inside the list of counterparties
+   * — wrong on its own terms, and the reason it never looked at home there. The two tabs are the
+   * product's two audiences: somebody you are talking to, and everybody.
+   */
+  const [tab, setTab] = useState<"chat" | "publish">("chat");
+
+  /*
+   * The send mode lives HERE rather than in `Compose`, because the control moved up beside the
+   * conversation title and the button that names it stayed in the compose row. One state, two
+   * places, and they cannot disagree about which act is about to happen.
+   */
+  const [signed, setSigned] = useState(false);
   /*
    * ⛔ `busy` IS NOT A FAILURE AND IS HELD SEPARATELY FROM `refusal`.
    *
@@ -600,6 +615,22 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
               <h3>UPLOADS</h3>
               <UploadHealth queue={status?.queue} />
             </section>
+            {/*
+              ⛔ **THE ESSAY MOVED HERE AND THE FIGURE DID NOT.** The user asked for this paragraph
+              out of the conversation header, where it was a wall of prose above the messages. It
+              is a GENERATED disclosure, so "into the `?`" and "hidden" must not become the same
+              edit: the header keeps the API's own first line and the rest is here, whole and in
+              the order it was sent. Nothing a reader needs at the moment of sending left the
+              screen, and no sentence of it was rewritten to fit.
+            */}
+            {howLinkable && (
+              <section>
+                <h3>WHAT THIS CONVERSATION COSTS</h3>
+                {howLinkable.lines.map((line, i) => (
+                  <p key={i} className="prose-body">{line}</p>
+                ))}
+              </section>
+            )}
             {disclosure}
             {/*
               The `?` is where the tour is re-launched from, as a control inside the panel rather
@@ -684,6 +715,142 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
 
       {tourOpen && <Tour onClose={() => setTourOpen(false)} />}
 
+      {/*
+        ⛔ **TABS, BECAUSE THE TWO HALVES OF THIS PRODUCT HAVE DIFFERENT AUDIENCES.** One is a
+        conversation with somebody; the other is a post with no counterparty at all. They share a
+        client and nothing else, and putting the second inside the first's sidebar is what made the
+        page read as unaligned — a whole act wedged into a column sized for a list.
+      */}
+      <nav className="tg-tabs" aria-label="What this page does">
+        <button type="button" className={tab === "chat" ? "is-on" : undefined}
+                aria-current={tab === "chat"} onClick={() => setTab("chat")}>P2P CHAT</button>
+        <button type="button" className={tab === "publish" ? "is-on" : undefined}
+                aria-current={tab === "publish"}
+                onClick={() => { setTab("publish"); if (!postDesc) void loadPostDesc(); }}>
+          WHISTLEBLOWING
+        </button>
+      </nav>
+
+      {tab === "publish" ? (
+        <section className="tg-publish" aria-label="Publish publicly">
+          {/*
+            ⛔ **A THIRD ACT, AND NOW ITS OWN TAB RATHER THAN A FOLD IN THE CONVERSATION LIST.**
+
+            `cli.ts:647` records what the shared verb cost: *"NOT `publish`. That word is taken by
+            signed channel messages… and the collision is part of why nobody noticed the public
+            class had no client path at all."* This page had SEND SIGNED — which the CLI calls
+            `publish` — and no post, so a reader auditing it found a verb and ticked the box. It
+            was a fold in the conversation list, which put an act with NO COUNTERPARTY inside the
+            list of counterparties. The user asked for a tab and they are right on the structure as
+            well as the layout: a public post has no channel, so it never belonged in the list of
+            channels.
+
+            Still one deliberate click away. A control that publishes to everybody is not the
+            landing state, and the description is fetched when the tab is opened rather than on
+            page load.
+          */}
+          <div className="tg-post-body">
+              {/*
+                THE DESCRIPTION IS ABOVE THE FIELDS AND IS RENDERED WHOLE. Every line the API
+                sends, in the order it sends them, with the blank ones kept as the breaks they are.
+                No summary: a summary is where the hedge gets dropped, and three of these four
+                paragraphs are the hedge.
+              */}
+              {postDesc
+                ? (
+                  <>
+                    {/*
+                      ⛔ **`lines` ARE TERMINAL LINES, NOT PARAGRAPHS**, and rendering one `<p>`
+                      each broke every sentence at the width `hydra post` wraps to — "…publishes a
+                      commitment and the chain" / "shows that you sent something". The blank
+                      entries are the paragraph breaks; the rest is one paragraph reflowing to
+                      whatever width this column happens to be. Joined on a space, split on "".
+                    */}
+                    {postDesc.lines
+                      .reduce<string[][]>((paras, line) => {
+                        if (line === "") { paras.push([]); return paras; }
+                        (paras[paras.length - 1] ??= []).push(line);
+                        return paras;
+                      }, [[]])
+                      .filter((para) => para.length > 0)
+                      .map((para, i) => (
+                        <p key={i} className="tg-post-line">{para.join(" ")}</p>
+                      ))}
+                    <p className="tg-post-cost">{postDesc.cost}</p>
+                    <p className="tg-post-cost">
+                      {postDesc.invitesLeft} invite(s) left
+                    </p>
+                  </>
+                )
+                : (
+                  <p className="tg-post-line">
+                    reading what this costs…
+                  </p>
+                )}
+
+              {/*
+                ⛔ **NO FIELDS UNTIL THE DESCRIPTION IS HERE, and this was a real hole in the first
+                version of this panel.** The form rendered whatever `GET /post` did, so a failed or
+                slow read left a working Publish button with nothing above it — the act available
+                and its disclosure absent, which is the shape `E-WALK03` is about arriving from the
+                other direction. It is not enough that the words are *usually* there.
+
+                ⛔ **THE PROPERTY SURVIVED THE MOVE AND THE FOLD DID NOT.** As a `<details>` this
+                was safe because collapsing took the button with the disclosure. As a tab there is
+                no fold, and the same property is now carried by the gate above: **no fields until
+                the description has arrived.** `site.test.ts`'s guard was written against the fold
+                and has been re-pointed at what the tab makes true, because a guard whose subject
+                moves goes quiet without the property having improved.
+              */}
+              {postDesc && <>
+              <label htmlFor="post-reason">
+                <span className="prose-label">WHY YOU ARE POSTING IT</span>
+                <input id="post-reason" name="post-reason" type="text" autoComplete="off"
+                       value={postReason} disabled={!live}
+                       onChange={(e) => setPostReason(e.target.value)} />
+              </label>
+              {/*
+                NOT VALIDATED HERE, DELIBERATELY. The rule is the API's — `no_reason`, with a
+                remedy — and a copy of it in this file is a second copy free to drift from the
+                first. The contract asks a page to treat that refusal as *"there is one more thing
+                to say"* rather than as an error, which is what this line does; the button stays
+                live so the reader meets the API's own words rather than a disabled control that
+                explains nothing.
+              */}
+              {refusal?.code === "no_reason" && (
+                <p className="tg-post-cost">{refusal.remedy}</p>
+              )}
+
+              <label htmlFor="post-text">
+                <span className="prose-label">WHAT TO PUBLISH</span>
+                <textarea id="post-text" name="post-text" rows={3}
+                          value={postText} disabled={!live}
+                          onChange={(e) => setPostText(e.target.value)} />
+              </label>
+
+              <button type="button" className="button"
+                      disabled={postText.trim() === "" || working !== null || !live}
+                      onClick={() => void postNow()}>
+                {working === "post" ? "Publishing…" : "Publish publicly"}
+              </button>
+
+              {/*
+                THE ID AND THE SENTENCE THAT MAKES IT MEAN ANYTHING, together. `reach` is the
+                API's, not this page's — `server.ts` says a page composing it in its own words
+                would be free to soften it, and softening *"give it to whoever should read this and
+                to nobody else"* is the one edit that would matter.
+              */}
+              {posted && (
+                <div className="tg-post-done" role="status">
+                  <p className="prose-label">POSTED</p>
+                  <p className="msg-text">{posted.id}</p>
+                  <p className="tg-post-line">{posted.reach}</p>
+                </div>
+              )}
+              </>}
+          </div>
+        </section>
+      ) : (
       <div className="tg-body">
         <aside className="tg-list">
           {/*
@@ -771,124 +938,6 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
             {collected && <CollectedNote collected={collected} />}
           </div>
 
-          {/*
-            ⛔ **A THIRD ACT, NOT A THIRD BUTTON ON THE SECOND ONE.**
-
-            `cli.ts:647` records what the shared verb cost: *"NOT `publish`. That word is taken by
-            signed channel messages… and the collision is part of why nobody noticed the public
-            class had no client path at all."* This page had SEND SIGNED — which the CLI calls
-            `publish` — and no post, so a reader auditing it found a verb and ticked the box. It
-            sits beside "open a conversation" and "check mailbox" because it is their peer: a thing
-            you do, not a setting on a thing you were already doing.
-
-            Closed by default. A control that publishes to everybody should cost one deliberate
-            click to even see.
-          */}
-          <details className="tg-post"
-                   onToggle={(e) => {
-                     if (e.currentTarget.open && !postDesc) void loadPostDesc();
-                   }}>
-            <summary>Publish publicly</summary>
-            <div className="tg-post-body">
-              {/*
-                THE DESCRIPTION IS ABOVE THE FIELDS AND IS RENDERED WHOLE. Every line the API
-                sends, in the order it sends them, with the blank ones kept as the breaks they are.
-                No summary: a summary is where the hedge gets dropped, and three of these four
-                paragraphs are the hedge.
-              */}
-              {postDesc
-                ? (
-                  <>
-                    {/*
-                      ⛔ **`lines` ARE TERMINAL LINES, NOT PARAGRAPHS**, and rendering one `<p>`
-                      each broke every sentence at the width `hydra post` wraps to — "…publishes a
-                      commitment and the chain" / "shows that you sent something". The blank
-                      entries are the paragraph breaks; the rest is one paragraph reflowing to
-                      whatever width this column happens to be. Joined on a space, split on "".
-                    */}
-                    {postDesc.lines
-                      .reduce<string[][]>((paras, line) => {
-                        if (line === "") { paras.push([]); return paras; }
-                        (paras[paras.length - 1] ??= []).push(line);
-                        return paras;
-                      }, [[]])
-                      .filter((para) => para.length > 0)
-                      .map((para, i) => (
-                        <p key={i} className="tg-post-line">{para.join(" ")}</p>
-                      ))}
-                    <p className="tg-post-cost">{postDesc.cost}</p>
-                    <p className="tg-post-cost">
-                      {postDesc.invitesLeft} invite(s) left
-                    </p>
-                  </>
-                )
-                : (
-                  <p className="tg-post-line">
-                    reading what this costs…
-                  </p>
-                )}
-
-              {/*
-                ⛔ **NO FIELDS UNTIL THE DESCRIPTION IS HERE, and this was a real hole in the first
-                version of this panel.** The form rendered whatever `GET /post` did, so a failed or
-                slow read left a working Publish button with nothing above it — the act available
-                and its disclosure absent, which is the shape `E-WALK03` is about arriving from the
-                other direction. It is not enough that the words are *usually* there.
-
-                This is also why the whole panel is one `<details>` rather than a description that
-                folds and a form that does not: **the act cannot be reached while the disclosure is
-                collapsed, because collapsing takes the button with it.** `site.test.ts`'s fold
-                guard names `OpenedNote` specifically and would not have caught either mistake — I
-                have widened it to the property rather than the component.
-              */}
-              {postDesc && <>
-              <label htmlFor="post-reason">
-                <span className="prose-label">WHY YOU ARE POSTING IT</span>
-                <input id="post-reason" name="post-reason" type="text" autoComplete="off"
-                       value={postReason} disabled={!live}
-                       onChange={(e) => setPostReason(e.target.value)} />
-              </label>
-              {/*
-                NOT VALIDATED HERE, DELIBERATELY. The rule is the API's — `no_reason`, with a
-                remedy — and a copy of it in this file is a second copy free to drift from the
-                first. The contract asks a page to treat that refusal as *"there is one more thing
-                to say"* rather than as an error, which is what this line does; the button stays
-                live so the reader meets the API's own words rather than a disabled control that
-                explains nothing.
-              */}
-              {refusal?.code === "no_reason" && (
-                <p className="tg-post-cost">{refusal.remedy}</p>
-              )}
-
-              <label htmlFor="post-text">
-                <span className="prose-label">WHAT TO PUBLISH</span>
-                <textarea id="post-text" name="post-text" rows={3}
-                          value={postText} disabled={!live}
-                          onChange={(e) => setPostText(e.target.value)} />
-              </label>
-
-              <button type="button" className="button"
-                      disabled={postText.trim() === "" || working !== null || !live}
-                      onClick={() => void postNow()}>
-                {working === "post" ? "Publishing…" : "Publish publicly"}
-              </button>
-
-              {/*
-                THE ID AND THE SENTENCE THAT MAKES IT MEAN ANYTHING, together. `reach` is the
-                API's, not this page's — `server.ts` says a page composing it in its own words
-                would be free to soften it, and softening *"give it to whoever should read this and
-                to nobody else"* is the one edit that would matter.
-              */}
-              {posted && (
-                <div className="tg-post-done" role="status">
-                  <p className="prose-label">POSTED</p>
-                  <p className="msg-text">{posted.id}</p>
-                  <p className="tg-post-line">{posted.reach}</p>
-                </div>
-              )}
-              </>}
-            </div>
-          </details>
 
           {channels && channels.length > 0 ? (
             <ul className="tg-rows">
@@ -938,6 +987,21 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
         <section className="tg-thread">
           <header className="tg-thread-head">
             <h2>{open ?? "No conversation open"}</h2>
+            {/*
+              ⛔ **THE MODE SITS WITH THE CONVERSATION, NOT WITH THE KEYBOARD.** It is a property of
+              who you are talking to and how, so it belongs beside their name rather than beside
+              the box you type in — the user's instruction, and it also puts the setting where a
+              reader looks before they start writing rather than after. The button in the compose
+              row still names the act; this is the same state.
+            */}
+            {open && (
+              <label className="tg-mode" htmlFor="sign">
+                <input id="sign" name="sign" type="checkbox" checked={signed}
+                       disabled={working !== null}
+                       onChange={(e) => setSigned(e.target.checked)} />
+                <span className="prose-label">SIGN IT</span>
+              </label>
+            )}
             <ThreadLinkability how={open ? howLinkable : null} />
             {open && (
               <span className="dash-acts">
@@ -993,9 +1057,9 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
             {sent && <SentNote sent={sent} />}
             {busy && <BusyNote busy={busy} />}
             {/*
-              `no_reason` is EXCLUDED because the publish panel answers it beside the field it is
-              about, in the left column. Rendered here as well it appeared twice, once in each
-              column, and the copy here is styled as a failure — which is the reading the contract
+              `no_reason` is EXCLUDED because the publish tab answers it beside the field it is
+              about. Rendered here as well it appeared twice, once per tab, and the copy here is
+              styled as a failure — which is the reading the contract
               asks a page not to give it: *"there is one more thing to say"*, not an error.
             */}
             {refusal && refusal.code !== "no_reason" && <RefusalNote refusal={refusal} />}
@@ -1004,11 +1068,13 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
               setDraft={setDraft}
               working={working}
               disabled={!open}
-              onSend={(signed) => void sendNow(signed)}
+              signed={signed}
+              onSend={(mode) => void sendNow(mode)}
             />
           </div>
         </section>
       </div>
+      )}
     </div>
   );
 }
@@ -1053,9 +1119,18 @@ function uploadsWord(queue: Status["queue"]): string | undefined {
  * Every word is generated. This component joins and renders; it writes nothing —
  * `no-invented-claims.test.ts` holds that no front end makes a privacy claim in its own words.
  */
+/**
+ * The header's one generated line — **the API's own first line, not a sentence built here.**
+ *
+ * ⛔ The rest of `lines` is in the `?` under WHAT THIS CONVERSATION COSTS. Splitting a generated
+ * disclosure is a real risk and this is the only split that carries none: the figure a reader
+ * needs while sending stays in front of them **in the words that produced it**, and the essay
+ * moves. Composing a summary from `crowd` and `identified` was the obvious alternative and it
+ * would have meant this file writing a privacy sentence, which it may not do.
+ */
 function ThreadLinkability({ how }: { how: HowLinkable | null }) {
-  if (!how) return null;
-  return <p className="tg-link-flat">{how.lines.join(" ")}</p>;
+  if (!how || how.lines.length === 0) return null;
+  return <p className="tg-link-flat">{how.lines[0]}</p>;
 }
 
 /** One figure in the connection strip. Absent reads as a rule, never as a blank. */
@@ -1299,9 +1374,22 @@ const TOUR: Step[] = [
     ),
   },
   {
+    id: "tabs",
+    at: ".tg-tabs",
+    title: "2 · TWO THINGS THIS PAGE DOES",
+    body: (
+      <>
+        <b>P2P chat</b> is a conversation with one person whose address you have.
+        <b> Whistleblowing</b> publishes with no counterparty at all — there is nobody to reply to
+        and no channel it belongs to, which is why it is a tab rather than an entry in the list.
+        What each one discloses is described on the tab itself, by the client.
+      </>
+    ),
+  },
+  {
     id: "open",
     at: ".tg-open",
-    title: "2 · OPENING ONE, WHICH REACHES OUT",
+    title: "3 · OPENING ONE, WHICH REACHES OUT",
     body: (
       <>
         <b>THEIR ADDRESS</b> is a Starknet address you were given by the person you want to reach.
@@ -1314,7 +1402,7 @@ const TOUR: Step[] = [
   {
     id: "mailbox",
     at: ".tg-mailbox",
-    title: "3 · THE MAILBOX, WHICH IS THE OTHER DIRECTION",
+    title: "4 · THE MAILBOX, WHICH IS THE OTHER DIRECTION",
     body: (
       <>
         These are two different acts and they are easy to confuse. <b>Opening</b> a conversation
@@ -1326,20 +1414,21 @@ const TOUR: Step[] = [
   {
     id: "compose",
     at: ".session-compose",
-    title: "4 · WHICH OF THE TWO SENDS",
+    title: "5 · WHICH OF THE TWO SENDS",
     body: (
       <>
-        The toggle sets the mode and <b>the button always names it</b> — it reads
-        <i> Send deniable</i> or <i> Send signed</i>, and says which is in flight while it sends.
-        It starts on deniable. What each one means arrives with the message afterwards, in the
-        client&apos;s own words.
+        <b>SIGN IT</b> sits beside the conversation&apos;s name, because it is a property of the
+        conversation rather than of the box you type in. The button here always names what it will
+        do — <i>Send deniable</i> or <i>Send signed</i> — and says which is in flight while it
+        sends. It starts on deniable. What each one means arrives with the message afterwards, in
+        the client&apos;s own words.
       </>
     ),
   },
   {
     id: "help",
     at: ".tg-help",
-    title: "5 · WHERE THIS LIVES",
+    title: "6 · WHERE THIS LIVES",
     body: (
       <>
         The <code>?</code> holds what this page is, what every mark means, and a button that starts
@@ -1398,16 +1487,25 @@ function Tour({ onClose }: { onClose: () => void }) {
 }
 
 function Compose({
-  draft, setDraft, working, disabled, onSend,
+  draft, setDraft, working, disabled, signed, onSend,
 }: {
   draft: string;
   setDraft: (v: string) => void;
   working: string | null;
   /** No channel open: the box is present so the layout does not jump, and it cannot be sent. */
   disabled: boolean;
+  /**
+   * The mode, owned by the page and set beside the conversation title.
+   *
+   * ⛔ It used to be this component's own `useState`, which was fine while the toggle was in this
+   * row. The user moved the control up to the title; a copy of the state here would have been a
+   * second source of truth for **which of two permanent acts is about to happen**, which is the
+   * hazard the old two-button comment was written about, arriving as a state bug instead of a
+   * labelling one.
+   */
+  signed: boolean;
   onSend: (signed: boolean) => void;
 }) {
-  const [signed, setSigned] = useState(false);
   const empty = draft.trim() === "" || disabled;
   const sending = working === "send";
   const mode = signed ? "signed" : "deniable";
@@ -1444,12 +1542,6 @@ function Compose({
         />
       </label>
       <div className="session-compose-acts">
-        <label className="compose-mode" htmlFor="sign">
-          <input id="sign" name="sign" type="checkbox" checked={signed}
-                 disabled={disabled || sending}
-                 onChange={(e) => setSigned(e.target.checked)} />
-          <span className="prose-label">SIGN IT</span>
-        </label>
         <button type="button" className="button" disabled={empty || working !== null}
                 onClick={() => onSend(signed)}>
           {sending ? `Sending ${mode}…` : `Send ${mode}`}
