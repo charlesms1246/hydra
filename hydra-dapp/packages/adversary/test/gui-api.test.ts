@@ -32,8 +32,9 @@ import { guiServer, problemOf, type FlushAttempt, type StateSource }
   from "../../gui/src/server.ts";
 import { serialise, type Exclusive } from "../../gui/src/serialise.ts";
 import { init, publishBundle, open, accept, sendMessage, readChannel, flush,
-  encodeWire, openAndSend, rotatePrekey, SIGNED_MARK, UNVERIFIABLE_MARK }
+  encodeWire, openAndSend, rotatePrekey, fetchPosts, SIGNED_MARK, UNVERIFIABLE_MARK }
   from "../../cli/src/commands.ts";
+import { describePost } from "../../client/src/public.ts";
 import { memoryChain } from "../../cli/src/chain.ts";
 import { MIN_JITTER_BLOCKS } from "../../channel/src/schedule.ts";
 import type { State } from "../../cli/src/state.ts";
@@ -186,6 +187,12 @@ const ROUTES = (channel: string, bundle = ""): [string, string, unknown?][] => [
   ["POST", `/v1/gui/channels/${channel}/send`, { text: "swept" }],
   ["POST", `/v1/gui/channels/${channel}/read`],
   ["POST", "/v1/gui/flush"],
+  // AND THE PUBLIC CLASS, WHICH IS THE ONE ROUTE WHOSE OUTPUT IS PUBLIC BY CONSTRUCTION. Every
+  // other response here is read by the page that asked; a post's id is meant to be handed to
+  // strangers, so a secret that reached this response would be a secret the caller is being
+  // encouraged to distribute. Included in the sweep for that reason and not for symmetry.
+  ["POST", "/v1/gui/post", { text: "swept", reason: "swept" }],
+  ["GET", "/v1/gui/post"],
 ];
 
 /**
@@ -635,7 +642,12 @@ test("A GET DOES NO NETWORK — the read-only surface cannot become a 106-second
     // THE GET ROUTES ONLY, and that filter is the point of the test rather than a detail: `read`
     // and `flush` reach the network deliberately, which is why they are verbs.
     const reads = ROUTES("with-alice").filter(([method]) => method === "GET");
-    assert.equal(reads.length, 3, "the read-only surface is not three routes any more");
+    // FOUR SINCE `GET /v1/gui/post`, which is the description of what posting costs. It reads
+    // `describePost()` — a pure function — and `state.invites.length`, so it touches nothing, and
+    // this number is the thing that made somebody check that. A count here is deliberately a
+    // tripwire rather than a fact: it fires when the read-only surface grows, which is exactly
+    // when the "no network" claim has to be re-established for the new route rather than assumed.
+    assert.equal(reads.length, 4, "the read-only surface is not four routes any more");
     for (const [, route] of reads) assert.equal((await api.get(route)).status, 200);
     assert.equal(reached, 0, "a read-only endpoint made a network request");
   } finally { api.close(); closeVault(); globalThis.fetch = realFetch; }
@@ -1356,4 +1368,124 @@ test("THE BANNER PRINTS THE ADDRESS IT ACTUALLY BOUND, NOT JUST THE TOKEN", asyn
       assert.equal(fragment[1], minted[1], "the fragment carries a different token from the banner");
     } finally { child.kill(); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+/**
+ * THE PUBLIC CLASS, WHICH THIS API COULD NOT REACH AT ALL.
+ *
+ * `grep -c "post(" gui/src/server.ts` was 0. `cli.ts:647` names why nobody noticed: *"NOT
+ * `publish`. That word is taken by signed channel messages… and the collision is part of why
+ * nobody noticed the public class had no client path at all."* The same collision hid the same gap
+ * one surface later — this API has SEND SIGNED, which the CLI calls `publish`, so a reader looking
+ * for the verb found one and the capability was missing.
+ *
+ * Driven against the REAL vault the other write tests use, because the thing being tested is an
+ * upload: a stub would assert the shape of a request nobody made.
+ */
+test("A PUBLIC POST GOES OUT, SPENDS AN INVITE, AND SAYS THE ID IS THE ONLY WAY BACK", async () => {
+  const { alice, close: closeVault } = await conversed();
+  const before = alice.invites.length;
+  // The real vault, reached with the real `fetch` — `nodeAndVault` forwards anything that is not
+  // the node, which is what makes this an upload rather than an assertion about one.
+  const { fetchImpl } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    const r = await post(api.base, "/v1/gui/post",
+      { text: "the minutes of the meeting", reason: "public interest" });
+    const text = await r.text();
+    assert.equal(r.status, 200, text);
+    const body = JSON.parse(text) as
+      { op: string; id: string; invitesLeft: number; reach: string };
+    assert.equal(body.op, "post");
+    // A content-addressed public id, not an empty string dressed as success. The `pub:` prefix is
+    // the class marker `blobs.ts` gives a public object — asserted, because an id without it is
+    // an id for a different class of object and would fetch back as missing.
+    assert.match(body.id, /^pub:[0-9a-f]{16,}$/, `not a public object id: ${body.id}`);
+    assert.equal(body.invitesLeft, before - 1, "a post did not spend exactly one invite");
+    assert.equal(alice.invites.length, before - 1, "the spend did not reach the state");
+    assert.ok(api.saved.length > 0, "a spent invite was not persisted");
+    // **THE SENTENCE TRAVELS AS DATA.** A page composing this itself is a page free to soften it.
+    assert.match(body.reach, /only way/,
+      `the response does not say the id is the only route to the post: ${body.reach}`);
+    assert.match(body.reach, /no feed/);
+
+    // AND IT IS REALLY ON THE VAULT — the id resolves to the bytes that were posted. Without this
+    // the test passes on a route that spends an invite and uploads nothing.
+    const back = await fetchPosts(alice, [body.id]);
+    assert.equal(back.text.get(body.id), "the minutes of the meeting",
+      `the object is not readable back off the vault: ${JSON.stringify([...back.text])}`);
+  } finally { api.close(); closeVault(); }
+});
+
+test("A POST WITH NO REASON IS REFUSED, AND THE REFUSAL IS NOT A DEFAULT", async () => {
+  // **THE REASON IS EVIDENCE, NOT A LABEL.** `commands.ts:759`: *"an intent with no reason and no
+  // confirmation time is how a public post gets made by a client that never asked anybody."* A
+  // default would have this API write down that somebody decided, on behalf of a caller who was
+  // never asked — so the absence has to be refused rather than filled.
+  const { alice, close: closeVault } = await conversed();
+  const before = alice.invites.length;
+  const { fetchImpl } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    for (const [body, code] of [
+      [{ text: "no reason given" }, "no_reason"],
+      [{ text: "no reason given", reason: "" }, "no_reason"],
+      [{ text: "no reason given", reason: "   " }, "no_reason"],
+      [{ reason: "public interest" }, "no_text"],
+      [{ text: "   ", reason: "public interest" }, "no_text"],
+    ] as [unknown, string][]) {
+      const r = await post(api.base, "/v1/gui/post", body);
+      assert.equal(r.status, 400, `${JSON.stringify(body)} was not refused`);
+      const err = await refusal(r);
+      assert.equal(err.code, code, `${JSON.stringify(body)} was refused as ${err.code}`);
+      assert.ok(err.remedy.length > 10, `${code} names no remedy`);
+    }
+    // **NOTHING WAS SPENT BY A REFUSAL.** A guard that refuses after taking the invite has moved
+    // the defect rather than fixed it, and `invitesLeft` is what a page shows beside the button.
+    assert.equal(alice.invites.length, before, "a refused post still spent an invite");
+    assert.equal(api.saved.length, 0, "a refused post wrote state");
+  } finally { api.close(); closeVault(); }
+});
+
+test("THE COST IS READABLE BEFORE THE ACT, AND IT IS THE SAME WORDS THE CLI PRINTS", async () => {
+  // The CLI prints `describePost()` and then posts, in one command. An API cannot: a body returned
+  // with the result arrives after the act. So the description is a GET on the same path as the
+  // write, and it carries the lines WHOLE — a page that paraphrases them is a page choosing which
+  // parts of an irreversible act to mention.
+  const { alice, close: closeVault } = await conversed();
+  const api = await running({ t: "ready", state: alice, file: FILE });
+  try {
+    const r = await api.get("/v1/gui/post");
+    assert.equal(r.status, 200);
+    const body = await r.json() as { lines: string[]; invitesLeft: number; cost: string };
+    assert.deepEqual(body.lines, describePost(),
+      "the browser is shown a different description from the one the CLI prints");
+    assert.equal(body.invitesLeft, alice.invites.length);
+    // The two facts people get wrong, asserted by content rather than by line count — a count
+    // passes on a description that has been rewritten into something else the same length.
+    const whole = body.lines.join(" ");
+    assert.match(whole, /THIS IS PUBLIC/);
+    assert.match(whole, /NOTHING ABOUT THIS GOES ON CHAIN/,
+      "the description no longer says a post reaches no chain, which is the fact a reader coming "
+      + "from `send` most needs");
+    assert.match(body.cost, /invite/);
+  } finally { api.close(); closeVault(); }
+});
+
+test("A POST WITH NO INVITES IS A REFUSAL WITH A REMEDY, NOT A 500", async () => {
+  // `post()` THROWS "no invites left". A throw on this path reaches the 500 handler, which reports
+  // a foreseeable, caller-fixable condition as a failure of this process — no remedy, and a stack
+  // trace in the operator's log for a thing the caller can fix by asking for a code.
+  const { alice, close: closeVault } = await conversed();
+  alice.invites.length = 0;
+  const { fetchImpl } = nodeAndVault(alice);
+  const api = await running({ t: "ready", state: alice, file: FILE }, TOKEN, { fetchImpl });
+  try {
+    const r = await post(api.base, "/v1/gui/post", { text: "anything", reason: "public interest" });
+    assert.equal(r.status, 409, `refused as ${r.status}`);
+    const err = await refusal(r);
+    assert.equal(err.code, "no_invites");
+    assert.match(err.remedy, /invite/);
+    assert.equal(api.saved.length, 0, "a post that could not be made still wrote state");
+  } finally { api.close(); closeVault(); }
 });

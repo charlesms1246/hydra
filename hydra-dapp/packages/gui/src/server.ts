@@ -34,7 +34,8 @@ import { timingSafeEqual } from "node:crypto";
 
 import { anchorOf, attributionLabel, describeFailure, fingerprint, publishBundle, sendMessage,
   readChannel, flush, linkabilityOf, gapsOf, RECONFIGURE, FLUSH_LIMIT, bundleFromChain, openAndSend,
-  collect, decodeWire } from "../../cli/src/commands.ts";
+  collect, decodeWire, post } from "../../cli/src/commands.ts";
+import { describePost } from "../../client/src/public.ts";
 import { describe as describeLinkability } from "../../channel/src/crowd.ts";
 import { LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES,
   INVITE_VAULT_SEES, INVITE_UNSCHEDULED } from "../../claims/src/warnings.ts";
@@ -498,6 +499,34 @@ export function guiServer(deps: GuiDeps): Server {
       return send(res, 200, channels(got.state));
     }
 
+    /*
+     * **THE COST OF POSTING, READABLE BEFORE ANYTHING IS POSTED.**
+     *
+     * The CLI prints `describePost()` and then posts, in one command, so the person deciding sees
+     * it by construction. An API cannot do that in one call: a body returned with the result is a
+     * body that arrives after the act. So the description is a GET on the same path as the write,
+     * and the write returns only what the write produced.
+     *
+     * **WHAT THIS CANNOT DO, and it is the same concession `status` makes about `invitesLeft`:**
+     * nothing here forces a page to fetch this before it POSTs. A route cannot make a UI honest.
+     * What it can do is make the honest UI possible and put the words on the same path as the act,
+     * so a page rendering its own summary is visibly not rendering this — see
+     * `claude-docs/GUI-API-CONTRACT.md`, which says so to the surface that will build it.
+     *
+     * The lines travel as DATA, whole, for the reason `lookup`'s warnings do: a page that
+     * paraphrases them is a page that decides which parts of an irreversible act to mention.
+     */
+    if (req.method === "GET" && path === "/v1/gui/post") {
+      return send(res, 200, {
+        lines: describePost(),
+        // The same count `status` serves, from the same place, because a page that shows the cost
+        // beside the button should not need a second request to say what is left to spend.
+        invitesLeft: got.state.invites.length,
+        cost: "a post spends one invite, like any upload — the vault charges for the upload, not "
+          + "for the privacy, and a public post gets none of the privacy",
+      });
+    }
+
     const inChannel = /^\/v1\/gui\/channels\/([^/]+)\/messages$/.exec(path);
     if (req.method === "GET" && inChannel) {
       const body = messages(got.state, decodeURIComponent(inChannel[1]!));
@@ -542,13 +571,25 @@ export function guiServer(deps: GuiDeps): Server {
      * else's mailbox.
      */
     const collectNow = path === "/v1/gui/collect";
+    /*
+     * **THE PUBLIC CLASS, WHICH HAD NO PATH FROM A BROWSER AT ALL.** `cli.ts:647` names the reason
+     * nobody noticed: *"NOT `publish`. That word is taken by signed channel messages… and the
+     * collision is part of why nobody noticed the public class had no client path at all."* The
+     * same collision hid the same gap one surface later — this API has SEND SIGNED, which the CLI
+     * calls `publish`, so the verb a reader looked for was present and the capability was not.
+     *
+     * Not a verb on a channel: a post has no channel and no recipient. That is not a namespacing
+     * preference — it is why there is no jitter, no cover and no timing defence on this path.
+     */
+    const postPublicly = path === "/v1/gui/post";
 
     if (req.method === "POST"
-      && (sendTo || readFrom || lookUp || invite || collectNow || path === "/v1/gui/flush")) {
+      && (sendTo || readFrom || lookUp || invite || collectNow || postPublicly
+        || path === "/v1/gui/flush")) {
       // Named out here because the `catch` below needs it too, and an operator-side log that does
       // not say which operation failed is a log that costs a reader the one thing it had.
       const what = sendTo ? "send" : readFrom ? "read" : lookUp ? "lookup"
-        : invite ? "invite" : collectNow ? "collect" : "flush";
+        : invite ? "invite" : collectNow ? "collect" : postPublicly ? "post" : "flush";
       void (async () => {
         const channel = decodeURIComponent((sendTo ?? readFrom)?.[1] ?? "");
 
@@ -556,7 +597,7 @@ export function guiServer(deps: GuiDeps): Server {
         // be slow or hostile, and holding the write lock across it would let any caller stall
         // every other write by dribbling bytes. Nothing here touches state.
         let body: { text?: unknown; signed?: unknown; name?: unknown; address?: unknown;
-          bundle?: unknown } = {};
+          bundle?: unknown; reason?: unknown } = {};
         // The address, parsed OUT HERE. `BigInt("nonsense")` throws, and inside the lock that
         // throw would reach the 500 path — reporting a caller's typo as a failure of this process
         // and spending the write lock to do it. Parsing is synchronous, so it adds no `await`
@@ -569,7 +610,7 @@ export function guiServer(deps: GuiDeps): Server {
          * having spent the write lock to say so.
          */
         let bundle: ReturnType<typeof decodeWire> = null;
-        if (sendTo || lookUp || invite) {
+        if (sendTo || lookUp || invite || postPublicly) {
           const raw = await readBody(req);
           if (raw === null) {
             return refuse(res, { status: 413, code: "body_too_large",
@@ -585,6 +626,29 @@ export function guiServer(deps: GuiDeps): Server {
             return refuse(res, { status: 400, code: "no_text",
               condition: "the request carried no message text",
               remedy: `send { "text": "…" } — an empty message is not a message` });
+          }
+          if (postPublicly) {
+            if (typeof body.text !== "string" || body.text.trim() === "") {
+              return refuse(res, { status: 400, code: "no_text",
+                condition: "the request carried no text to post",
+                remedy: `send { "text": "…", "reason": "…" } — an empty post is not a post` });
+            }
+            /*
+             * **REQUIRED, AND NOT DEFAULTABLE.** `postPublic` takes the reason as part of a
+             * `PublishIntent` and `commands.ts:759` says why it is recorded: *"an intent with no
+             * reason and no confirmation time is how a public post gets made by a client that
+             * never asked anybody."* A default here would supply the confirmation the field
+             * exists to evidence — the API would be writing down that somebody decided, on behalf
+             * of a caller who was never asked. Refused with a remedy instead, because a missing
+             * reason is a caller who has more to say, not a caller who is wrong.
+             */
+            if (typeof body.reason !== "string" || body.reason.trim() === "") {
+              return refuse(res, { status: 400, code: "no_reason",
+                condition: "the request carried no reason for posting",
+                remedy: `send { "text": "…", "reason": "…" } — the reason is recorded as your `
+                  + "intent and travels with the object. It is not a label this API can pick for "
+                  + "you: it is the record that somebody decided to make this public" });
+            }
           }
           if (lookUp) {
             if (typeof body.name !== "string" || body.name.trim() === "") {
@@ -731,6 +795,37 @@ export function guiServer(deps: GuiDeps): Server {
             // first. Both figures travel; the page says which it is.
             return { op: "collect", accepted: r.accepted, rejected: r.rejected };
           }
+          if (postPublicly) {
+            /*
+             * **CHECKED HERE RATHER THAN LEFT TO THROW.** `post()` throws *"no invites left — a
+             * public post costs one, like any upload"*, and a throw on this path reaches the 500
+             * handler: a foreseeable, caller-fixable condition reported as a failure of this
+             * process, with no remedy and the operator's log carrying a stack trace for it.
+             * Against the FRESH state for the same reason the 404 above is — an invite spent by
+             * another request while this one waited is an invite this one does not have.
+             */
+            if (!state.invites.length) {
+              return { status: 409, code: "no_invites",
+                condition: "this client has no invites left, and a public post costs one",
+                remedy: "ask the organisation running the vault for another invite code. A post "
+                  + "is charged like any upload: the vault bills the upload, not the privacy, and "
+                  + "a public post gets none of the privacy" } satisfies Fail;
+            }
+            const r = await post(state, body.text as string, (body.reason as string).trim(),
+              deps.now(), deps.fetchImpl);
+            deps.save(state);
+            return {
+              op: "post", id: r.id, invitesLeft: r.invitesLeft,
+              /*
+               * **THE SENTENCE TRAVELS, IT IS NOT THE PAGE'S TO WRITE.** Same rule as `lookup`'s
+               * warnings: this is the one fact that makes the id mean anything, and a page that
+               * composed it in its own words would be free to soften it. `cli.ts:663` prints the
+               * same thing to the same effect.
+               */
+              reach: "that id is how anyone fetches it, and it is the only way — there is no feed "
+                + "and no index. Give it to whoever should read this and to nobody else.",
+            };
+          }
           if (sendTo) {
             // SIGNED IS EXPLICIT AND DEFAULTS TO DENIABLE, the way both other front ends have it:
             // `send` and `publish` are two verbs rather than a flag, because a user who cannot
@@ -791,6 +886,7 @@ export function guiServer(deps: GuiDeps): Server {
         + "/v1/gui/channels/<name>/messages, and POST to /v1/gui/lookup, /v1/gui/invite, "
         + "/v1/gui/collect, "
         + "/v1/gui/channels/<name>/send, /v1/gui/channels/<name>/read and /v1/gui/flush. There is "
-        + "no general command endpoint, deliberately" });
+        + "no general command endpoint, deliberately. `POST /v1/gui/post` publishes a public "
+        + "object and `GET /v1/gui/post` says what that costs before you do" });
   });
 }
