@@ -78,7 +78,11 @@ npm install -g hydra-strk
 hydra-tui
 ```
 
-Or without installing: `npx -y hydra-strk hydra-tui`. Node 24 or newer.
+Or without installing: `npx -y -p hydra-strk hydra-tui`. Node 24 or newer.
+
+The `-p` is required and is not a style choice: the package ships three binaries and none
+of them is named `hydra-strk`, so `npx hydra-strk …` cannot tell which one you meant and
+fails with `could not determine executable to run`.
 
 From a checkout instead — which is what you want if you intend to run the suites:
 
