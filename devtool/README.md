@@ -4,7 +4,7 @@
 
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-black)](../LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-black)](package.json)
-[![checks](https://img.shields.io/badge/checks-133-black)](packages/cli/test)
+[![checks](https://img.shields.io/badge/checks-164-black)](packages/cli/test)
 [![packages](https://img.shields.io/badge/packages-5%20published-black)](package.json)
 
 > ### ⚠️ This does not vendor the privacy pool, and every number here is about one commit of it
@@ -225,9 +225,17 @@ per-party table and the rule table.
 ## Development
 
 ```bash
-npm test          # 133 checks across 10 files
+npm test          # 164 checks across 10 files — an npm install runs 129 of them, see below
 npx hydra-dev doctor
 ```
+
+**164 in a checkout, 129 from an `npm install`, and both are measured rather than derived.** Two
+packages are withheld from the published tarball, so an install runs 9 of the 10 files and the
+suite says which one it did not run and why. The difference is not simply the missing file's 31
+checks: some checks in the other suites skip when the withheld directories are absent, and they
+name that precondition when they do. **Run it and read the last line** — the run prints its own
+total, which exists because two people derived this number by hand and both got it wrong, in the
+same direction, for two different reasons.
 
 The suite is the argument. A claim here is expected to name the mechanism that makes it true and
 the check that would fail if it stopped being true — including the numbers in this file: the row
