@@ -15,6 +15,7 @@
  *     hydra init --vault URL --rpc URL --contract 0x… --account NAME --accounts-file PATH
  *     hydra bundle [--epoch N] [--one-time N]     > bundle.json   (give this to people)
  *     hydra record 0xADDRESS                      > the felts to publish at that address
+ *     hydra check 0xADDRESS                       is the record there still THIS install's key?
  *     hydra anchor NAME 0xADDRESS FELT…           check their record against the handshake
  *     hydra open NAME bundle.json                 > prekey.json   (give this to them)
  *     hydra invite NAME bundle.json               same, delivered through the vault
@@ -61,6 +62,7 @@ import {
   bundleFromChain,
   encodeWire as encode, decodeWire as decode, ensureFromBlock,
   gapsOf, RECONFIGURE, describeFailure } from "./commands.ts";
+import { recordGap } from "../../claims/src/setup.ts";
 import { chainFor } from "./chain.ts";
 import { statement } from "../../claims/src/statement.ts";
 import { describe } from "../../channel/src/crowd.ts";
@@ -124,9 +126,13 @@ function printSetupGaps(state: State): void {
   if (gaps.length === 0) return;
   const missing = gaps.filter((g) => g.severity === "missing");
   console.error("");
+  // **THE COUNT WAS THE WORD "two" IN THIS BRANCH** while the other branch computed it — so the
+  // sentence was right only while there happened to be exactly two `unchosen` gaps, and adding
+  // any row to `setupGaps` made the client state a number it had not counted. A hand-written
+  // figure beside a derived one is the same defect as a hand-kept list beside a derived list.
   console.error(missing.length
     ? `THIS CLIENT CANNOT SEND YET — ${missing.length} thing(s) missing.`
-    : "this client can send, but two settings were never chosen:");
+    : `this client can send, but ${gaps.length} setting(s) were never chosen:`);
   for (const g of gaps) {
     console.error("");
     console.error(`  ${g.severity === "missing" ? "MISSING" : "never chosen"}: ${g.what}`);
@@ -237,7 +243,33 @@ async function repairFromBlock(state: State): Promise<void> {
 
 switch (command) {
   case "init": {
-    if (exists()) throw new Error(`${STATE_FILE} already exists — delete it to start over`);
+    if (exists()) {
+      // **THIS SENTENCE IS THE TRIGGER FOR THE WORST FAILURE IN THE PRODUCT, so it now names what
+      // deleting costs.** It used to read "delete it to start over" and stop there: true, and with
+      // an undisclosed consequence. Deleting mints a new seed, which silently invalidates any
+      // record already published — sources go on reading the old one, write to a mailbox this
+      // install cannot derive, and are told nothing. Same family as `lock` announcing an
+      // encryption that had not happened: a correct instruction whose cost was left out.
+      //
+      // **AND IT STILL REFUSES.** The refusal is right; what was missing is the warning and a
+      // route that is not deletion. `RECONFIGURE` is that route for the settings, and it is named
+      // here because "start over" is what a user reaches for when they only wanted to change one.
+      throw new Error([
+        `${STATE_FILE} already exists.`,
+        "",
+        "TO CHANGE A SETTING, DO NOT DELETE THIS. The fields are plain top-level JSON — edit the",
+        "one you meant; run `hydra unlock` first if the file is encrypted.",
+        "",
+        "DELETING IT MINTS A NEW IDENTITY, and if you have ever published a record with",
+        "`hydra record`, that record keeps naming the old one. Anyone who looks you up gets a",
+        "signature that verifies against a key you no longer hold: their first message goes to a",
+        "mailbox this client will not derive, `collect` will say nothing is waiting, and they will",
+        "be told it was delivered. Nothing on either side reports this. `hydra check <address>`",
+        "is what notices it afterwards.",
+        "",
+        "If you meant to start over: delete it, and re-publish your record at the same address.",
+      ].join("\n"));
+    }
     const state = init({
       vaultUrl: flag("vault", "http://127.0.0.1:8080"),
       rpcUrl: flag("rpc", "http://127.0.0.1:5050"),
@@ -384,6 +416,72 @@ switch (command) {
     break;
   }
 
+  case "check": {
+    /*
+     * **THE ONE THING AN ORGANISATION CANNOT OTHERWISE FIND OUT, AND IT IS THE MOST CONSEQUENTIAL
+     * FACT ABOUT THEIR SETUP.** Measured on the live chain: an install holding `4894e76c…` while
+     * the record at its address said `656fd47e…`. Sources were reading the old record, writing to
+     * mailbox slots this install does not derive, and being told the message was delivered; this
+     * install ran `collect` and was told nothing was waiting. Both sentences true, neither useful.
+     *
+     * **THE ADDRESS IS AN ARGUMENT FOR THE SAME REASON `record`'S IS.** `state.account` is a name
+     * in an sncast accounts file rather than an address, and nothing in the state remembers where
+     * a record was published — which is not an oversight to fix by adding a field, because the
+     * cause of the whole defect is `init` over a DELETED state, and a field would be deleted with
+     * it. Anything the state remembers is destroyed by the act that creates the problem.
+     *
+     * A SEPARATE VERB RATHER THAN A ROW IN `status`, because it reads the chain. `status` is
+     * piped, read by scripts and expected to be instant; the GUI's own status route has a test
+     * asserting it does no network at all. `status` names this command instead.
+     */
+    const state = load();
+    const [where] = positional;
+    if (!where) usage();
+    const local = fingerprint(publishBundle(state));
+    // The failure this has to survive is a record that is ABSENT, which is an ordinary state for
+    // somebody who has never published — not an error, and not the same as a mismatch.
+    let published: string;
+    try {
+      published = fingerprint(await bundleFromChain(state, BigInt(where)));
+    } catch (e) {
+      console.log(`this install    ${local}`);
+      console.log(`at ${where}    could not be read`);
+      console.error("");
+      // **`state.rpcUrl`, NOT `state.vaultUrl`.** A lookup asks the NODE and never touches the
+      // vault — that ordering is the whole of `LOOKUP_NODE_SEES` — so naming the vault here told a
+      // reader the wrong host was down. Caught by running it against an unreachable node: the
+      // sentence said `127.0.0.1:8080` while the address that had not answered was the RPC. A
+      // confident message pointing at the wrong thing is the defect this client keeps cataloguing.
+      console.error(describeFailure(e, state.rpcUrl));
+      console.error("");
+      console.error("NO RECORD READ, WHICH IS NOT THE SAME AS NO MISMATCH. If you have never");
+      console.error("published one, there is nothing here to be wrong. If you have, this says");
+      console.error("the node could not tell us — try again before concluding anything.");
+      process.exitCode = 1;
+      break;
+    }
+    console.log(`this install    ${local}`);
+    console.log(`at ${where}    ${published}`);
+    const gap = recordGap(local, published, where);
+    if (!gap) {
+      console.error("");
+      console.error("They match. Anyone reading that record reaches this install.");
+      break;
+    }
+    console.error("");
+    // WRAPPED LIKE EVERYTHING ELSE IN THIS BLOCK. It carries two fingerprints and an address, so
+    // unwrapped it is the one line here that runs off an 80-column terminal — and it is the line
+    // holding the two values a reader has to compare.
+    for (const line of wrapTo(`MISMATCH: ${gap.what}`, 74)) console.error(line);
+    console.error("");
+    for (const line of wrapTo(gap.why, 74)) console.error(line);
+    console.error("");
+    for (const line of wrapTo(gap.remedy, 74)) console.error(line);
+    console.error("");
+    process.exitCode = 1;
+    break;
+  }
+
   case "lookup": {
     // The step that had no path. A bundle could only reach a stranger out of
     // band, so a source needed a prior relationship with the organisation they were anonymously
@@ -452,7 +550,19 @@ switch (command) {
     save(state);
     for (const n of accepted) console.log(`accepted ${n}`);
     if (rejected) console.log(`${rejected} slot(s) held something that did not open — discarded`);
-    if (!accepted.length && !rejected) console.log("nothing waiting");
+    if (!accepted.length && !rejected) {
+      console.log("nothing waiting");
+      // **"NOTHING WAITING" IS TRUE AND IT IS ALSO EXACTLY WHAT A STALE RECORD LOOKS LIKE.** If the
+      // record published at your address names an older identity, sources are opening conversations
+      // against a key this install does not hold: their prekey messages land in mailbox slots this
+      // client never derives, so an empty mailbox is what you see whether nobody has written or
+      // everybody has. This surface cannot tell those apart — it would need the chain and an
+      // address — so it names the other reading rather than letting the reassuring one stand alone.
+      console.error("");
+      console.error("an empty mailbox reads the same whether nobody has written or your published");
+      console.error("record names an identity this install no longer holds. `hydra check <address>`");
+      console.error("is the one that can tell those apart.");
+    }
     break;
   }
 
@@ -901,6 +1011,16 @@ switch (command) {
     console.log(`node       ${state.rpcUrl}`);
     console.log(`route      ${state.controlUrl ? `pool (${state.poolAccount || "alice"})` : "direct from your own account"}`);
     console.log(`fingerprint ${fingerprint(publishBundle(state))}`);
+    // **A ROW FOR A THING THIS COMMAND CANNOT ANSWER, WHICH IS THE POINT OF IT.** Whether a
+    // published record still names this install is the most consequential fact about an
+    // organisation's setup, and it was invisible — not under-emphasised, ABSENT, with no row and
+    // therefore nothing that could ever report it. Same defect as the account gap, and the same
+    // one `setupGaps` was written for: an inventory with no row for a thing cannot report it.
+    //
+    // It says "not checked" rather than checking, because answering needs the chain and an address
+    // nothing here holds. A row naming the question and the command is what this instrument can
+    // honestly offer; the blank is what taught a reader there was nothing to ask.
+    console.log("record     not checked here — `hydra check <address>` reads the chain and says");
     console.log(`channels   ${Object.keys(state.channels).join(", ") || "(none)"}`);
     console.log(`pending    ${state.pending.length} uploads, ${state.invites.length} invites left`);
     console.log("");

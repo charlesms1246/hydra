@@ -8,7 +8,7 @@
  * ones, deliberately. A `SetupGap` type imported from there would have dragged the whole graph into
  * the browser bundle for a string.
  *
- * So `setupGaps` takes **the four fields it reads**, not a `State`. That is what removes the last
+ * So `setupGaps` takes **the fields it reads**, not a `State`. That is what removes the last
  * edge: no type import, no value import, nothing. The precedent is `channel/src/constants.ts`,
  * which exists one layer down for the same reason — quoting a cover rate had dragged
  * `vault-client` into the site.
@@ -110,7 +110,7 @@ export const RECONFIGURE =
   + "state file instead; run `hydra unlock` first if it is encrypted.";
 
 /**
- * The four fields this reads, and nothing else.
+ * The fields this reads, and nothing else.
  *
  * **NOT `State`.** A `State` parameter would need `import type { State } from "cli/src/state.ts"`,
  * and that type reaches `handshake/` and `identity/` — which `module-graph.ts` counts even though
@@ -123,6 +123,20 @@ export type SetupConfig = {
   readonly invites: number;
   readonly vaultUrl: string;
   readonly rpcUrl: string;
+  /**
+   * The sncast account this publishes from, and the file it is named in.
+   *
+   * **THERE WAS NO ROW FOR THESE AND THAT IS WHY NOTHING REPORTED THEM.** An install given the
+   * four published values succeeded, printed no gap, and `status` said *"route direct from your
+   * own account"* — about an account that did not exist. `send` then died inside raw `sncast`
+   * output whose remedy named `account create`, **sncast's command rather than this client's**,
+   * which is where a user ends up when the tool that knew has said nothing.
+   *
+   * An inventory with no row for a thing cannot report it missing, however carefully the rows it
+   * does have are written. Same defect as `vaultUrl` reading as fine because it held a default.
+   */
+  readonly accountsFile: string;
+  readonly account: string;
 };
 
 export function setupGaps(state: SetupConfig): readonly SetupGap[] {
@@ -147,6 +161,31 @@ export function setupGaps(state: SetupConfig): readonly SetupGap[] {
       remedy: "edit `invites` in your state file. Ask the party you are contacting for codes.",
     });
   }
+  // **BEFORE THE `unchosen` ROWS, because it stops you sending.** Both fields together: an account
+  // name with no file to look it up in and a file with no account named in it fail identically,
+  // and splitting them into two rows would have a reader fix one and meet the other.
+  if (!state.account || !state.accountsFile) {
+    gaps.push({
+      id: "account", field: state.account ? "accountsFile" : "account", severity: "missing",
+      // **NO `${state.account}` HERE, AND THAT IS A RULE RATHER THAN A STYLE.** These strings are
+      // serialised into `Client.gaps`, which `web/` publishes as an artifact — so a state value
+      // interpolated into one is a state value shipped to a website. `setup-gaps.test.ts` holds
+      // the property and caught this row on its first run: it named the account. The three cases
+      // are distinguishable without quoting either field.
+      what: !state.account && !state.accountsFile
+        ? "no publishing account, so nothing can be written to the chain"
+        : !state.account
+          ? "an accounts file is set and names no account to publish from"
+          : "an account is named and there is no accounts file to look it up in",
+      why: "publishing a pointer is a transaction and a transaction is paid for by an account. "
+        + "THIS IS THE ONE THING ON THIS LIST THAT IS YOURS RATHER THAN THE RECIPIENT'S: the "
+        + "vault and the invites come from whoever you are contacting, and the account is your "
+        + "own, funded by you, and it is what the chain shows as the sender of every message.",
+      remedy: "create one with `sncast account create` and point `accountsFile` and `account` at "
+        + "it in your state file. Without this row `send` failed inside sncast's own output, "
+        + "which named sncast's command rather than this one.",
+    });
+  }
   if (state.vaultUrl === DEVNET_VAULT) {
     gaps.push({
       id: "vault", field: "vaultUrl", severity: "unchosen",
@@ -167,4 +206,53 @@ export function setupGaps(state: SetupConfig): readonly SetupGap[] {
     });
   }
   return gaps;
+}
+
+
+/**
+ * Whether the record published for this install is still this install's.
+ *
+ * ## THE DEFECT, MEASURED ON THE LIVE CHAIN
+ *
+ * An organisation's install held fingerprint `4894e76c…` while the record a source reads at their
+ * address said `656fd47e…`. **A source looks them up, the anchor signature verifies, and the
+ * client says "this is their key and not somebody else's under their name" — which is true and
+ * useless, because it is their FORMER key.** The source spends an invite and writes a prekey
+ * message to a mailbox slot derived from a dead key. The organisation runs `collect` and is told
+ * *"nothing waiting"*. **Neither side is told anything and neither side is wrong.**
+ *
+ * ## WHY IT CANNOT BE FIXED ON THE SOURCE'S SIDE
+ *
+ * The record is correctly signed and there is nothing to compare it against — a stranger has no
+ * prior knowledge of the key that would let them notice. `LOOKUP_KEY_NOT_PERSON` already says the
+ * signature names the address rather than the person; what it cannot say is that the key is
+ * current, because currency is not a property of a signature.
+ *
+ * ## AND WHY NO LOCAL CHECK CAN FIND IT EITHER
+ *
+ * The trigger is a sentence this client prints. `init` refuses over an existing state with
+ * *"delete it to start over"*, and deleting regenerates the seed — so the identity that published
+ * the record is gone along with any note we might have kept about having published it.
+ * **Anything remembered in the state file is destroyed by the same act that causes the problem.**
+ * That is why this takes a fingerprint READ FROM THE CHAIN and cannot be a field comparison.
+ *
+ * `null` when they match, so a caller can print a row either way without deciding what it means.
+ */
+export function recordGap(
+  local: string, published: string, address: string,
+): SetupGap | null {
+  if (local === published) return null;
+  return {
+    id: "record", field: "seedHex", severity: "missing",
+    what: `the record published at ${address} is ${published} and this install is ${local}`,
+    why: "SOURCES ARE BEING LOST RIGHT NOW AND NOTHING ELSE WILL TELL YOU. Anyone who reads that "
+      + "record opens a conversation against the older key: their prekey message goes to a "
+      + "mailbox slot this install does not derive, so `collect` reports nothing waiting and they "
+      + "are told the message was delivered. Both sides are given a true sentence and neither is "
+      + "given this one. The usual cause is re-running `init` over a deleted state, which mints a "
+      + "new seed.",
+    remedy: "publish a fresh record for this install — `hydra record <address>` and write the "
+      + "felts at that address. Anyone holding the old one must look you up again; there is no "
+      + "way to reach them from here, because the client cannot know who read it.",
+  };
 }

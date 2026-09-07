@@ -252,6 +252,8 @@ export const gapsOf = (state: State): readonly SetupGap[] => setupGaps({
   invites: state.invites.length,
   vaultUrl: state.vaultUrl,
   rpcUrl: state.rpcUrl,
+  accountsFile: state.accountsFile,
+  account: state.account,
 });
 
 export function init(overrides: Partial<State> = {}): State {
