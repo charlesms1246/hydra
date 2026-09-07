@@ -2506,7 +2506,7 @@ html[data-build="public"] .wordmark {
 .session-degraded {
   margin: 1.25rem 0 0;
   padding-left: 1rem;
-  border-left: 1px solid var(--accent);
+  border-left: 1px solid var(--g-32);
   font-family: var(--serif);
   font-size: 1.0625rem;
   line-height: 1.4;
@@ -2516,7 +2516,7 @@ html[data-build="public"] .wordmark {
 .session-refusal {
   margin-top: clamp(2rem, 5vh, 3rem);
   padding-left: 1rem;
-  border-left: 1px solid var(--accent);
+  border-left: 1px solid var(--g-32);
 }
 
 .session-refusal .msg-text {
@@ -2560,7 +2560,7 @@ html[data-build="public"] .wordmark {
 .ch-removed {
   display: block;
   padding-bottom: 0.75rem;
-  color: var(--accent);
+  color: var(--g-80);
 }
 
 .msg {
@@ -2600,9 +2600,14 @@ html[data-build="public"] .wordmark {
   color: var(--g-64);
 }
 
+/*
+ * The mark is grey, not red. It is an indicator and the `basis` beside it is the claim — colouring
+ * it made one of the two attribution states look like a warning, on a page that is otherwise
+ * monochrome and where the reader is meant to read the sentence rather than the colour.
+ */
 .msg-mark {
   flex: none;
-  color: var(--accent);
+  color: var(--white);
 }
 
 .msg-basis-text {
@@ -2626,7 +2631,9 @@ html[data-build="public"] .wordmark {
 .session-legend dt {
   font-family: var(--mono);
   font-size: 0.8125rem;
-  color: var(--accent);
+  /* White, like the marks it explains — see `.msg-mark`. The legend and the thing it labels have
+     to be the same colour or the legend is explaining a mark the reader cannot find. */
+  color: var(--white);
 }
 
 .session-legend dd {
@@ -3024,7 +3031,6 @@ html[data-build="public"] .wordmark {
 .session-compose textarea {
   display: block;
   width: 100%;
-  margin-top: 0.5rem;
   padding: 0.6rem 0.75rem;
   background: var(--g-4);
   border: 1px solid var(--g-20);
@@ -3048,7 +3054,7 @@ html[data-build="public"] .wordmark {
  */
 
 .session-compose textarea:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--white);
   outline-offset: 1px;
 }
 
@@ -3087,7 +3093,7 @@ html[data-build="public"] .wordmark {
 .session-linkability {
   margin: 0 0 1.25rem;
   padding-left: 1rem;
-  border-left: 1px solid var(--accent);
+  border-left: 1px solid var(--g-32);
 }
 
 .session-linkability .prose-label {
@@ -3235,11 +3241,15 @@ html[data-build="public"] .wordmark {
    cannot collide; the ring does the pointing.
    --------------------------------------------------------------------------------------------- */
 
+/*
+ * The ring and the bar are white, not accent. The session page is monochrome by instruction, and
+ * a red ring on a greyscale instrument reads as an alarm rather than as a pointer.
+ */
 .tour-ring {
   position: fixed;
   z-index: 70;
   pointer-events: none;
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--white);
   outline-offset: 3px;
 }
 
@@ -3252,12 +3262,12 @@ html[data-build="public"] .wordmark {
   width: min(38rem, calc(100vw - 2rem));
   padding: 0.85rem 1rem 0.9rem;
   background: #000;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--g-32);
 }
 
 .tour-step {
   margin: 0 0 0.35rem;
-  color: var(--accent);
+  color: var(--white);
 }
 
 .tour-body {

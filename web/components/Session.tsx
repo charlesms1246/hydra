@@ -262,6 +262,9 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
    */
   const [tab, setTab] = useState<"chat" | "publish">("chat");
 
+  /** The chosen bundle's name, so the styled picker can say what the native one used to. */
+  const [peerBundleName, setPeerBundleName] = useState("");
+
   /*
    * The send mode lives HERE rather than in `Compose`, because the control moved up beside the
    * conversation title and the button that names it stayed in the compose row. One state, two
@@ -893,14 +896,29 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
                 `accept` on the picker is a hint and not a check — the file is validated by the
                 client that has to decode it, which is the only thing that can actually say.
               */}
-              <label htmlFor="peer-bundle" className="prose-label">OR THEIR BUNDLE FILE</label>
-              <input id="peer-bundle" name="peer-bundle" type="file" accept=".json,application/json"
-                     onChange={(e) => {
-                       const f = e.target.files?.[0];
-                       if (!f) { setPeerBundle(""); return; }
-                       // The page reads it; the API is sent the bytes. See `inviteNow`.
-                       void f.text().then(setPeerBundle);
-                     }} />
+              <span className="prose-label">OR THEIR BUNDLE FILE</span>
+              {/*
+                ⛔ **THE NATIVE FILE INPUT IS NOT STYLEABLE, SO IT IS NOT SHOWN.** `Choose File`
+                renders in the browser's own chrome — a light grey button with a system face — and
+                on a page that is otherwise black, monochrome and one typeface it was the only
+                element nobody designed. The input still exists and still does the work; it is
+                positioned off-screen and driven by its own label, which is the one arrangement
+                that keeps the control keyboard-reachable and the label a real label rather than a
+                click handler pretending to be one.
+              */}
+              <label className="file-pick" htmlFor="peer-bundle">
+                <input id="peer-bundle" name="peer-bundle" type="file" accept=".json,application/json"
+                       onChange={(e) => {
+                         const f = e.target.files?.[0];
+                         setPeerBundleName(f ? f.name : "");
+                         if (!f) { setPeerBundle(""); return; }
+                         // The page reads it; the API is sent the bytes. See `inviteNow`.
+                         void f.text().then(setPeerBundle);
+                       }} />
+                <span className="file-pick-act">CHOOSE A FILE</span>
+                {/* The filename, or the absence of one — never a browser default sentence. */}
+                <span className="file-pick-name">{peerBundleName || "none chosen"}</span>
+              </label>
               <button className="button" type="button"
                       onClick={() => void inviteNow()}
                       disabled={working !== null || !live
@@ -987,21 +1005,6 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
         <section className="tg-thread">
           <header className="tg-thread-head">
             <h2>{open ?? "No conversation open"}</h2>
-            {/*
-              ⛔ **THE MODE SITS WITH THE CONVERSATION, NOT WITH THE KEYBOARD.** It is a property of
-              who you are talking to and how, so it belongs beside their name rather than beside
-              the box you type in — the user's instruction, and it also puts the setting where a
-              reader looks before they start writing rather than after. The button in the compose
-              row still names the act; this is the same state.
-            */}
-            {open && (
-              <label className="tg-mode" htmlFor="sign">
-                <input id="sign" name="sign" type="checkbox" checked={signed}
-                       disabled={working !== null}
-                       onChange={(e) => setSigned(e.target.checked)} />
-                <span className="prose-label">SIGN IT</span>
-              </label>
-            )}
             <ThreadLinkability how={open ? howLinkable : null} />
             {open && (
               <span className="dash-acts">
@@ -1069,6 +1072,7 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
               working={working}
               disabled={!open}
               signed={signed}
+              setSigned={setSigned}
               onSend={(mode) => void sendNow(mode)}
             />
           </div>
@@ -1392,8 +1396,8 @@ const TOUR: Step[] = [
     title: "3 · OPENING ONE, WHICH REACHES OUT",
     body: (
       <>
-        <b>THEIR ADDRESS</b> is a Starknet address you were given by the person you want to reach.
-        <b> CALL IT</b> is a name you choose for your own list; it is not sent anywhere and they
+        <b>Their Address</b> is a Starknet address you were given by the person you want to reach.
+        <b>Call it</b> is a name you choose for your own list; it is not sent anywhere and they
         never see it. Opening reports what it cost — read those lines, they come from the client
         rather than from this page.
       </>
@@ -1487,7 +1491,7 @@ function Tour({ onClose }: { onClose: () => void }) {
 }
 
 function Compose({
-  draft, setDraft, working, disabled, signed, onSend,
+  draft, setDraft, working, disabled, signed, setSigned, onSend,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -1504,6 +1508,7 @@ function Compose({
    * labelling one.
    */
   signed: boolean;
+  setSigned: (v: boolean) => void;
   onSend: (signed: boolean) => void;
 }) {
   const empty = draft.trim() === "" || disabled;
@@ -1527,11 +1532,42 @@ function Compose({
 
   return (
     <form className="session-compose" onSubmit={(e) => e.preventDefault()}>
-      <label htmlFor="draft">
-        <span className="label">MESSAGE</span>
+      {/*
+        ⛔ **THE MODE IS THE LABEL ON THE BOX, AND IT IS THE ONLY LABEL ON IT.** The word MESSAGE
+        was there and told a reader nothing a text box does not already say. What they need to know
+        before typing is which of two permanent acts this will be, so that is what stands in its
+        place — the two words, the live one lit, the other one dim and one click away.
+
+        ⛔ **IT IS TEXT RATHER THAN A CHECKBOX BECAUSE THE STATE HAS TO BE READABLE, NOT INFERRED.**
+        A checkbox says "sign it" and leaves the reader to work out what the unchecked case is
+        called. These are two named acts and both names are on screen; a `radiogroup` is what that
+        is, so that is what it is built as, and the send control is described by the live one.
+      */}
+      <div className="compose-mode" role="radiogroup" aria-label="How this message is sent">
+        {([false, true] as const).map((m) => (
+          <button
+            key={String(m)}
+            type="button"
+            role="radio"
+            aria-checked={signed === m}
+            className={signed === m ? "is-on" : undefined}
+            disabled={disabled || sending}
+            onClick={() => setSigned(m)}
+          >
+            {m ? "SIGNED" : "DENIABLE"}
+          </button>
+        ))}
+      </div>
+
+      <div className="compose-row">
+        {/*
+          No visible label: the mode line above is the label, and `aria-label` carries the same
+          thing to a reader who cannot see it. The box takes the room the two buttons used to.
+        */}
         <textarea
           id="draft"
           name="draft"
+          aria-label="Message"
           ref={box}
           rows={2}
           value={draft}
@@ -1540,11 +1576,21 @@ function Compose({
           spellCheck={false}
           onChange={(e) => setDraft(e.target.value)}
         />
-      </label>
-      <div className="session-compose-acts">
-        <button type="button" className="button" disabled={empty || working !== null}
+        {/*
+          ⛔ **AN ICON, AND THE ACT IS STILL NAMED — IN THE ACCESSIBLE NAME AND IN THE MODE ABOVE.**
+          The old button read `Send deniable` / `Send signed`, which was the whole answer to *a
+          user who cannot tell which of the two they just did has neither*. A bare arrow would
+          throw that away, so `aria-label` carries the full act, `title` shows it on hover, and the
+          live mode is one line above the box. **If the mode line is ever removed, this control has
+          to go back to words.**
+        */}
+        <button type="button" className="send" disabled={empty || working !== null}
+                aria-label={sending ? `Sending ${mode}` : `Send ${mode}`}
+                title={sending ? `Sending ${mode}…` : `Send ${mode}`}
                 onClick={() => onSend(signed)}>
-          {sending ? `Sending ${mode}…` : `Send ${mode}`}
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden focusable="false">
+            <path d="M3 20.5 21 12 3 3.5 3 10l12 2-12 2z" fill="currentColor" />
+          </svg>
         </button>
       </div>
     </form>

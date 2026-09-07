@@ -144,7 +144,7 @@
   min-width: 13rem;
 }
 
-.tg-connect input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.tg-connect input:focus-visible { outline: 1px solid var(--white); outline-offset: 1px; }
 
 /*
  * The instruction that replaces the wrong default. Full width under the header rather than beside
@@ -240,7 +240,7 @@
   min-width: 0;
 }
 
-.tg-open-form input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.tg-open-form input:focus-visible { outline: 1px solid var(--white); outline-offset: 1px; }
 
 .tg-open-form button { margin-top: 0.25rem; }
 
@@ -433,7 +433,7 @@
   overflow: auto;
   padding: 0.85rem 1rem;
   background: #000;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--g-32);
 }
 
 .tg-link-body p {
@@ -528,8 +528,29 @@ body:has(.dash) { background: #000; }
   .tg-connect { margin-left: 0; width: 100%; }
   .tg-connect input { min-width: 0; flex: 1 1 auto; }
   .tg-body { grid-template-columns: minmax(0, 1fr); }
-  .tg-list { max-height: 14rem; border-right: none; border-bottom: 1px solid var(--g-12); }
+  /*
+   * ⛔ **THE CAP MOVED FROM THE COLUMN TO THE ROWS, BECAUSE IT WAS CLIPPING THE WAY IN.** At this
+   * width `.tg-list` was capped at 14rem and scrolled — which is right for a long list of
+   * conversations and wrong for everything above it. With OPEN A CONVERSATION unfolded, the form
+   * ran past 14rem and the bundle picker and its button were simply cut off: a reader on a phone
+   * saw the label OR THEIR BUNDLE FILE and no control under it. Measured, not guessed — the
+   * elements were 426x28 and 127x28 and painted nowhere.
+   *
+   * Capping `.tg-rows` instead keeps the scroll where the unbounded thing actually is.
+   */
+  .tg-list { border-right: none; border-bottom: 1px solid var(--g-12); }
+  .tg-rows { max-height: 14rem; overflow: auto; }
   .tg-messages.is-scroll { overflow: visible; }
+
+  /*
+   * ⛔ **THE BOX TAKES THE LEFTOVER, RATHER THAN THE PAGE ENDING IN A FIELD OF BLACK.** At this
+   * width the dashboard is document flow, not a full-height grid, so the compose row sat wherever
+   * the message list happened to end and everything below it was empty — the user's screenshot,
+   * and the reason "fill the rest of the area with the text box" was the instruction.
+   *
+   * `min-height` rather than `height`: a long conversation still grows past the viewport, which is
+   * the one thing a fixed height here would break.
+   */
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -566,7 +587,7 @@ body:has(.dash) { background: #000; }
 
 .tg-tabs button.is-on {
   color: var(--white);
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--white);
 }
 
 /*
@@ -624,7 +645,7 @@ body:has(.dash) { background: #000; }
 
 .tg-post-body input:focus-visible,
 .tg-post-body textarea:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--white);
   outline-offset: 1px;
 }
 
@@ -639,22 +660,128 @@ body:has(.dash) { background: #000; }
 .tg-post-done p { margin: 0 0 0.35rem; }
 .tg-post-done p:last-child { margin-bottom: 0; }
 
+/* ---------------------------------------------------------------------------------------------
+   The compose row: the mode as words, the box, and one icon.
+
+   ⛔ **MONOCHROME IS THE INSTRUCTION AND ALSO THE HONEST CHOICE HERE.** The accent belongs to the
+   marketing site, where it marks the one edge that carries the argument. On this page it was
+   marking a tab, an outline and a checkbox — decoration on an instrument, and three different
+   things told apart by being red rather than by being different.
+   --------------------------------------------------------------------------------------------- */
+
+.compose-mode {
+  display: flex;
+  gap: 0.9rem;
+  margin: 0 0 0.5rem;
+}
+
+.compose-mode button {
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  color: var(--g-48);
+  cursor: pointer;
+}
+
 /*
- * The send mode, beside the conversation title. Same shape as every other label in the chrome, so
- * it reads as a property of the conversation rather than as a control competing with the acts.
+ * The live mode is white and the other is grey. No underline, no box, no colour: on a page with
+ * one typeface and no hue, brightness is the whole vocabulary and it is enough for two states.
  */
-.tg-mode {
+.compose-mode button.is-on { color: var(--white); }
+.compose-mode button:hover:not(:disabled) { color: var(--g-80); }
+.compose-mode button:disabled { cursor: default; opacity: 0.45; }
+
+.compose-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+/* The box takes everything the two old buttons were using. */
+.compose-row textarea { flex: 1 1 auto; min-height: 5.5rem; }
+
+/*
+ * ⛔ **THE BOX IS THE SURFACE ON A PHONE, SO IT GETS THE HEIGHT — AND THIS RULE HAS TO COME AFTER
+ * THE ONE ABOVE.** It was first written inside the narrow-width block further up the sheet, where
+ * it lost to the 5.5rem line below it: a media query adds no specificity, so source order decided
+ * and the measured `min-height` came back as 88px rather than 34vh. Same trap as any other
+ * last-writer-wins.
+ *
+ * Stretching the whole column to the viewport was tried before this and was worse — the list, the
+ * thread head and the message pane each took a share, and the page became bands of black with one
+ * line of text in each. Giving the leftover to the element the reader is about to type into is
+ * what "fill the rest of the area with the text box" actually asks for.
+ */
+@media (max-width: 52rem) {
+  .compose-row textarea { min-height: 34vh; }
+}
+
+.compose-row .send {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  background: none;
+  border: 1px solid var(--g-20);
+  color: var(--g-64);
+  cursor: pointer;
+}
+
+.compose-row .send:hover:not(:disabled) { color: var(--white); border-color: var(--g-32); }
+.compose-row .send:disabled { cursor: default; opacity: 0.4; }
+.compose-row .send:focus-visible { outline: 1px solid var(--white); outline-offset: 1px; }
+
+/* ---------------------------------------------------------------------------------------------
+   The file picker. The native control is off-screen, not `display: none` — hiding it that way
+   takes it out of the tab order, and a control a keyboard cannot reach is not a control.
+   --------------------------------------------------------------------------------------------- */
+
+.file-pick {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
   cursor: pointer;
 }
 
-.tg-mode input {
-  width: 0.9rem;
-  height: 0.9rem;
-  accent-color: var(--accent);
-  cursor: pointer;
+/*
+ * ⛔ More specific than `.tg-open-form input`, deliberately. That rule gives every input in this
+ * form a border, a background and a full width — correct for the two text fields and exactly what
+ * made the hidden file input reappear as a styled box. Specificity is the fix; `!important` would
+ * have hidden which rule was actually in charge.
+ */
+.tg-open-form .file-pick input,
+.file-pick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.tg-mode input:disabled { cursor: default; opacity: 0.45; }
+.file-pick-act {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--g-20);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  color: var(--g-64);
+}
+
+.file-pick:hover .file-pick-act { color: var(--white); border-color: var(--g-32); }
+.file-pick input:focus-visible + .file-pick-act { outline: 1px solid var(--white); outline-offset: 1px; }
+
+.file-pick-name {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--g-48);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
