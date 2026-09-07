@@ -107,7 +107,7 @@ function stop(code: number): void {
 }
 
 if (!process.stdin.isTTY) {
-  console.error("hydra-tui needs a terminal. For scripting, `packages/cli/src/cli.ts` does the same things.");
+  console.error("hydra-tui needs a terminal. For scripting, `hydra` does the same things.");
   process.exit(2);
 }
 

@@ -1,0 +1,49 @@
+{
+  "//": [
+    "Emit JavaScript for the published package. `npm test`'s type check is separate and stays",
+    "`noEmit` — see packages/adversary/tsconfig.json, which includes every package because the",
+    "test package must see all of them.",
+    "",
+    "THIS EXISTS BECAUSE NODE REFUSES TO STRIP TYPES UNDER node_modules. `bin` pointed at",
+    "`packages/cli/src/cli.ts` and worked perfectly from a checkout; installed from a tarball it",
+    "dies with ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING before running a line. That is Node",
+    "policy, not a flag we forgot: a published package ships JavaScript.",
+    "",
+    "`rewriteRelativeImportExtensions` is what makes this a config change rather than a rewrite.",
+    "Every import in this client carries an explicit `.ts`; tsc turns those into `.js` on emit.",
+    "It was already on for the type check, so the sources needed no edits at all.",
+    "",
+    "`include` names the ten packages a user runs. NOT `packages/*` — `operator`, `moderation`",
+    "and `adversary` are excluded by I8 and by what a test package is, and a glob would ship all",
+    "three. The same ten are listed in package.json's `files`; they must move together."
+  ],
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node"],
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "packages",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "packages/channel/src/**/*.ts",
+    "packages/claims/src/**/*.ts",
+    "packages/cli/src/**/*.ts",
+    "packages/client/src/**/*.ts",
+    "packages/gui/src/**/*.ts",
+    "packages/handshake/src/**/*.ts",
+    "packages/identity/src/**/*.ts",
+    "packages/tui/src/**/*.ts",
+    "packages/vault-client/src/**/*.ts",
+    "packages/vault-server/src/**/*.ts"
+  ]
+}
