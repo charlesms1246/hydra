@@ -2,7 +2,7 @@
   "name": "hydra-devtool",
   "version": "0.1.0",
   "description": "A local STRK20 privacy stack, and tooling that computes what a transaction actually discloses",
-  "license": "GPL-3.0-only",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/charlesms1246/hydra.git"

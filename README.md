@@ -1,154 +1,262 @@
 # HYDRA
 
-**A local STRK20 privacy stack, and tooling that computes what a transaction actually discloses.**
+**Private messaging on Starknet, and the tooling that measures what it discloses.**
 
-Building on the Starknet privacy pool normally means pointing at two hosted services you do
-not control. HYDRA runs the whole thing locally — devnet, the pool deployed from source, funded
-accounts, a local discovery service — and then tells you, per transaction and per
-configuration, exactly who learns what.
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0-black)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A524-black)](devtool/package.json)
+[![client](https://img.shields.io/badge/client-716%20tests-black)](hydra-dapp)
+[![devtool](https://img.shields.io/badge/devtool-76%20checks-black)](devtool)
+[![site](https://img.shields.io/badge/site-27%20tests-black)](web)
 
-Nothing it reports is asserted. Every claim is computed from the pool source or measured, and
-carries a `file:line` citation.
+> ### ⚠️ Testnet, and unaudited in a specific way
+>
+> The channel contract is **deployed on Sepolia and nowhere else** — see
+> [`deployments/sepolia.json`](deployments/sepolia.json). It has **had no external audit**: 98 lines
+> of Cairo, one storage slot, no owner, no upgrade path, no custody. That is a small surface, not a
+> reviewed one.
+>
+> The **disclosure statement is generated** from the code that makes it true. The **deployment is
+> not**: nothing on chain has been reviewed by anyone outside this repository.
 
-## Quick start
+---
 
-Requires **Node >= 24** and `git`. HYDRA does not vendor the privacy pool — it drives a
-checkout of [`starknet-privacy`](https://github.com/starkware-libs/starknet-privacy) pinned to
-one commit. That pin has a single source of truth, `UPSTREAM_SHA` in
-`devtool/packages/cli/src/pins.mjs`, and `hydra-dev doctor` prints the clone command with it already
-filled in, so it is not repeated here.
+## Two products, one repository
+
+| | |
+|---|---|
+| **`hydra`** | Private messaging. A message is sealed, padded and uploaded to storage on a delayed schedule; a pointer and a commitment go on chain. Neither on-chain value names a sender, a recipient, or a message. |
+| **`hydra-dev`** | STRK20 correctness and disclosure tooling. Brings up a local privacy stack, and computes what a planned transaction would disclose before it is sent. |
+
+They share a repository and **not a dependency path**. A messaging client and an operator tool have
+opposite trust assumptions, and invariant **I8** keeps them apart — separate binaries, separate
+packages, enforced by
+[`i8-operator-separation.test.ts`](hydra-dapp/packages/adversary/test/i8-operator-separation.test.ts).
+
+The platform client declares **one** dependency across all its packages. The devtool's terminal
+interface pulls forty. That difference is the point: the client process holds a root key, so every
+package in its tree is a package that can read the state file.
+
+---
+
+## The background
+
+**1. Encrypting the message is the easy half.**
+Everyone does that. What survives encryption is *who talked to whom, when, and how often* — and on a
+public chain that metadata is permanent and free to read. This client spends its effort there: a
+message's chain event is separated in time from its upload, and the upload travels beside cover
+objects that are indistinguishable from it.
+
+**2. What leaks is computed, never promised.**
+`hydra disclose` prints what every party in the system can see, and each row is generated from the
+value that makes it true rather than written by hand. The marketing site renders the *same*
+statement from the *same* function. They cannot drift, because there is only one of them.
+
+**3. We measured the pool, found a disclosure gap, and told StarkWare first.**
+Two patches against `starknet-privacy` are prepared and unsent. They go privately, together, with a
+window to respond, before anything public. *A defensible design choice, but not a defensible
+undisclosed one.*
+
+---
+
+## Install
 
 ```bash
-# 1. HYDRA itself. The published package is `hydra-devtool`; until it is published,
-#    run it from a clone.
-git clone https://github.com/charlesms1246/hydra.git && cd hydra/devtool
-
-# 2. its own dependencies. `npx` finds the binaries this links; nothing goes on your PATH.
+git clone <this repo> && cd hydra/devtool
 npm install
-
-# 3. everything else. `up` clones the pool source at the pinned revision, builds it, and
-#    starts devnet + pool + funded accounts + local discovery service. It ASKS before each
-#    third-party toolchain install and shows the command first — `--yes` consents in advance,
-#    and with no terminal it refuses rather than assuming.
 npx hydra-dev up
 ```
 
-Then `npx hydra-dev` for the TUI, and `npx hydra-dev doctor` for the fourteen-row table if you
-want to see what it found. `doctor` is still the honest starting point when something is wrong —
-it prints the exact fix for every row — but you no longer have to run it first to be told what
-`up` was about to do anyway.
+**Three steps — and here is what they assume.** They assume a machine that already has the
+toolchain: Node ≥ 24, `scarb`, `snforge`, `starknet-devnet`, and a Rust toolchain. From a genuinely
+bare machine it is **seventeen** commands, most of them third-party installs this project will not
+run for you.
 
-`hydra-dev doctor` is the honest starting point, and how many rows it prints tells you where you
-are: **eight** before the checkout exists — six pinned tools, one property of the machine,
-and the checkout itself — and **fourteen** once it does, adding the six build artifacts. It
-prints the exact command for anything missing, and needs no dependencies itself, so it works
-before `bootstrap` does.
+`hydra-dev doctor` reports every one with the exact version wanted and the command that installs
+it. How many rows it prints tells you where you are:
+**eight** before the checkout exists, and **fourteen** once it does — the six build artifacts
+are the difference.
+`up` asks before each third-party install and shows the command first; `--yes` consents in advance,
+and with no terminal it **refuses rather than assuming**.
 
-## The TUI
+**Step 3 takes a few minutes on a cold checkout** — around two of Cairo compilation, plus a Rust
+build and two npm installs. Silence is `cargo` or `npm`, not a hang.
 
-```
-hydra-dev
-```
-
-It opens on the mark while it probes the machine — the outline fills cyan from the centre as
-each source reports in, then seals red once they all have — and then on an **overview
-dashboard**: the stack, the chain, the toolchain, your wallets, what this session has run, and
-the standing note that the auditor can decrypt all of it.
-
-Every page is on the nav bar along the bottom. The page you are on is filled in; the rest are
-outlined, each with the key that opens it.
-
-| Key | Page |
-|---|---|
-| **o** | **Overview** — the dashboard: stack, chain, tooling, wallets, recent runs |
-| **b** | **Wallets** — test accounts, balances, and the devnet faucet (`m` mints) |
-| **c** | **Activity** — recent blocks, and `enter` twice reaches a transaction receipt |
-| **f** | **Disclosure** — the matrix: six parties x five fields, every cell, for the last flow |
-| **x** | **Run** — shield, register, private transfer; `enter` previews what each will disclose |
-| **t** | **Tools** — the doctor rows, and it can run the fixes (each confirmed first) |
-| **j** | **Build** — the contract and Cairo-test operations, read from the checkout's manifests |
-| **l** | **Log** — the live output of whatever is running |
-| **g** | **About** — what this is, why it exists, and every binding, in six sections |
-
-**Nothing needs a modifier key.** `w a s d` and the arrows are movement and only movement —
-`a`/`d` and `←`/`→` walk the nav bar, `enter` opens what the cursor is over, and `w`/`s` and
-`↑`/`↓` move inside the page. That is why the page letters are `o b c f x t j l g`: binding `w`
-to Wallets as well would make one key mean two things depending on where you were.
-
-`u` starts the stack, `p` stops it, `r` refreshes, `esc` goes back, `q` quits — and quitting
-asks what to do with a running stack, because leaving devnet and the discovery service up is
-the right answer when you are about to run `hydra-dev status`, and the wrong one when you are done.
-
-Every screen fills the terminal and nothing scrolls: pages are laid out to the size they are
-given, and where a list is longer than its space it says how many rows it dropped rather than
-hiding them behind a scrollbar you have to discover.
-
-The disclosure matrix is the point of the project: it runs a real private transfer against the
-local pool and shows, cell by cell, what that disclosed — a public observer learns the *timing*,
-the counterparty learns everything, and the auditor can decrypt everything, always. Nothing is
-summarised: `not-by-tx` is glossed on screen as *not* a privacy claim — it is scoped to one
-transaction and says nothing about correlation across transactions, off-chain side channels or
-prior knowledge (`devtool/packages/leak/src/facts.mjs:25-30`) — and `UNKNOWN` is never rendered as a pass.
-
-Two things the matrix says about a local run, because they are true and not flattering:
-its `network` is **UNKNOWN** (a devnet is neither mainnet nor Sepolia, so no auditor key is in
-force that this tool can name), and the report describes the **declared action shape, not the
-receipt** — `hydra-dev tx` returns an event count, not decoded events, so nothing here can check a
-report against the transaction it sent.
-
-## For agents
-
-Every page that reads is also a command, and every command takes `--json`: Disclosure is
-`hydra-dev leak`, the Overview's stack block `hydra-dev status`, Wallets `hydra-dev wallets`, Activity
-`hydra-dev blocks`, Tools `hydra-dev doctor`. Run is the one exception — it submits real transactions
-and has no command twin.
+For the messaging client:
 
 ```bash
-hydra-dev leak transfer --json
-hydra-dev status --json
-hydra-dev indexer --status --json
-hydra-dev wallets --json
-hydra-dev tx 0x07f1… --json
+cd hydra/hydra-dapp && npm install
+npx hydra-tui
 ```
 
-Human output is a rendering of the same object, so the TUI and an agent cannot disagree.
+---
 
-## Packages
+## Architecture
 
-| Package | What it is |
+```mermaid
+flowchart TB
+  subgraph user["A person"]
+    TUI["hydra-tui<br/><i>packages/tui</i><br/>resident client"]
+    CLI["hydra<br/><i>packages/cli</i><br/>scriptable"]
+  end
+
+  subgraph core["Shared client core — both front ends call it, so they cannot disagree"]
+    CMD["commands.ts"]
+    CLIENT["packages/client<br/>public posts"]
+    HS["packages/handshake<br/>prekeys, ratchet"]
+    ID["packages/identity<br/>keys, domains"]
+    CLAIMS["packages/claims<br/><b>generates every disclosure</b>"]
+  end
+
+  subgraph net["What leaves the machine"]
+    CHAIN["Starknet<br/>pointer + commitment"]
+    VAULT["hydra-vault<br/>sealed blobs, padded, invite-gated"]
+  end
+
+  subgraph dev["hydra-dev — opposite trust assumptions"]
+    DOCTOR["doctor / up"]
+    LEAK["packages/leak<br/><b>measures what a tx discloses</b>"]
+    LINT["packages/linter"]
+  end
+
+  TUI --> CMD
+  CLI --> CMD
+  CMD --> CLIENT & HS & ID
+  CMD --> CLAIMS
+  CLIENT -->|"one tx per send"| CHAIN
+  HS -->|"sealed blob + cover"| VAULT
+  LEAK -->|"measured values"| CLAIMS
+  CLAIMS -->|"the same statement"| TUI
+  CLAIMS -->|"the same statement"| SITE["the site<br/><i>web/</i>"]
+  DOCTOR --> LEAK & LINT
+
+  classDef gen fill:#1c1c1c,stroke:#ff4438,color:#fff
+  class CLAIMS,LEAK gen
+```
+
+**The load-bearing edge is `LEAK → CLAIMS → {TUI, SITE}`**, and it is the only one in the accent
+colour. It is why the product and its marketing cannot drift.
+
+**`identity` and `vault-client` are deliberately absent from the site's side.** Invariant **I6** —
+no key-handling code in a browser context — and
+[`module-graph.ts`](web/scripts/module-graph.ts) fails the build if any page can reach them.
+
+---
+
+## The flow, source to organisation
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as A source
+  participant C as hydra (their machine)
+  participant N as Starknet
+  participant V as The vault (the org runs it)
+  participant O as The organisation
+
+  Note over O,V: Published beforehand: address, contract, vault URL, invite codes
+  O->>N: writes its record<br/>(links its identity to its address — deliberate, for a receiver)
+
+  S->>C: hydra init --vault --rpc --contract
+  C->>N: hydra lookup 0xORG<br/>(the RPC node learns S asked — S picks the node)
+  N-->>C: the org's key, off chain, without asking them
+
+  S->>C: hydra send "…"
+  C->>N: one transaction: pointer + commitment
+  C->>V: sealed blob, padded, delayed, beside cover objects
+  Note over C,V: every upload spends an invite — cover included
+
+  O->>V: reads a padded batch
+  V-->>O: the blob and its decoys, indistinguishable
+  O->>O: hydra disclose — what everyone above could see
+```
+
+**A source needs no prior relationship with the organisation.** `hydra lookup` reads their key off
+chain from their Starknet address — no file exchanged in either direction. Before that existed, a
+source needed a prior relationship with the organisation they were anonymously contacting, which
+undid the premise.
+
+**The note between `C` and `V` is the one an organisation gets wrong.** An invite code handed to one
+named person is an identity that arrives in the same request as their object. Published as a pool,
+it is not. The receiving guide covers it; the vault says so in its own startup banner, every run.
+
+---
+
+## Disclosure
+
+Most projects put this in a footnote. It is the product.
+
+```
+$ hydra disclose
+- Whoever runs the storage server can see the blob id, for every stored object.
+- Whoever runs the storage server can see the padded size bucket, not the true length.
+- Whoever runs the storage server can see which objects arrived together.
+- The chain shows that YOU published, and in what order.
+…
+```
+
+Every row is generated from the mechanism that makes it true. There is no hand-written list to fall
+out of date, and the site renders the same rows from the same function.
+
+The client also reports **how linkable a conversation currently is** — a crowd size read from the
+chain, with the sentence that qualifies it always attached. On a quiet chain that number is **zero**,
+and the client says so plainly rather than rounding it up.
+
+---
+
+## Deployed
+
+| | |
 |---|---|
-| `core/` | every operation as a plain function returning plain data — zero dependencies |
-| `cli/` | the command surface, `hydra-dev up`, doctor, bootstrap, dapp scaffold |
-| `tui/` | the terminal UI (Ink) |
-| `leak/` | `what_does_this_leak(tx)` — the disclosure set, per party and per field |
-| `linter/` | flags SDK configurations that disclose more than intended |
+| Network | Starknet **Sepolia** |
+| Record | [`deployments/sepolia.json`](deployments/sepolia.json) — address, class hash, transaction, block, finality, and the two queries that re-derive it |
+| Mainnet | **Not deployed.** Cost measured against live mainnet prices from the Sepolia deployment's own resource usage: **~1.15 STRK** to declare and deploy, **~0.032 STRK** per message |
 
-`archive/gui/` holds a browser view of the disclosure matrix; `experiments/` holds the
-measurement harnesses behind the numbers quoted here.
+`strk20.json` is empty, and that is deliberate. Populating it means writing a record on mainnet,
+which **permanently and publicly links a Starknet account to a messaging identity** — the disclosure
+this product is loudest about. A project whose argument is that it computes what leaks does not make
+that link early to fill in a submission field.
 
-## Two things worth knowing before you build on the pool
+---
 
-**The auditor can decrypt everything.** At registration the pool encrypts your private viewing
-key to an auditor key held in contract storage. It is mandatory, cannot be opted out of or
-substituted, and is write-once. This is true of every STRK20 integration, so HYDRA states it on
-every run rather than leaving it to documentation.
+## Where things live
 
-**Your viewing key reaches more parties than you may expect.** Which ones depends on your
-configuration, and that is precisely what `hydra-dev` and the linter compute for you.
+| capability | code |
+|---|---|
+| Sealing, padding, cover traffic | [`packages/channel`](hydra-dapp/packages/channel) |
+| Prekeys, inbox, ratchet | [`packages/handshake`](hydra-dapp/packages/handshake) |
+| Every generated disclosure | [`packages/claims`](hydra-dapp/packages/claims) |
+| Terminal interface | [`packages/tui`](hydra-dapp/packages/tui) |
+| Loopback API the browser drives | [`packages/gui`](hydra-dapp/packages/gui) |
+| Self-hostable storage | [`packages/vault-server`](hydra-dapp/packages/vault-server) |
+| What a transaction discloses | [`devtool/packages/leak`](devtool/packages/leak) |
+| STRK20 configuration linting | [`devtool/packages/linter`](devtool/packages/linter) |
 
-A set of findings documenting this in detail, with source citations and two upstream patches,
-is being shared with StarkWare before publication.
+```
+hydra/
+├── hydra-dapp/      the messaging client — 13 packages, 716 tests
+│   └── contracts/   98 lines of Cairo: one counter, two felts, no owner
+├── devtool/         hydra-dev — 7 packages, 76 checks
+├── web/             the site — 27 tests, no key-handling code by invariant
+└── deployments/     what is on chain, and how to re-derive it
+```
 
-## Scaffold a dapp
+---
+
+## Development
 
 ```bash
-hydra-dev init dapp
+cd hydra-dapp && npm test     # 716
+cd devtool    && npm test     # 76 checks, 9 files
+cd web        && npm test     # 27
 ```
 
-Clones the official STRK20 starter kit and writes `.env.local` pointing at your running stack.
-It drives the pool through the **Wallet API**, where the wallet holds the viewing key — a
-different route from the SDK, and one the linter cannot see inside.
+The suites are the argument. A claim in this repository is expected to name the mechanism that
+makes it true and the test that would fail if it stopped being true — and a check that cannot fail
+is treated as worse than no check at all.
 
 ## Licence
 
-Apache-2.0, matching upstream, so contributions flow both ways. Full text in [`LICENSE`](LICENSE).
+[Apache-2.0](LICENSE), matching upstream, so contributions flow both ways.
+
+The wordmark face and the mark used on the site are **not** covered by it and are excluded from any
+public build — see [`web/scripts/assert-public.ts`](web/scripts/assert-public.ts).
