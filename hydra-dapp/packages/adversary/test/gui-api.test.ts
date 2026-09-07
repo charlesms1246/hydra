@@ -21,7 +21,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { connect, type AddressInfo } from "node:net";
 import { request } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { codeOf } from "../src/prose.ts";
 import { randomBytes } from "node:crypto";
 
@@ -45,6 +48,7 @@ import { rootSeed, entropyFrom, fromTestVector, derive, VAULT_DOMAIN }
 import { LOOKUP_KEY_NOT_PERSON, LOOKUP_NO_ONE_TIME, LOOKUP_NODE_SEES,
   INVITE_VAULT_SEES, INVITE_UNSCHEDULED } from "../../claims/src/warnings.ts";
 
+const GUI = join(import.meta.dirname, "..", "..", "gui", "src");
 const TOKEN = "0123456789abcdef0123456789abcdef";
 /**
  * A THIRD PARTY WHO HAS PUBLISHED A RECORD, and a node that will serve it.
@@ -1293,4 +1297,63 @@ test("NOTHING WAITING AND SOMETHING THAT WOULD NOT OPEN ARE DIFFERENT ANSWERS", 
       "a slot that held something unreadable is reported as an empty mailbox, so a page cannot "
       + "tell 'nobody wrote' from 'somebody wrote and it would not open'");
   } finally { api.close(); closeVault(); }
+});
+
+test("THE BANNER PRINTS THE ADDRESS IT ACTUALLY BOUND, NOT JUST THE TOKEN", async () => {
+  /*
+   * **THIS LINE WAS THE HALF NOBODY HAD, AND ITS ABSENCE PRODUCED A DEFECT TWO PACKAGES AWAY.**
+   *
+   * `hydra gui` binds port 0 on purpose — a fixed one collides, and nothing should be discoverable
+   * at a known address without the token. The banner then told a reader to open
+   * `<your-page>/#t=<token>` and stopped, so the page had no way to learn the port and did the
+   * only thing left: it hardcoded `http://127.0.0.1:8787`. **A default this server can produce
+   * only if somebody passed `--port 8787`**, and 8787 is the vault's port in this project's own
+   * demo — so the first person to drive the page connected to the vault and died in CORS.
+   *
+   * The recommendation that came back was "lean on the `&b=…` the server prints". It printed no
+   * such thing. Removing the page's default without this would have replaced a wrong address with
+   * no address.
+   *
+   * **SPAWNED RATHER THAN READ, because reading is what let it stay missing.** Nothing in this
+   * repository executed `main.ts`, so the banner was prose that no instrument had ever seen. The
+   * port is the assertion that needs a real process: a source-level check could confirm `b=` is
+   * interpolated and not that the value is the port this server is listening on.
+   */
+  const dir = mkdtempSync(join(tmpdir(), "hydra-banner-"));
+  try {
+    writeFileSync(join(dir, "state.json"), JSON.stringify(init({ contract: "0x1" })), { mode: 0o600 });
+    const child = spawn(process.execPath, [join(GUI, "main.ts")],
+      { env: { ...process.env, HYDRA_HOME: dir }, stdio: ["ignore", "pipe", "pipe"] });
+    try {
+      const out = await new Promise<string>((resolve, reject) => {
+        let seen = "";
+        const timer = setTimeout(() => reject(new Error(`banner never arrived: ${seen}`)), 20_000);
+        child.stdout.on("data", (c: Buffer) => {
+          seen += c.toString();
+          // Waits for the fragment line specifically. Resolving on the first chunk would race the
+          // banner's own writes and pass on a prefix that has not reached the line under test.
+          if (seen.includes("#t=")) { clearTimeout(timer); resolve(seen); }
+        });
+        child.on("error", reject);
+        child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`exited ${code}: ${seen}`)); });
+      });
+
+      const bound = /hydra gui on http:\/\/127\.0\.0\.1:(\d+)/.exec(out);
+      assert.ok(bound, `the banner does not name the address it bound: ${out}`);
+      // Vacuity: port 0 in the banner would mean it printed the REQUEST rather than the result,
+      // and every assertion below would still pass on a page that could never connect.
+      assert.notEqual(bound[1], "0", "the banner prints the requested port, not the bound one");
+
+      const fragment = /#t=([0-9a-f]+)&b=(\S+)/.exec(out);
+      assert.ok(fragment, `the suggested fragment carries no address — this is the defect: ${out}`);
+      assert.equal(fragment[2], `http://127.0.0.1:${bound[1]}`,
+        "the address in the fragment is not the one this process is listening on, so a reader "
+        + "following the banner exactly reaches the wrong port");
+      // AND THE TOKEN IN THE FRAGMENT IS THE ONE IT MINTED, not a second value that happens to
+      // be hex — the two halves of that URL have to come from the same run.
+      const minted = /\n\s*token ([0-9a-f]+)/.exec(out);
+      assert.ok(minted, "the banner stopped printing the token");
+      assert.equal(fragment[1], minted[1], "the fragment carries a different token from the banner");
+    } finally { child.kill(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

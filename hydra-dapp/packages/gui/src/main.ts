@@ -159,8 +159,18 @@ server.listen(port, "127.0.0.1", () => {
   const bound = (server.address() as AddressInfo).port;
   process.stdout.write(`\n  hydra gui on http://127.0.0.1:${bound}\n`);
   process.stdout.write(`  token ${token}\n\n`);
+  // **THE ADDRESS TRAVELS WITH THE TOKEN, AND IT DID NOT UNTIL NOW.** The port is chosen at bind
+  // time and is different every run, so the page cannot know it — and the fragment this banner
+  // suggested carried only `t=`. That left the page guessing, which it did: a hardcoded
+  // `127.0.0.1:8787` default that this server can only produce if somebody passed `--port 8787`,
+  // and which is the vault's port in this project's own demo. A reader following these exact
+  // instructions connected to the wrong process and got a CORS failure.
+  //
+  // `b=` is the fact; a default was a guess competing with it. Both go in the fragment for the
+  // same reason — a fragment is never sent to a server, so neither the token nor the address of a
+  // machine on somebody's LAN reaches anyone's logs.
   process.stdout.write("  Open your interface with the token in the URL FRAGMENT, not a query:\n");
-  process.stdout.write(`      <your-page>/#t=${token}\n\n`);
+  process.stdout.write(`      <your-page>/#t=${token}&b=http://127.0.0.1:${bound}\n\n`);
   process.stdout.write("  A fragment is never sent to a server, so it stays out of Referer, out of\n");
   process.stdout.write("  browser history and out of anyone's logs. A query parameter is in all three.\n\n");
   process.stdout.write("  The first request will ask your browser for permission to reach this\n");
