@@ -215,17 +215,46 @@ check("the README's doctor row counts are the counts doctor prints", () => {
    * about — so with no checkout the "with" number cannot be produced at all. It printed 8/8 and
    * the guard read that as the README lying.
    */
-  const readmePath = join(PKGS, "..", "..", "README.md");
-  if (!existsSync(readmePath)) return { skip: "no README.md above this package" };
+  /*
+   * **IT NOW READS THIS PACKAGE'S OWN README, AND THE SKIP IS GONE WITH IT.** The counts are a
+   * fact about `hydra-dev doctor`, so the claim belongs on the devtool's front page rather than on
+   * a repository root that describes two products — and the old skip, `no README.md above this
+   * package`, existed only because the file it audited lived outside the package. A guard that
+   * silently skips in the tarball it ships in is a guard the published artefact does not have.
+   *
+   * The root README states the same numbers today. It is read too WHEN IT IS THERE, because two
+   * copies of a number is exactly how one of them goes stale — this is the drift check, not a
+   * second source of truth. Absent (a `git archive HEAD devtool`, or the published package) the
+   * devtool's own README is still required and still compared.
+   */
+  const readmePath = join(PKGS, "..", "README.md");
+  if (!existsSync(readmePath)) throw new Error("devtool/README.md is missing — it is this package's front page and states the row counts");
   if (!existsSync(join(upstreamPath(), "Scarb.toml"))) {
     return { skip: "no upstream checkout, so the with-checkout count cannot be produced" };
   }
   const readme = readFileSync(readmePath, "utf8");
   const words = { seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
     thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16 };
-  const withText = /\*\*(\w+)\*\* once it does/.exec(readme)?.[1];
-  const withoutText = /\*\*(\w+)\*\* before the checkout exists/.exec(readme)?.[1];
-  if (!withText || !withoutText) throw new Error("the README no longer states both counts");
+  const stated = (text, what) => {
+    // ⚠ BOTH PHRASES MUST BE CONTIGUOUS ON ONE LINE. Every document here is hard-wrapped, and a
+    // re-wrap between `**fourteen**` and `once it does` makes this return undefined — which reads
+    // as "the README no longer states both counts", i.e. as deletion. Third instance in this
+    // repository of a guard requiring a phrase not to be wrapped; see ERRORS.md.
+    const w = /\*\*(\w+)\*\* once it does/.exec(text)?.[1];
+    const wo = /\*\*(\w+)\*\* before the checkout exists/.exec(text)?.[1];
+    if (!w || !wo) throw new Error(`${what} no longer states both counts, contiguous on one line`);
+    return [wo, w];
+  };
+  const [withoutText, withText] = stated(readme, "devtool/README.md");
+
+  const rootPath = join(PKGS, "..", "..", "README.md");
+  if (existsSync(rootPath)) {
+    const [rootWithout, rootWith] = stated(readFileSync(rootPath, "utf8"), "the root README");
+    if (rootWithout !== withoutText || rootWith !== withText) {
+      throw new Error(`the two READMEs disagree: root says ${rootWithout}/${rootWith}, `
+        + `devtool says ${withoutText}/${withText}`);
+    }
+  }
 
   const saved = process.env.HYDRA_UPSTREAM;
   let withRows, withoutRows;
@@ -242,7 +271,8 @@ check("the README's doctor row counts are the counts doctor prints", () => {
   if (words[withoutText] !== withoutRows || words[withText] !== withRows) {
     throw new Error(`README says ${withoutText}/${withText}, doctor prints ${withoutRows}/${withRows}`);
   }
-  return `${withoutRows} without a checkout, ${withRows} with — as stated`;
+  return `${withoutRows} without a checkout, ${withRows} with — as stated in devtool/README.md`
+    + `${existsSync(rootPath) ? " and the root README, which agree" : ""}`;
 });
 
 console.log(failed ? `\n${failed} failed` : "\nall guards pass");

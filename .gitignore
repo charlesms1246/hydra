@@ -33,11 +33,11 @@ ANSWERS.md
 # instead (self-contained clones), delete this line and `git add .agents/`.
 .agents/
 .upstream/
-# Copied in by devtool's `prepack` and removed by `postpack` — npm auto-includes README and
-# LICENSE only from the package root, and both live at the repo root by deliberate choice
-# (E-PUB2, claude-docs/DECISIONS-NEEDED.md D4). Ignored so an interrupted pack cannot commit a
-# second copy of either.
-devtool/README.md
+# Copied in by devtool's `prepack` and removed by `postpack`, so an interrupted pack cannot
+# commit a second copy. **LICENSE ONLY, NOW THAT `devtool/README.md` IS A REAL FILE.** The
+# devtool has its own front page for npm; `prepack` no longer copies the root README over it,
+# and this rule would have silently prevented that file from ever being committed — the tarball
+# carried it and the suite passed, so nothing would have said so.
 devtool/LICENSE
 
 # web/ — the marketing site.
