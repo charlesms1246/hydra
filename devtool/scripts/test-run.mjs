@@ -25,7 +25,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -59,6 +59,27 @@ const isWithheld = (file) =>
 
 const withheld = [];
 let ran = 0;
+const counted = [];
+
+/**
+ * ONE NUMBER FOR THE RUN, BECAUSE THE ALTERNATIVE WAS MEASURED AND IT IS WRONG TWICE.
+ *
+ * `summarise()` said how many FILES ran and nothing said how many CHECKS did — true of suites
+ * ("each suite prints its own tally and none of them is a total") but it leaves the run with no
+ * number, so anyone quoting one derives it from whichever line is loudest. `render.mjs`'s
+ * `all 76 checks pass` is the loudest, and 76 reached a shields.io badge as the repository's
+ * total. Corrected by hand to 133 — and **133 is also wrong**: it counts `PASS` lines, and
+ * `packages/mcp/test/run.mjs` prints `  ok    …`, contributing 31 checks that both hand-counts
+ * missed. Two careful derivations, same direction, same cause.
+ *
+ * **THE COUNTER IS A PROXY AND IS TREATED AS ONE.** Counting lines that look like results is not
+ * counting results; a suite that invents a third format contributes silently zero, which is
+ * exactly how mcp's 31 hid. So a suite that ran, exited 0 and produced NO recognised result line
+ * is reported by name rather than folded into the total — the same rule as the withheld files
+ * above, one layer in: **never silently count less than you ran.**
+ */
+const RESULT = /^(?:PASS|FAIL) |^ {2}(?:ok|fail) {2}/gm;
+const SKIPPED = /^SKIP |^ {2}skip {2}/gm;
 
 /**
  * COVERAGE, NOT COMPLETION. Each suite prints its own tally and none of them is a total, so a
@@ -69,11 +90,49 @@ let ran = 0;
  * to work out what the suite did — which is this file's own defect one layer up.
  */
 function summarise(code) {
-  console.log(`\n${ran} of ${FILES.length} test files ran.`);
+  const checks = counted.reduce((n, c) => n + c.checks, 0);
+  const skips = counted.reduce((n, c) => n + c.skips, 0);
+  console.log(`\n${checks} checks across ${ran} of ${FILES.length} test files${skips ? ` (${skips} skipped)` : ""}.`);
   for (const file of withheld) {
     console.log(`  not run: ${file} — withheld from this distribution, so it is not here to run`);
   }
+  // Ran, PASSED, and said nothing this counter recognises. Named, not absorbed: a zero here means
+  // the total above is smaller than the work done, which is the failure that put 76 in a badge.
+  //
+  // `status === 0` is load-bearing. Without it this fires on a suite that CRASHED before printing
+  // anything — seen in a published install, where the linter's deps are absent by design and the
+  // report claimed it "prints results in a shape this counter does not know". A message whose
+  // premise is narrower than the condition that triggers it, which is the defect this whole file
+  // is about. A failing suite is already reported by its own output and the non-zero exit.
+  for (const { file } of counted.filter((c) => c.checks === 0 && c.status === 0)) {
+    console.log(`  counted 0 checks in ${file} — it ran and passed, but prints results in a shape this counter does not know, so the total above is short`);
+  }
   process.exit(code);
+}
+
+/** Forwards the child's output as it arrives — the suites take ~35s and silence reads as a hang — and counts it on the way past. */
+function runFile(file) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [file], { cwd: ROOT, stdio: ["inherit", "pipe", "inherit"] });
+    let checks = 0, skips = 0, tail = "";
+    child.stdout.on("data", (d) => {
+      process.stdout.write(d);
+      // A result line split across two chunks would be missed by both, so the last partial line
+      // is carried forward rather than counted where it broke.
+      const text = tail + d.toString();
+      const cut = text.lastIndexOf("\n") + 1;
+      const whole = text.slice(0, cut);
+      tail = text.slice(cut);
+      checks += (whole.match(RESULT) ?? []).length;
+      skips += (whole.match(SKIPPED) ?? []).length;
+    });
+    child.on("close", (status) => {
+      checks += (tail.match(RESULT) ?? []).length;
+      skips += (tail.match(SKIPPED) ?? []).length;
+      counted.push({ file, checks, skips, status });
+      resolve(status);
+    });
+  });
 }
 
 for (const file of FILES) {
@@ -86,10 +145,8 @@ for (const file of FILES) {
     summarise(1);
   }
   console.log(`--- ${file}`);
-  if (spawnSync(process.execPath, [file], { cwd: ROOT, stdio: "inherit" }).status !== 0) {
-    summarise(1);
-  }
   ran++;
+  if (await runFile(file) !== 0) summarise(1);
 }
 
 summarise(0);
