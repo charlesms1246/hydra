@@ -1050,6 +1050,46 @@ test("FLUSH REPORTS WHAT WENT AND WHAT IS STILL WAITING", async () => {
   } finally { api.close(); closeVault(); }
 });
 
+test("A FLUSH THAT THROWS STILL PERSISTS — the GUI was the surface this never reached", async () => {
+  // ⛔ **THE SAME REPAIR, THE THIRD FRONT END, AND IT STOPPED AT THE SECOND.**
+  //
+  // `flush` mutates `State` as it runs: an invite spent per successful upload, its own progress
+  // committed in a `finally`. None of that reaches disk unless the CALLER saves, so every caller
+  // has to save even when the flush throws. `cli.ts` does (`try { drain } finally { save }`) and
+  // `effects.ts` does. Both GUI call sites — the one-second ticker in `gui/src/main.ts` and this
+  // route in `gui/src/server.ts` — had `save` on the line AFTER `flush`, reached only when nothing
+  // went wrong.
+  //
+  // What that costs is specific: `stateNow()` re-reads the file every tick, so a throw meant the
+  // next tick loaded a state where spent codes look unspent, presented them again, and was refused
+  // again — a ticker that cannot progress and never stops trying.
+  //
+  // **INVITE EXHAUSTION IS THE THROW, because it is the one that actually happened.** A vault
+  // spends a code on presentation, so a client that loses its accounting re-presents dead codes.
+  const { alice, close: closeVault } = await conversed();
+  const api = await running({ t: "ready", state: alice, file: FILE });
+  try {
+    await post(api.base, "/v1/gui/channels/with-bob/send", { text: "queue something" });
+    const before = api.saved.length;
+    // DUE, because a fresh send is scheduled into the future on purpose and a flush with nothing
+    // due returns 200 without ever calling the vault — which is the 200 the first version of this
+    // test got, and it would have passed against the unfixed code for the wrong reason.
+    assert.ok(alice.pending.length > 0, "nothing queued to flush");
+    alice.pending = alice.pending.map((p) => ({ ...p, uploadAt: 0 }));
+    // Nothing left to spend, with objects now due: `flush` refuses before it uploads anything.
+    alice.invites = [];
+
+    const res = await post(api.base, "/v1/gui/flush");
+    assert.ok(res.status >= 400, `the flush was supposed to fail, got ${res.status}`);
+    // THE ASSERTION THAT FAILS WITHOUT THE `finally`. Not "the state changed" — with FLUSH_LIMIT
+    // at one there may be no progress to lose yet — but that the caller committed at all. A
+    // discipline guarded only by a constant defined in another module is not guarded.
+    assert.ok(api.saved.length > before,
+      "the GUI flush route threw and never saved. `flush` mutates state as it goes, so a throw "
+      + "leaves spent invites looking unspent on disk and the next attempt re-presents them.");
+  } finally { api.close(); closeVault(); }
+});
+
 // ---------------------------------------------------------------------------
 // `lookup` — the route that opens a conversation, and the only thing on this API a caller with no
 // conversations can usefully do. Every other write names one that already exists.

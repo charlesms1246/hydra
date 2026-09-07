@@ -112,9 +112,25 @@ const ticker = setInterval(() => {
     // due. Counting these would report a vault as failing when it was never asked, which is the
     // over-claim in the frightening direction and still an over-claim.
     if (due === 0) return;
+    // ⛔ **SAVED IN A `finally`, AND THIS SURFACE IS THE ONE THE REPAIR DID NOT REACH.**
+    //
+    // `save` sat inside the `try`, after `flush`. `flush` mutates `state` as it goes — it spends an
+    // invite per successful upload and commits its own progress — so a throw left every one of
+    // those mutations in memory only. `stateNow()` re-reads the file each tick, so the next tick
+    // loaded a state where spent codes look unspent, presented them again, and was refused again.
+    // A ticker that cannot make progress and never stops trying.
+    //
+    // The CLI (`cli/src/cli.ts`, `try { drain } finally { save }`) and the TUI
+    // (`tui/src/effects.ts`, same shape) both already had this. Three front ends, one discipline,
+    // and it reached two of them — the same shape as the defect `claims-not-duplicated.test.ts`
+    // exists for, arriving in the surface nobody re-checked.
+    //
+    // NOT CURRENTLY REACHABLE, AND FIXED ANYWAY. Both GUI paths pass `FLUSH_LIMIT`, which is 1, so
+    // a failure means nothing succeeded first and there is no progress to lose. It becomes live the
+    // moment anything passes a larger limit — which the comment on `FLUSH_LIMIT` itself
+    // contemplates. A latent defect guarded only by a constant somewhere else is not guarded.
     try {
       const r = await flush(now.state, Date.now(), undefined, FLUSH_LIMIT);
-      save(now.state);
       consecutiveFailures = 0;
       lastFlush = { at: Date.now(), ok: true, uploaded: r.uploaded, consecutiveFailures: 0,
         problem: null };
@@ -123,6 +139,8 @@ const ticker = setInterval(() => {
       lastFlush = { at: Date.now(), ok: false, uploaded: 0, consecutiveFailures,
         problem: problemOf(e, now.state.vaultUrl) };
       throw e;
+    } finally {
+      save(now.state);
     }
   }).catch((e: unknown) => {
     // **A VAULT THAT IS DOWN MUST NOT TAKE THE PROCESS WITH IT — AND THAT IS NOT THE SAME AS

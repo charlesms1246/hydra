@@ -844,9 +844,17 @@ export function guiServer(deps: GuiDeps): Server {
             // response where the crowd can have just changed.
             return { op: "read", channel, ...conversation(state, channel) };
           }
-          const r = await flush(state, deps.now(), undefined, FLUSH_LIMIT);
-          deps.save(state);
-          return { op: "flush", ...r };
+          // In a `finally` for the reason the CLI and the TUI are: `flush` mutates `state` as it
+          // goes — an invite spent per successful upload, its own progress committed — and a throw
+          // leaves all of it in memory. This is the request-driven twin of the ticker in
+          // `main.ts`, and it had the same defect: `save` on the line after, reached only on the
+          // happy path. Two call sites, one discipline.
+          try {
+            const r = await flush(state, deps.now(), undefined, FLUSH_LIMIT);
+            return { op: "flush", ...r };
+          } finally {
+            deps.save(state);
+          }
         });
 
         if (isFail(done)) return refuse(res, done);
