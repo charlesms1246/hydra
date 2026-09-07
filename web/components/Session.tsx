@@ -187,6 +187,17 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
   const [tried, setTried] = useState(false);
   const [howLinkable, setHowLinkable] = useState<HowLinkable | null>(null);
   const [draft, setDraft] = useState("");
+  /*
+   * The public class. Kept apart from `draft` deliberately: a public post is a DIFFERENT ACT from
+   * a channel message, not a mode of one, and sharing the textarea would let a mis-click send a
+   * conversation's words to everybody. `cli.ts:647` records what the shared VERB already cost —
+   * *"the collision is part of why nobody noticed the public class had no client path at all"* —
+   * and a shared field is that collision with a shorter fuse.
+   */
+  const [postDesc, setPostDesc] = useState<PostDesc | null>(null);
+  const [postReason, setPostReason] = useState("");
+  const [postText, setPostText] = useState("");
+  const [posted, setPosted] = useState<Posted | null>(null);
   const [sent, setSent] = useState<Sent | null>(null);
   /*
    * ⛔ **THE ONE THING A READER WITH NO CONVERSATIONS CAN DO.** Every other write on this API names
@@ -516,6 +527,33 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
     if (r.accepted.length === 1) await openChannel(r.accepted[0]!);
   }, [write, call, openChannel]);
 
+  /**
+   * Read what the act costs BEFORE offering it, which is the whole reason this is a `GET` on the
+   * same path rather than a field on the write's response.
+   *
+   * ⛔ **THESE WORDS ARE NOT THIS PAGE'S AND ARE RENDERED WHOLE.** `lines` is the array `hydra
+   * post` prints, and `GUI-API-CONTRACT.md` puts the obligation here rather than on the server:
+   * *a route cannot force a page to read it first.* A summary is where the hedge gets dropped, so
+   * there is no summary — every line, in order, above the fields.
+   */
+  const loadPostDesc = useCallback(async () => {
+    const r = await call<PostDesc>("/post");
+    if (r.ok) setPostDesc(r.data);
+  }, [call]);
+
+  const postNow = useCallback(async () => {
+    setPosted(null);
+    const r = await write<Posted>("post", "/post",
+      { text: postText, reason: postReason });
+    if (!r) return;
+    setPosted(r);
+    setPostText("");
+    setPostReason("");
+    // The balance moved and the description carries it, so re-read rather than decrementing a
+    // copy: another surface may have spent one while this form was open.
+    await loadPostDesc();
+  }, [write, postText, postReason, loadPostDesc]);
+
   // Every route is stored-state-only — no network, no chain scan — so connecting on arrival costs
   // the reader nothing and saves them a click they would always make.
   useEffect(() => {
@@ -732,6 +770,94 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
             </button>
             {collected && <CollectedNote collected={collected} />}
           </div>
+
+          {/*
+            ⛔ **A THIRD ACT, NOT A THIRD BUTTON ON THE SECOND ONE.**
+
+            `cli.ts:647` records what the shared verb cost: *"NOT `publish`. That word is taken by
+            signed channel messages… and the collision is part of why nobody noticed the public
+            class had no client path at all."* This page had SEND SIGNED — which the CLI calls
+            `publish` — and no post, so a reader auditing it found a verb and ticked the box. It
+            sits beside "open a conversation" and "check mailbox" because it is their peer: a thing
+            you do, not a setting on a thing you were already doing.
+
+            Closed by default. A control that publishes to everybody should cost one deliberate
+            click to even see.
+          */}
+          <details className="tg-post"
+                   onToggle={(e) => {
+                     if (e.currentTarget.open && !postDesc) void loadPostDesc();
+                   }}>
+            <summary>Publish publicly</summary>
+            <div className="tg-post-body">
+              {/*
+                THE DESCRIPTION IS ABOVE THE FIELDS AND IS RENDERED WHOLE. Every line the API
+                sends, in the order it sends them, with the blank ones kept as the breaks they are.
+                No summary: a summary is where the hedge gets dropped, and three of these four
+                paragraphs are the hedge.
+              */}
+              {postDesc
+                ? (
+                  <>
+                    {postDesc.lines.map((line, i) => (
+                      line === ""
+                        ? <br key={i} />
+                        : <p key={i} className="tg-post-line">{line}</p>
+                    ))}
+                    <p className="tg-post-cost">{postDesc.cost}</p>
+                    <p className="tg-post-cost">
+                      {postDesc.invitesLeft} invite(s) left
+                    </p>
+                  </>
+                )
+                : <p className="tg-post-line">reading what this costs…</p>}
+
+              <label htmlFor="post-reason">
+                <span className="prose-label">WHY YOU ARE POSTING IT</span>
+                <input id="post-reason" name="post-reason" type="text" autoComplete="off"
+                       value={postReason} disabled={!live}
+                       onChange={(e) => setPostReason(e.target.value)} />
+              </label>
+              {/*
+                NOT VALIDATED HERE, DELIBERATELY. The rule is the API's — `no_reason`, with a
+                remedy — and a copy of it in this file is a second copy free to drift from the
+                first. The contract asks a page to treat that refusal as *"there is one more thing
+                to say"* rather than as an error, which is what this line does; the button stays
+                live so the reader meets the API's own words rather than a disabled control that
+                explains nothing.
+              */}
+              {refusal?.code === "no_reason" && (
+                <p className="tg-post-cost">{refusal.remedy}</p>
+              )}
+
+              <label htmlFor="post-text">
+                <span className="prose-label">WHAT TO PUBLISH</span>
+                <textarea id="post-text" name="post-text" rows={3}
+                          value={postText} disabled={!live}
+                          onChange={(e) => setPostText(e.target.value)} />
+              </label>
+
+              <button type="button" className="button"
+                      disabled={postText.trim() === "" || working !== null || !live}
+                      onClick={() => void postNow()}>
+                {working === "post" ? "Publishing…" : "Publish publicly"}
+              </button>
+
+              {/*
+                THE ID AND THE SENTENCE THAT MAKES IT MEAN ANYTHING, together. `reach` is the
+                API's, not this page's — `server.ts` says a page composing it in its own words
+                would be free to soften it, and softening *"give it to whoever should read this and
+                to nobody else"* is the one edit that would matter.
+              */}
+              {posted && (
+                <div className="tg-post-done" role="status">
+                  <p className="prose-label">POSTED</p>
+                  <p className="msg-text">{posted.id}</p>
+                  <p className="tg-post-line">{posted.reach}</p>
+                </div>
+              )}
+            </div>
+          </details>
 
           {channels && channels.length > 0 ? (
             <ul className="tg-rows">
@@ -1081,6 +1207,11 @@ function OpenedNote({ opened }: { opened: Opened }) {
  * collapsing the two into one empty state tells a receiver nobody has tried to reach them when
  * somebody has. The count is reported plainly and is not dressed as an error.
  */
+/** `GET /v1/gui/post` — what the act costs and discloses, in the API's words. */
+type PostDesc = { lines: readonly string[]; invitesLeft: number; cost: string };
+/** `POST /v1/gui/post` — the id is the only way to reach it, and `reach` says so. */
+type Posted = { id: string; invitesLeft: number; reach: string };
+
 function CollectedNote({ collected }: { collected: Collected }) {
   const { accepted, rejected } = collected;
   return (

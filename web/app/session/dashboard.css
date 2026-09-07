@@ -29,7 +29,16 @@
 
 /* ── the header: brand, help, connection, vitals ───────────────────────────────────────────── */
 
+/*
+ * ⛔ **THE HEADER IS THE PANEL'S CONTAINING BLOCK, AND THAT IS THE FIX FOR AN OVERFLOW.**
+ * `.tg-help-body` used to resolve against `.tg-help`, the `?` button, which sits about 100px in
+ * behind the brand — so a width of `calc(100vw - 2rem)` was correct arithmetic measured from the
+ * wrong origin, and the panel ran off the right edge at every width below 768px. Anchoring to the
+ * header, which spans the viewport, lets the panel be stated as two edges instead of a width, and
+ * two edges cannot be measured from the wrong place.
+ */
 .tg-top {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -55,7 +64,10 @@
   color: var(--white);
 }
 
-.tg-help { position: relative; }
+/*
+ * NOT `position: relative`. That is what made the `?` the panel's containing block and produced
+ * the overflow above; the panel anchors to `.tg-top` instead.
+ */
 
 .tg-help > summary {
   list-style: none;
@@ -80,10 +92,15 @@
  */
 .tg-help-body {
   position: absolute;
-  top: 1.9rem;
-  left: 0;
+  top: 2.6rem;
+  /*
+   * Two edges, not a width. `right` keeps the panel inside the header at every viewport, and
+   * `max-width` restores the wide-screen size the old `min(38rem, …)` was for.
+   */
+  left: 0.85rem;
+  right: 0.85rem;
+  max-width: 38rem;
   z-index: 60;
-  width: min(38rem, calc(100vw - 2rem));
   max-height: 70vh;
   overflow: auto;
   padding: 1rem 1.1rem;
