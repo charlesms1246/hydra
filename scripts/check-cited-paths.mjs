@@ -380,6 +380,12 @@ const DEFINED_FORMAT = /^(?:claude-docs\/|decisions\/\d{4})/;
  * ignored, and no new class of report appears from widening this.
  */
 function inADirectoryWeHave(path) {
+  // ⛔ **A GLOB IS NOT A CITATION**, and this branch reported one within an hour of being written:
+  // `.github/workflows/contracts.yml` filters on `web/**`, `web` is a tracked directory and
+  // `web/**` is not a file, so it read as a dead pointer. A path a reader is meant to OPEN never
+  // contains `*`. Excluded here rather than at the call site, because the same shape reaches this
+  // function from every corpus.
+  if (path.includes("*")) return false;
   const slash = path.lastIndexOf("/");
   if (slash <= 0) return false;
   const dir = path.slice(0, slash);
@@ -387,6 +393,29 @@ function inADirectoryWeHave(path) {
   // which would make a citation into it look defined when a clone has no such directory.
   return trackedDirs.has(dir);
 }
+
+/**
+ * `.upstream/…` — StarkWare's vendored checkout, gitignored, and **no clone reader can open any
+ * of it**.
+ *
+ * ⛔ **THE HIGHEST-STAKES CITATIONS IN THIS REPOSITORY WERE THE ONES THIS GUARD COULD NOT SEE.**
+ * `contracts/src/channel.cairo` carries four, and every claim the contract's design rests on lives
+ * behind them: that the pool emits no calldata, the `privacy_invoke` selector, the dispatch site,
+ * and the `Span<OpenNoteDeposit>` return contract that a live pool call revert taught us about.
+ * A reviewer asking *"why does this return an array?"* is sent to a file they do not have.
+ *
+ * They were invisible for a mechanical reason: `DEFINED_FORMAT` names `claude-docs/` and
+ * `decisions/NNNN`, and `inADirectoryWeHave` above is keyed on TRACKED directories — `.upstream/`
+ * is ignored, so it is not tracked, so it fell into `skipped — names nothing in this tree`, the
+ * bucket for a backticked string that was never a path. **This script's own header rules on
+ * exactly this case**: *"a comment that says 'the argument for this is in a file you cannot open'
+ * gives a reader nothing they can act on."* The rule was written; the regex did not reach it.
+ *
+ * So `.upstream/` is a format we define, and it takes the same three states as `claude-docs/`: on
+ * this machine it resolves and needs a `held` marker naming the route a reader can take; absent
+ * entirely it is a dead pointer. It is NOT treated as tracked, because it never will be.
+ */
+const VENDORED = /^\.upstream\//;
 
 /**
  * Whether a citation sits in code rather than in a comment — which is the difference between a
@@ -445,7 +474,7 @@ for (const file of files) {
     // was discarded**, and the run reported problems that were not citations. Measured on a fresh
     // clone: 193 extracted, 193 discarded, 0 reported. A guard that cannot fail in the world it
     // protects is the one shape this repository has spent a week on.
-    if (DEFINED_FORMAT.test(c.path) || inADirectoryWeHave(c.path)) {
+    if (DEFINED_FORMAT.test(c.path) || VENDORED.test(c.path) || inADirectoryWeHave(c.path)) {
       /*
        * **THREE STATES, BECAUSE TWO OF THEM WERE THE SAME FAILURE AND ARE NOT THE SAME DEFECT.**
        * This branch failed every untracked citation in a format we define, marker or not. That is

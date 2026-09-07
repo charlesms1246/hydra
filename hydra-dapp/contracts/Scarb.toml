@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024_07"
 
 # The local toolchain, not the pool's. This is our own deployment and shares no ABI
-# with `.upstream/packages/privacy` — it must never be built into that workspace.
+# with the pool's own Scarb workspace (held: StarkWare's `starknet-privacy`, vendored under
+# `.upstream/` and gitignored — clone it from the pin in `devtool/packages/cli/src/pins.mjs`).
+# It must never be built into that workspace.
 [dependencies]
 starknet = "2.18.0"
 
