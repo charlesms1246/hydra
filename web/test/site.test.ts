@@ -1120,5 +1120,42 @@ test("no disclosure is rendered inside a collapsible panel", () => {
       "OpenedNote is inside a <details>. That panel closes itself when a lookup succeeds — the "
       + "three costs are produced and folded away in the same instant, for the one reader who has "
       + "never seen them. A disclosure must not live in anything that can be collapsed.");
+
+    /*
+     * ⛔ **THIS TEST'S NAME WAS BROADER THAN WHAT IT CHECKED**, and the gap was found by walking
+     * into it: the publish panel puts `postDesc.lines` — what a public post discloses, in the
+     * API's words — inside a `<details>`, and the loop above could not see it because it names
+     * `OpenedNote` and nothing else. A guard whose title states a rule and whose body checks one
+     * component is the prose-outliving-its-code defect on the guard side.
+     *
+     * The general rule cannot be "no disclosure inside a fold", because that one is fine and the
+     * reason is structural: **the act is inside the same fold.** Collapsing the panel takes the
+     * Publish button with it, so the disclosure cannot be hidden while the act is available —
+     * which is precisely what `OpenedNote` could not say, since the lookup's costs fold away
+     * while everything else stays usable.
+     *
+     * So the property, asserted rather than assumed: if the description is in the fold, the
+     * control that publishes must be in the same fold.
+     */
+    if (/postDesc\.lines/.test(inside)) {
+      /*
+       * ⛔ **MATCH THE HANDLER, NOT THE LABEL — the first version of this line matched
+       * `/Publish publicly/` and COULD NOT FAIL.** That string is also the panel's `<summary>`,
+       * which is inside the fold by construction, so the assertion passed on the summary whatever
+       * the button did. Proven by mutation: renaming the button to "Publish it now" left the test
+       * green. A check that cannot fail, written into a guard whose whole subject is checks that
+       * cannot fail.
+       */
+      assert.match(inside, /onClick=\{\(\) => void postNow\(\)\}/,
+        "the public-post disclosure is inside a <details> that does not also contain the publish "
+        + "control. That is only safe while collapsing the panel takes the act with it; separated, "
+        + "the disclosure can be folded away while the button stays live.");
+    }
   }
+
+  // Vacuity floor for the clause above: it is a conditional inside a loop, so a rename of
+  // `postDesc.lines` would make it check nothing at all and still pass.
+  assert.match(code, /postDesc\.lines/,
+    "components/Session.tsx no longer renders postDesc.lines — either the public-post disclosure "
+    + "is gone or it moved somewhere this guard cannot see");
 });

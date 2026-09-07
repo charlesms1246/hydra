@@ -799,19 +799,49 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
               {postDesc
                 ? (
                   <>
-                    {postDesc.lines.map((line, i) => (
-                      line === ""
-                        ? <br key={i} />
-                        : <p key={i} className="tg-post-line">{line}</p>
-                    ))}
+                    {/*
+                      ⛔ **`lines` ARE TERMINAL LINES, NOT PARAGRAPHS**, and rendering one `<p>`
+                      each broke every sentence at the width `hydra post` wraps to — "…publishes a
+                      commitment and the chain" / "shows that you sent something". The blank
+                      entries are the paragraph breaks; the rest is one paragraph reflowing to
+                      whatever width this column happens to be. Joined on a space, split on "".
+                    */}
+                    {postDesc.lines
+                      .reduce<string[][]>((paras, line) => {
+                        if (line === "") { paras.push([]); return paras; }
+                        (paras[paras.length - 1] ??= []).push(line);
+                        return paras;
+                      }, [[]])
+                      .filter((para) => para.length > 0)
+                      .map((para, i) => (
+                        <p key={i} className="tg-post-line">{para.join(" ")}</p>
+                      ))}
                     <p className="tg-post-cost">{postDesc.cost}</p>
                     <p className="tg-post-cost">
                       {postDesc.invitesLeft} invite(s) left
                     </p>
                   </>
                 )
-                : <p className="tg-post-line">reading what this costs…</p>}
+                : (
+                  <p className="tg-post-line">
+                    reading what this costs…
+                  </p>
+                )}
 
+              {/*
+                ⛔ **NO FIELDS UNTIL THE DESCRIPTION IS HERE, and this was a real hole in the first
+                version of this panel.** The form rendered whatever `GET /post` did, so a failed or
+                slow read left a working Publish button with nothing above it — the act available
+                and its disclosure absent, which is the shape `E-WALK03` is about arriving from the
+                other direction. It is not enough that the words are *usually* there.
+
+                This is also why the whole panel is one `<details>` rather than a description that
+                folds and a form that does not: **the act cannot be reached while the disclosure is
+                collapsed, because collapsing takes the button with it.** `site.test.ts`'s fold
+                guard names `OpenedNote` specifically and would not have caught either mistake — I
+                have widened it to the property rather than the component.
+              */}
+              {postDesc && <>
               <label htmlFor="post-reason">
                 <span className="prose-label">WHY YOU ARE POSTING IT</span>
                 <input id="post-reason" name="post-reason" type="text" autoComplete="off"
@@ -856,6 +886,7 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
                   <p className="tg-post-line">{posted.reach}</p>
                 </div>
               )}
+              </>}
             </div>
           </details>
 
@@ -961,7 +992,13 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
           <div className="tg-compose">
             {sent && <SentNote sent={sent} />}
             {busy && <BusyNote busy={busy} />}
-            {refusal && <RefusalNote refusal={refusal} />}
+            {/*
+              `no_reason` is EXCLUDED because the publish panel answers it beside the field it is
+              about, in the left column. Rendered here as well it appeared twice, once in each
+              column, and the copy here is styled as a failure — which is the reading the contract
+              asks a page not to give it: *"there is one more thing to say"*, not an error.
+            */}
+            {refusal && refusal.code !== "no_reason" && <RefusalNote refusal={refusal} />}
             <Compose
               draft={draft}
               setDraft={setDraft}
