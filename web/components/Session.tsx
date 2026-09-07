@@ -581,17 +581,40 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
       {/*
         ⛔ **AN EMPTY BOX WITH NO INSTRUCTION IS WORSE OFF THAN A WRONG DEFAULT**, which is the
         one real cost of removing it — so the empty state says what to do rather than waiting to
-        be understood. Shown only before anything has been dialled: once a reader has connected,
-        or has a failure to read, this is the row that would be in the way.
+        be understood. Shown before anything has been dialled: once a reader has connected, or has
+        a failure to read, this is the row that would be in the way.
+
+        ⛔ **THE PERMISSION SENTENCE IS HERE BECAUSE OF *WHEN*, NOT BECAUSE OF WHAT IT SAYS.**
+        `UNREACHABLE` already names the block accurately and points at the only place it can be
+        changed — but it is read AFTER a click, after a hang, because a request the browser refuses
+        to send does not fail fast. So the first thing a first-time reader learned about the
+        permission was that they had already lost a minute to it. This says it before the click,
+        and the condition is `!tried` rather than `!base` for exactly that reason: **a reader who
+        pasted an address is the one about to meet the prompt.**
+
+        It is also worth saying out loud rather than apologising for. The prompt is the browser
+        naming the boundary this page is built across — a public origin on one side, the client on
+        the reader's machine on the other — and that is the architecture, not a workaround.
+
+        The two sentences share one element so the header keeps its height and the band keeps its
+        single border; the address half stays conditional on `!base`.
 
         It names the fragment because that is the path that needs no typing at all: `hydra gui`
         prints `#t=…&b=…`, and a reader who opens that link never meets this box.
       */}
-      {!base && !live && !tried && (
+      {!live && !tried && (
         <p className="tg-connect-hint">
-          paste the address <code>hydra gui</code> printed — it takes a free port, so it is a
-          different one each run. Opening the <code>#t=…&amp;b=…</code> link it prints fills this
-          in and connects for you.
+          {!base && (
+            <>
+              paste the address <code>hydra gui</code> printed — it takes a free port, so it is a
+              different one each run. Opening the <code>#t=…&amp;b=…</code> link it prints fills
+              this in and connects for you.{" "}
+            </>
+          )}
+          <b>The browser will ask whether this page may reach your machine — allow it.</b> The
+          interface is served from a website and the client it talks to runs on your machine, so
+          every request crosses that line. A refusal is remembered, and it is changed in the
+          browser&apos;s own site settings rather than here.
         </p>
       )}
 
