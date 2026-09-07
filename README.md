@@ -5,7 +5,7 @@
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-black)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-black)](devtool/package.json)
 [![client](https://img.shields.io/badge/client-716%20tests-black)](hydra-dapp)
-[![devtool](https://img.shields.io/badge/devtool-76%20checks-black)](devtool)
+[![devtool](https://img.shields.io/badge/devtool-133%20checks-black)](devtool)
 [![site](https://img.shields.io/badge/site-27%20tests-black)](web)
 
 > ### ⚠️ Testnet, and unaudited in a specific way
@@ -235,7 +235,7 @@ that link early to fill in a submission field.
 hydra/
 ├── hydra-dapp/      the messaging client — 13 packages, 716 tests
 │   └── contracts/   98 lines of Cairo: one counter, two felts, no owner
-├── devtool/         hydra-dev — 7 packages, 76 checks
+├── devtool/         hydra-dev — 7 packages, 133 checks
 ├── web/             the site — 27 tests, no key-handling code by invariant
 └── deployments/     what is on chain, and how to re-derive it
 ```
@@ -246,7 +246,7 @@ hydra/
 
 ```bash
 cd hydra-dapp && npm test     # 716
-cd devtool    && npm test     # 76 checks, 9 files
+cd devtool    && npm test     # 133 checks across 10 files
 cd web        && npm test     # 27
 ```
 

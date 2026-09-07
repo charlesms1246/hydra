@@ -4,7 +4,7 @@
 
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-black)](../LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-black)](package.json)
-[![checks](https://img.shields.io/badge/checks-76-black)](packages/cli/test)
+[![checks](https://img.shields.io/badge/checks-133-black)](packages/cli/test)
 [![packages](https://img.shields.io/badge/packages-5%20published-black)](package.json)
 
 > ### ⚠️ This does not vendor the privacy pool, and every number here is about one commit of it
@@ -225,7 +225,7 @@ per-party table and the rule table.
 ## Development
 
 ```bash
-npm test          # 76 checks across 9 files
+npm test          # 133 checks across 10 files
 npx hydra-dev doctor
 ```
 
