@@ -3242,3 +3242,57 @@ html[data-build="public"] .wordmark {
 .term-live-box .term-screen {
   height: 100%;
 }
+
+
+/* ---------------------------------------------------------------------------------------------
+   The guided tour: a ring on the control, and a bar that never moves.
+
+   ⛔ The bar is fixed and always in the same place BY DESIGN. A card positioned against each
+   target would need clamping at every width, and this lane's nine E-WEB5 defects were all
+   "correct markup, wrong presentation" found by eye. A bar that cannot move cannot overflow and
+   cannot collide; the ring does the pointing.
+   --------------------------------------------------------------------------------------------- */
+
+.tour-ring {
+  position: fixed;
+  z-index: 70;
+  pointer-events: none;
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.tour-bar {
+  position: fixed;
+  z-index: 71;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 1rem;
+  width: min(38rem, calc(100vw - 2rem));
+  padding: 0.85rem 1rem 0.9rem;
+  background: #000;
+  border: 1px solid var(--accent);
+}
+
+.tour-step {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+}
+
+.tour-body {
+  margin: 0 0 0.7rem;
+  font-family: var(--serif);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--g-80);
+}
+
+.tour-acts {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tour-count {
+  margin: 0 0 0 auto;
+  color: var(--g-48);
+}
