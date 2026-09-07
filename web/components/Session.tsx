@@ -133,7 +133,24 @@ type Opened = {
  */
 type Collected = { op: "collect"; accepted: string[]; rejected: number };
 
-const DEFAULT_BASE = "http://127.0.0.1:8787";
+/**
+ * **NO DEFAULT, AND THE EMPTY STRING IS THE DECISION RATHER THAN AN OVERSIGHT.**
+ *
+ * This was `http://127.0.0.1:8787`. `hydra gui` binds port **0** — any free port — deliberately,
+ * because a fixed one collides and because nothing should be discoverable at a known address
+ * without the token. **So that default could only ever be right by coincidence**, and 8787 is the
+ * vault's port in this project's own demo: the first person to drive this page connected to the
+ * vault and died in CORS.
+ *
+ * A default that is wrong by construction is worse than none. It costs a reader a failed
+ * connection before they learn to read the fragment, and it teaches them the address is something
+ * this page knows. The server prints the real one in `#t=…&b=…` — the fragment is the fact, and a
+ * guess competing with a fact loses. **That `b=` was added to the server's banner in the same
+ * change**: it printed only `t=`, so "lean on what the server prints" was advice about something
+ * that did not exist yet, and removing the default without it would have left this page with
+ * nothing to dial.
+ */
+const DEFAULT_BASE = "";
 
 /**
  * The failure the API can never report, because the request does not arrive.
@@ -232,8 +249,10 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
    *
    * The mount effect reads `#b=` and called `setBase`; the auto-connect effect ran in the same
    * commit and captured the base from the render BEFORE that state update — so a page opened at
-   * `#t=…&b=http://127.0.0.1:19100` dialled the default `:8787`, failed, and told the reader
-   * nothing was listening at an address they had not asked for. Found by opening the page against
+   * `#t=…&b=http://127.0.0.1:19100` dialled the then-default `:8787`, failed, and told the reader
+   * nothing was listening at an address they had not asked for. (There is no default now — that
+   * turned out to be a second defect behind this one — but the ordering bug this ref fixes is
+   * unchanged: `b=` still has to reach `call` in the commit that sets it.) Found by opening the page against
    * a real `hydra gui` on a non-default port; a component test with a mocked fetch would have
    * asserted the request was made and never noticed where it went.
    *
@@ -483,7 +502,9 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
   // Every route is stored-state-only — no network, no chain scan — so connecting on arrival costs
   // the reader nothing and saves them a click they would always make.
   useEffect(() => {
-    if (token.current) void connect();
+    // BOTH, not just the token. With no default there is nothing to dial without `b=`, and
+    // connecting to the empty string produces a failure about an address nobody chose.
+    if (token.current && baseRef.current) void connect();
     // Only on mount: re-running on `connect` identity would refetch on every base edit keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -530,10 +551,19 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
 
         <form className="tg-connect" onSubmit={(e) => { e.preventDefault(); void connect(); }}>
           <label htmlFor="base" className="prose-label">LOCAL API</label>
+          {/*
+            ⛔ **THE PLACEHOLDER SHOWS THE SHAPE AND NOT AN ADDRESS.** `127.0.0.1:PORT` rather
+            than a number, because any number here is the wrong number: the port is chosen at bind
+            time and differs every run. A placeholder that looked like a real address would be the
+            default coming back wearing grey text, and a reader would type it in.
+          */}
           <input id="base" name="base" type="text" value={base} spellCheck={false}
-                 autoComplete="off" onChange={(e) => useBase(e.target.value)} />
-          <button className="button" type="submit">{live ? "Reconnect" : "Connect"}</button>
+                 autoComplete="off" placeholder="http://127.0.0.1:PORT"
+                 onChange={(e) => useBase(e.target.value)} />
+          <button className="button" type="submit"
+                  disabled={base.trim() === ""}>{live ? "Reconnect" : "Connect"}</button>
         </form>
+
 
         <dl className="tg-vitals">
           <Vital k="IDENTITY" v={status?.fingerprint} />
@@ -547,6 +577,23 @@ export function Session({ disclosure }: { disclosure?: React.ReactNode }) {
           <Vital k="UPLOADS" v={uploadsWord(status?.queue)} />
         </dl>
       </header>
+
+      {/*
+        ⛔ **AN EMPTY BOX WITH NO INSTRUCTION IS WORSE OFF THAN A WRONG DEFAULT**, which is the
+        one real cost of removing it — so the empty state says what to do rather than waiting to
+        be understood. Shown only before anything has been dialled: once a reader has connected,
+        or has a failure to read, this is the row that would be in the way.
+
+        It names the fragment because that is the path that needs no typing at all: `hydra gui`
+        prints `#t=…&b=…`, and a reader who opens that link never meets this box.
+      */}
+      {!base && !live && !tried && (
+        <p className="tg-connect-hint">
+          paste the address <code>hydra gui</code> printed — it takes a free port, so it is a
+          different one each run. Opening the <code>#t=…&amp;b=…</code> link it prints fills this
+          in and connects for you.
+        </p>
+      )}
 
       <div className="tg-body">
         <aside className="tg-list">

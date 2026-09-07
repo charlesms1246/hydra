@@ -92,9 +92,9 @@ export default function Privacy() {
           <Reveal className="grid-12 step">
             <span className="col-note prose-label">LOOPBACK</span>
             <p className="col-9 prose-body">
-              It drives a session over <code>hydra gui</code>&apos;s local API — by default{" "}
-              <code>http://127.0.0.1:8787</code>, or an address you hand it. That address is the
-              only one it ever calls. If you open it from a link carrying a token, the token is
+              It drives a session over <code>hydra gui</code>&apos;s local API, at the address you
+              hand it — there is no default, because <code>hydra gui</code> takes a free port and
+              that port is different every run. That address is the only one it ever calls. If you open it from a link carrying a token, the token is
               held in memory for the life of the tab and taken out of the address bar before
               anything can read it there, including a screenshot. It is not stored anywhere.
               See <code>web/components/Session.tsx</code>.

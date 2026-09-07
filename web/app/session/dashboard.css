@@ -129,6 +129,19 @@
 
 .tg-connect input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 
+/*
+ * The instruction that replaces the wrong default. Full width under the header rather than beside
+ * the field: it is a sentence, and the header row is sized for controls.
+ */
+.tg-connect-hint {
+  margin: 0;
+  padding: 0.5rem 0.85rem 0.7rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--g-64);
+  border-bottom: 1px solid var(--g-12);
+}
+
 .tg-vitals { display: flex; gap: 1.25rem; margin: 0; }
 
 /*
