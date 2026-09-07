@@ -977,12 +977,34 @@ function SentNote({ sent }: { sent: Sent }) {
 }
 
 /**
- * ⛔ **TWO BUTTONS, NO DEFAULT, AND NO STATE BETWEEN CHOOSING AND SENDING.**
+ * ⛔ **A MODE AND ONE BUTTON — AND THE OLD HAZARD IS ANSWERED, NOT DELETED.**
  *
- * `signed` and deniable are two acts, not one act with a setting. The CLI makes them two verbs;
- * the TUI puts the mode on its model so it is visible before Enter. A checkbox here would have a
- * default, and a default is exactly what a user does not notice they accepted — *"a user who
- * cannot tell which of the two they just did has neither."*
+ * This was two buttons, on the user's instruction it is a toggle and one button, and the comment
+ * that stood here argued the other way. Its argument is quoted rather than removed, because it
+ * named a real hazard that the new shape still has to answer:
+ *
+ * > *"A checkbox here would have a default, and a default is exactly what a user does not notice
+ * > they accepted — a user who cannot tell which of the two they just did has neither."*
+ *
+ * **What that was protecting was the act being visible AT THE MOMENT OF THE ACT, not the button
+ * count.** So the mode is a setting and **the button is still the verb**: it reads
+ * `Send deniable` or `Send signed`, changes with the toggle, and says which mode is in flight
+ * while it is sending. The thing you press never stops naming what pressing it does.
+ *
+ * **The default is deniable, because the two mistakes are not symmetric.** Sending deniable when
+ * you meant signed loses a proof you can make again. Sending signed when you meant deniable
+ * attaches attribution that `claims/` says cannot be taken back. **The safe default is the one
+ * whose mistake is recoverable**, and it is the same default the TUI already has.
+ *
+ * ⛔ **AND THE OLD COMMENT MISREAD ITS OWN PRECEDENT.** It cited the TUI as evidence for two acts.
+ * The TUI carries the mode ON ITS MODEL — *"deniable — either of you could have written this —
+ * 's' to sign"* — which is precedent for exactly this shape. The CLI has two verbs because a
+ * command line has no state between invocations; a resident interface does. This makes the two
+ * graphical surfaces agree.
+ *
+ * **The toggle is frozen while a send is in flight.** Not for tidiness: the in-flight label reads
+ * the same state the send used, so a toggle that could move mid-flight would let the button
+ * describe a mode other than the one being sent — the original hazard, arriving by a new door.
  *
  * **The labels name the act and make no claim about it.** "Deniable" as a guarantee is a privacy
  * claim, and this file may not write one — the claim arrives on the message itself, as the
@@ -1054,7 +1076,26 @@ function Compose({
   disabled: boolean;
   onSend: (signed: boolean) => void;
 }) {
+  const [signed, setSigned] = useState(false);
   const empty = draft.trim() === "" || disabled;
+  const sending = working === "send";
+  const mode = signed ? "signed" : "deniable";
+  const box = useRef<HTMLTextAreaElement>(null);
+
+  /*
+   * ⛔ **IT WAS `rows={2}` AND FIXED, SO THE SECOND LINE SCROLLED OUT OF SIGHT.** The user hit it
+   * on a one-line message that wrapped: you cannot read what you are about to publish
+   * irrevocably. Two rows is now the floor rather than the size — the height is set from the
+   * content, and `max-height` in the sheet caps it so a long draft does not push the send button
+   * off the screen. Resetting to `auto` first is what makes it shrink again on delete.
+   */
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft]);
+
   return (
     <form className="session-compose" onSubmit={(e) => e.preventDefault()}>
       <label htmlFor="draft">
@@ -1062,6 +1103,7 @@ function Compose({
         <textarea
           id="draft"
           name="draft"
+          ref={box}
           rows={2}
           value={draft}
           disabled={disabled}
@@ -1071,13 +1113,15 @@ function Compose({
         />
       </label>
       <div className="session-compose-acts">
+        <label className="compose-mode" htmlFor="sign">
+          <input id="sign" name="sign" type="checkbox" checked={signed}
+                 disabled={disabled || sending}
+                 onChange={(e) => setSigned(e.target.checked)} />
+          <span className="prose-label">SIGN IT</span>
+        </label>
         <button type="button" className="button" disabled={empty || working !== null}
-                onClick={() => onSend(false)}>
-          {working === "send" ? "Sending…" : "Send deniable"}
-        </button>
-        <button type="button" className="button" disabled={empty || working !== null}
-                onClick={() => onSend(true)}>
-          {working === "send" ? "Sending…" : "Send signed"}
+                onClick={() => onSend(signed)}>
+          {sending ? `Sending ${mode}…` : `Send ${mode}`}
         </button>
       </div>
     </form>

@@ -3033,6 +3033,36 @@ html[data-build="public"] .wordmark {
   font-size: 0.875rem;
   line-height: 1.5;
   resize: vertical;
+  /*
+   * The height is set from the content in `Compose`; this caps it. Without a cap a long draft
+   * pushes the send button off the bottom of the screen, which is worse than scrolling.
+   */
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+/*
+ * The mode, beside the verb rather than inside it. Sized and coloured like every other label on
+ * the page, so it reads as a setting and the button next to it stays the act.
+ */
+.compose-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.compose-mode input {
+  width: 0.9rem;
+  height: 0.9rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.compose-mode input:disabled,
+.compose-mode:has(input:disabled) {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .session-compose textarea:focus-visible {
